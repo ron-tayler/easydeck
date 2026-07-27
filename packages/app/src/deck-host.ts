@@ -161,6 +161,10 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     this.require().setVariable(name, value);
   }
 
+  deleteVariable(name: string): void {
+    this.require().deleteVariable(name);
+  }
+
   openFolder(folderId: string): void {
     this.require().openFolder(folderId);
   }
@@ -187,6 +191,10 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
 
   simulateKey(key: number): void {
     this.require().simulateKey(key);
+  }
+
+  simulateLongPress(key: number): void {
+    this.require().simulateLongPress(key);
   }
 
   private require(): DeckService {

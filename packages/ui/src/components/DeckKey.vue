@@ -11,7 +11,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   select: [key: number];
-  run: [key: number];
+  menu: [payload: { key: number; x: number; y: number }];
   dropAction: [payload: { key: number; actionType: string; label: string }];
   dropKey: [payload: { from: number; to: number }];
 }>();
@@ -81,7 +81,7 @@ function onDrop(event: DragEvent): void {
     type="button"
     :draggable="Boolean(view)"
     @click="emit('select', index)"
-    @dblclick="emit('run', index)"
+    @contextmenu.prevent="emit('menu', { key: index, x: $event.clientX, y: $event.clientY })"
     @dragstart="onDragStart"
     @dragover="onDragOver"
     @dragleave="over = false"

@@ -153,6 +153,7 @@ export function useDeck() {
     transportKind: client.kind,
     refresh: refreshAll,
     pressKey: (key: number) => client.call('simulateKey', { key }),
+    holdKey: (key: number) => client.call('simulateLongPress', { key }),
     saveProfile: async (profile: ProfileDefinition) => {
       await client.call('saveProfile', { profile });
       // The save triggers a reload on the host, which announces new state;
@@ -165,5 +166,8 @@ export function useDeck() {
     goUp: () => client.call('goUp'),
     activateProfile: (id: string) => client.call('activateProfile', { id }),
     setBrightness: (percent: number) => client.call('setBrightness', { percent }),
+    setVariable: (name: string, value: string | number | boolean) =>
+      client.call('setVariable', { name, value }),
+    deleteVariable: (name: string) => client.call('deleteVariable', { name }),
   };
 }

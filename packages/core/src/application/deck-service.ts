@@ -152,6 +152,10 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     this.options.controller.variables.set(name, value);
   }
 
+  deleteVariable(name: string): void {
+    this.options.controller.variables.delete(name);
+  }
+
   goToPage(pageId: string): void {
     this.options.controller.goToPage(pageId);
   }
@@ -181,6 +185,10 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
 
   simulateKey(key: number): void {
     this.options.controller.simulatePress(key);
+  }
+
+  simulateLongPress(key: number): void {
+    this.options.controller.simulateLongPress(key);
   }
 
   async stop(): Promise<void> {

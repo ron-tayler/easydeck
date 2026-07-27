@@ -71,6 +71,10 @@ export class ApiHandler {
         this.deck.setVariable(text(params, 'name'), value(params, 'value'));
         return { ok: true };
 
+      case 'deleteVariable':
+        this.deck.deleteVariable(text(params, 'name'));
+        return { ok: true };
+
       case 'openFolder':
         this.deck.openFolder(text(params, 'folderId'));
         return { ok: true };
@@ -97,6 +101,10 @@ export class ApiHandler {
 
       case 'simulateKey':
         this.deck.simulateKey(integer(params, 'key'));
+        return { ok: true };
+
+      case 'simulateLongPress':
+        this.deck.simulateLongPress(integer(params, 'key'));
         return { ok: true };
 
       default:

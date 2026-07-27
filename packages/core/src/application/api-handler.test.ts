@@ -93,6 +93,10 @@ class FakeDeck implements DeckFacade {
     this.calls.push(`setVariable:${name}=${String(value)}`);
   }
 
+  deleteVariable(name: string): void {
+    this.calls.push(`deleteVariable:${name}`);
+  }
+
   openFolder(folderId: string): void {
     this.calls.push(`openFolder:${folderId}`);
   }
@@ -119,6 +123,10 @@ class FakeDeck implements DeckFacade {
 
   simulateKey(key: number): void {
     this.calls.push(`simulateKey:${key}`);
+  }
+
+  simulateLongPress(key: number): void {
+    this.calls.push(`simulateLongPress:${key}`);
   }
 }
 

@@ -9,7 +9,10 @@ defineProps<{
   depth?: number;
 }>();
 
-const emit = defineEmits<{ open: [folderId: string] }>();
+const emit = defineEmits<{
+  open: [folderId: string];
+  menu: [payload: { folderId: string; x: number; y: number }];
+}>();
 </script>
 
 <template>
@@ -21,6 +24,9 @@ const emit = defineEmits<{ open: [folderId: string] }>();
         :class="{ current: folder.id === currentFolderId, ancestor: openIds.has(folder.id) }"
         :style="{ paddingLeft: `${8 + (depth ?? 0) * 14}px` }"
         @click="emit('open', folder.id)"
+        @contextmenu.prevent="
+          emit('menu', { folderId: folder.id, x: $event.clientX, y: $event.clientY })
+        "
       >
         <span class="name">{{ folder.name }}</span>
         <!-- Pages are the other axis of the same scene, so their count belongs
@@ -35,6 +41,7 @@ const emit = defineEmits<{ open: [folderId: string] }>();
         :open-ids="openIds"
         :depth="(depth ?? 0) + 1"
         @open="emit('open', $event)"
+        @menu="emit('menu', $event)"
       />
     </li>
   </ul>

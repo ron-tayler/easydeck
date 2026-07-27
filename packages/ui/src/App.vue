@@ -3,24 +3,58 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ButtonDefinition, FolderDefinition, ProfileDefinition } from '@easydeck/core';
 
+import ContextMenu from './components/ContextMenu.vue';
+import type { MenuItem } from './components/ContextMenu.vue';
 import DeckGrid from './components/DeckGrid.vue';
 import FolderTree from './components/FolderTree.vue';
 import PluginList from './components/PluginList.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
 import { useDeck } from './composables/useDeck.js';
+import PromptDialog from './components/PromptDialog.vue';
+import VariablesDialog from './components/VariablesDialog.vue';
 import {
   addActionToKey,
+  addFolder,
+  addPage,
+  findFolder,
   fromClipboard,
+  ownerOfPage,
   pasteButton,
+  removeFolder,
   removeKey,
+  removePage,
+  removeProfileVariable,
+  renameFolder,
+  renamePage,
+  setProfileVariable,
   swapKeys,
   toClipboard,
 } from './composables/useProfileEditor.js';
 
+/** Mirrors the engine's cap; a scene with more pages stops being navigable. */
+const MAX_PAGES = 16;
+
 const { t } = useI18n();
 const deck = useDeck();
 const settingsOpen = ref(false);
+const variablesOpen = ref(false);
 const selectedKey = ref<number | undefined>();
+const menu = ref<{ key: number; x: number; y: number } | undefined>();
+const folderMenu = ref<{ folderId: string; x: number; y: number } | undefined>();
+const pageMenu = ref<{ pageId: string; x: number; y: number } | undefined>();
+
+/** One prompt serves every rename and every new name; the action is a callback. */
+const prompt = ref<{ title: string; value?: string; apply: (name: string) => void } | undefined>();
+
+function ask(title: string, value: string | undefined, apply: (name: string) => void): void {
+  prompt.value = { title, value, apply };
+}
+
+function onPromptConfirm(name: string): void {
+  const pending = prompt.value;
+  prompt.value = undefined;
+  pending?.apply(name);
+}
 
 const folderPath = computed(() => deck.state.value?.folderPath ?? []);
 const pages = computed(() => deck.state.value?.pages ?? []);
@@ -36,6 +70,262 @@ async function edit(change: (profile: ProfileDefinition) => ProfileDefinition): 
   const profile = deck.profile.value;
   const pageId = currentPageId.value;
   if (!profile || !pageId) return;
+
+  try {
+    await deck.saveProfile(change(profile));
+  } catch (error) {
+    deck.lastError.value = (error as Error).message;
+  }
+}
+
+/**
+ * A click selects; a click on the already selected key runs it.
+ *
+ * Selecting first means the destructive things — paste, delete — always act
+ * on something the user has just pointed at, and running needs no modifier or
+ * double click to discover.
+ */
+function onSelect(key: number): void {
+  if (selectedKey.value === key) void deck.pressKey(key);
+  else selectedKey.value = key;
+}
+
+function onMenu(payload: { key: number; x: number; y: number }): void {
+  selectedKey.value = payload.key;
+  menu.value = payload;
+}
+
+const menuItems = computed<MenuItem[]>(() => {
+  const key = menu.value?.key;
+  const occupied = key !== undefined && deck.keys.value.some((view) => view.key === key);
+
+  return [
+    { id: 'settings', label: t('menu.settings'), disabled: true, note: t('settings.soon') },
+    { id: 'press', label: t('menu.press'), disabled: !occupied, separated: true },
+    { id: 'longPress', label: t('menu.longPress'), disabled: !occupied },
+    { id: 'copy', label: t('menu.copy'), disabled: !occupied, separated: true },
+    { id: 'paste', label: t('menu.paste') },
+    { id: 'delete', label: t('menu.delete'), disabled: !occupied, danger: true, separated: true },
+  ];
+});
+
+async function onMenuChoose(id: string): Promise<void> {
+  const key = menu.value?.key;
+  menu.value = undefined;
+  if (key === undefined) return;
+
+  switch (id) {
+    case 'press':
+      await deck.pressKey(key);
+      return;
+    case 'longPress':
+      await deck.holdKey(key);
+      return;
+    case 'copy':
+      await copyKey(key);
+      return;
+    case 'paste':
+      await pasteFromClipboard(key);
+      return;
+    case 'delete':
+      await edit((profile) => removeKey(profile, currentPageId.value!, key));
+      return;
+    default:
+      return;
+  }
+}
+
+/**
+ * Clipboard access from the menu, as opposed to a Ctrl+C the browser hands us.
+ *
+ * The permission model differs — reading the clipboard is guarded where
+ * writing usually is not — so a failure here is reported rather than
+ * swallowed, with the keyboard route as the way out.
+ */
+async function copyKey(key: number): Promise<void> {
+  const button = findButton(key);
+  if (!button) return;
+
+  try {
+    await navigator.clipboard.writeText(toClipboard(button));
+  } catch {
+    deck.lastError.value = t('menu.clipboardBlocked');
+  }
+}
+
+async function pasteFromClipboard(key: number): Promise<void> {
+  let text: string;
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    deck.lastError.value = t('menu.clipboardBlocked');
+    return;
+  }
+
+  const button = fromClipboard(text);
+  if (!button) {
+    deck.lastError.value = t('menu.nothingToPaste');
+    return;
+  }
+
+  await edit((profile) => pasteButton(profile, currentPageId.value!, key, button));
+}
+
+// --- variables -----------------------------------------------------------
+
+/**
+ * Sets a variable now and stores it as the profile's starting value.
+ *
+ * The distinction between "what it holds" and "what it starts as" is real but
+ * belongs to the engine, not to someone configuring a deck. Writing both
+ * keeps them from disagreeing, which is the only way the difference would
+ * ever become visible.
+ */
+async function onSetVariable(payload: { name: string; value: string }): Promise<void> {
+  const numeric = Number(payload.value);
+  const value: string | number | boolean =
+    payload.value.trim() !== '' && Number.isFinite(numeric) ? numeric : payload.value;
+
+  await deck.setVariable(payload.name, value);
+  await editProfile((profile) => setProfileVariable(profile, payload.name, value));
+}
+
+async function onRemoveVariable(name: string): Promise<void> {
+  // Removed from the profile *and* from the running deck: reloading a profile
+  // preserves live values, so dropping only the declaration would let the
+  // variable come straight back.
+  await deck.deleteVariable(name);
+  await editProfile((profile) => removeProfileVariable(profile, name));
+}
+
+// --- folders and pages ---------------------------------------------------
+
+function onFolderMenu(payload: { folderId: string; x: number; y: number }): void {
+  folderMenu.value = payload;
+}
+
+const folderMenuItems = computed<MenuItem[]>(() => {
+  const id = folderMenu.value?.folderId;
+  const profile = deck.profile.value;
+  const folder = id && profile ? findFolder(profile.root, id) : undefined;
+  const isRoot = id === profile?.root.id;
+  const full = (folder?.pages.length ?? 0) >= MAX_PAGES;
+
+  return [
+    { id: 'open', label: t('folders.open') },
+    { id: 'addFolder', label: t('folders.addChild'), separated: true },
+    {
+      id: 'addPage',
+      label: t('folders.addPage'),
+      disabled: full,
+      note: full ? t('folders.pageLimit', { max: MAX_PAGES }) : undefined,
+    },
+    { id: 'rename', label: t('folders.rename'), separated: true },
+    {
+      id: 'delete',
+      label: t('folders.delete'),
+      // The root has nowhere to fall back to, so it simply cannot go.
+      disabled: isRoot,
+      note: isRoot ? t('folders.rootKept') : undefined,
+      danger: true,
+    },
+  ];
+});
+
+function onFolderMenuChoose(action: string): void {
+  const id = folderMenu.value?.folderId;
+  folderMenu.value = undefined;
+
+  const profile = deck.profile.value;
+  if (!id || !profile) return;
+  const folder = findFolder(profile.root, id);
+
+  switch (action) {
+    case 'open':
+      void deck.openFolder(id);
+      return;
+    case 'addFolder':
+      ask(t('folders.addChild'), t('folders.newName'), (name) =>
+        void editProfile((current) => addFolder(current, id, name)),
+      );
+      return;
+    case 'addPage':
+      void editProfile((current) => addPage(current, id, MAX_PAGES));
+      return;
+    case 'rename':
+      ask(t('folders.rename'), folder?.name, (name) =>
+        void editProfile((current) => renameFolder(current, id, name)),
+      );
+      return;
+    case 'delete':
+      void editProfile((current) => removeFolder(current, id));
+      return;
+    default:
+      return;
+  }
+}
+
+function onPageMenu(pageId: string, event: MouseEvent): void {
+  pageMenu.value = { pageId, x: event.clientX, y: event.clientY };
+}
+
+const pageMenuItems = computed<MenuItem[]>(() => {
+  const pageId = pageMenu.value?.pageId;
+  const profile = deck.profile.value;
+  const owner = pageId && profile ? ownerOfPage(profile.root, pageId) : undefined;
+  const last = (owner?.pages.length ?? 0) <= 1;
+
+  return [
+    { id: 'open', label: t('pages.open') },
+    { id: 'rename', label: t('pages.rename'), separated: true },
+    {
+      id: 'delete',
+      label: t('pages.delete'),
+      // A scene with no pages cannot be entered at all.
+      disabled: last,
+      note: last ? t('pages.lastKept') : undefined,
+      danger: true,
+    },
+  ];
+});
+
+function onPageMenuChoose(action: string): void {
+  const pageId = pageMenu.value?.pageId;
+  pageMenu.value = undefined;
+  if (!pageId) return;
+
+  const page = pages.value.find((candidate) => candidate.id === pageId);
+
+  switch (action) {
+    case 'open':
+      void deck.goToPage(pageId);
+      return;
+    case 'rename':
+      ask(t('pages.rename'), page?.name, (name) =>
+        void editProfile((current) => renamePage(current, pageId, name)),
+      );
+      return;
+    case 'delete':
+      void editProfile((current) => removePage(current, pageId));
+      return;
+    default:
+      return;
+  }
+}
+
+function addFolderAtCurrent(): void {
+  const parentId = currentFolderId.value ?? deck.profile.value?.root.id;
+  if (!parentId) return;
+
+  ask(t('folders.addChild'), t('folders.newName'), (name) =>
+    void editProfile((current) => addFolder(current, parentId, name)),
+  );
+}
+
+/** Saves a changed profile. Unlike `edit`, needs no current page. */
+async function editProfile(change: (profile: ProfileDefinition) => ProfileDefinition): Promise<void> {
+  const profile = deck.profile.value;
+  if (!profile) return;
 
   try {
     await deck.saveProfile(change(profile));
@@ -180,6 +470,28 @@ onBeforeUnmount(() => {
           >
             ⚙
           </button>
+
+          <button
+            type="button"
+            class="icon"
+            :title="t('folders.addChild')"
+            :aria-label="t('folders.addChild')"
+            :disabled="!deck.profile.value"
+            @click="addFolderAtCurrent"
+          >
+            ＋
+          </button>
+
+          <button
+            type="button"
+            class="icon wide"
+            :title="t('variables.title')"
+            :aria-label="t('variables.title')"
+            :disabled="!deck.profile.value"
+            @click="variablesOpen = true"
+          >
+            {var}
+          </button>
         </div>
 
         <div class="scroll">
@@ -189,6 +501,7 @@ onBeforeUnmount(() => {
             :current-folder-id="currentFolderId"
             :open-ids="openIds"
             @open="deck.openFolder"
+            @menu="onFolderMenu"
           />
           <p v-if="rootFolders.length === 0" class="muted empty">{{ t('folders.none') }}</p>
         </div>
@@ -200,8 +513,8 @@ onBeforeUnmount(() => {
           :keys="deck.keys.value"
           :pressed-keys="deck.pressedKeys.value"
           :selected-key="selectedKey"
-          @select="selectedKey = $event"
-          @run="deck.pressKey"
+          @select="onSelect"
+          @menu="onMenu"
           @drop-action="onDropAction"
           @drop-key="onDropKey"
         />
@@ -210,7 +523,7 @@ onBeforeUnmount(() => {
 
         <!-- Numbers only, no arrows: a scene has at most sixteen pages, so
              they all fit and paging through them would be pointless. -->
-        <div v-if="pages.length > 1" class="pages">
+        <div v-if="deck.state.value" class="pages">
           <button
             v-for="(page, index) in pages"
             :key="page.id"
@@ -219,8 +532,19 @@ onBeforeUnmount(() => {
             :class="{ current: page.id === deck.state.value?.location?.pageId }"
             :title="page.name"
             @click="deck.goToPage(page.id)"
+            @contextmenu.prevent="onPageMenu(page.id, $event)"
           >
             {{ index + 1 }}
+          </button>
+
+          <button
+            type="button"
+            class="page add"
+            :title="t('folders.addPage')"
+            :disabled="pages.length >= MAX_PAGES"
+            @click="currentFolderId && editProfile((p) => addPage(p, currentFolderId!, MAX_PAGES))"
+          >
+            ＋
           </button>
         </div>
       </main>
@@ -230,6 +554,49 @@ onBeforeUnmount(() => {
         <PluginList :plugins="deck.plugins.value" />
       </aside>
     </div>
+
+    <ContextMenu
+      v-if="menu"
+      :x="menu.x"
+      :y="menu.y"
+      :items="menuItems"
+      @choose="onMenuChoose"
+      @close="menu = undefined"
+    />
+
+    <ContextMenu
+      v-if="folderMenu"
+      :x="folderMenu.x"
+      :y="folderMenu.y"
+      :items="folderMenuItems"
+      @choose="onFolderMenuChoose"
+      @close="folderMenu = undefined"
+    />
+
+    <ContextMenu
+      v-if="pageMenu"
+      :x="pageMenu.x"
+      :y="pageMenu.y"
+      :items="pageMenuItems"
+      @choose="onPageMenuChoose"
+      @close="pageMenu = undefined"
+    />
+
+    <VariablesDialog
+      v-if="variablesOpen"
+      :variables="deck.state.value?.variables ?? {}"
+      @set="onSetVariable"
+      @remove="onRemoveVariable"
+      @close="variablesOpen = false"
+    />
+
+    <PromptDialog
+      v-if="prompt"
+      :title="prompt.title"
+      :value="prompt.value"
+      @confirm="onPromptConfirm"
+      @cancel="prompt = undefined"
+    />
 
     <SettingsDialog
       v-if="settingsOpen"
@@ -318,6 +685,15 @@ header {
   line-height: 1;
 }
 
+/* Wide enough for a word rather than a glyph, and monospaced so the braces
+   read as syntax — which is exactly what they are in a key's label. */
+.icon.wide {
+  width: auto;
+  padding: 0 9px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
 .left .scroll {
   overflow-y: auto;
   padding: 12px;
@@ -353,6 +729,7 @@ main {
 
 .page { min-width: 28px; padding: 3px 8px; }
 .page.current { border-color: var(--accent); color: var(--accent); }
+.page.add { color: var(--text-muted); }
 
 .hint { color: var(--text-muted); font-size: 12px; margin: 0; text-align: center; max-width: 640px; }
 

@@ -13,6 +13,14 @@ export default {
   folders: {
     title: 'Folders',
     none: 'No profile loaded',
+    open: 'Open folder',
+    addChild: 'New folder',
+    addPage: 'Add page',
+    rename: 'Rename folder',
+    delete: 'Delete folder',
+    newName: 'New folder',
+    pageLimit: 'max {max}',
+    rootKept: 'the root stays',
   },
   deck: {
     title: 'Panel',
@@ -34,9 +42,34 @@ export default {
   },
   variables: {
     title: 'Variables',
-    none: 'No variables',
+    none: 'No variables yet',
+    hint: 'To show a variable on a key, wrap its name in double curly braces in the label. Changing a value here updates the deck at once.',
+    name: 'name',
+    value: 'value',
+    add: 'Add',
+    remove: 'Remove',
+    badName: 'Use letters, digits, dot, dash and underscore; start with a letter.',
+    exists: 'That variable already exists.',
   },
-  errors: {
+  pages: {
+    open: 'Go to page',
+    rename: 'Rename page',
+    delete: 'Delete page',
+    lastKept: 'the only one',
+  },
+  prompt: {
+    confirm: 'OK',
+    cancel: 'Cancel',
+  },  menu: {
+    settings: 'Button settings',
+    press: 'Press',
+    longPress: 'Long press',
+    copy: 'Copy',
+    paste: 'Paste',
+    delete: 'Delete',
+    clipboardBlocked: 'The clipboard is not available here. Use Ctrl+C and Ctrl+V instead.',
+    nothingToPaste: 'The clipboard does not hold an EasyDeck button.',
+  },  errors: {
     title: 'Something went wrong',
     dismiss: 'Dismiss',
   },

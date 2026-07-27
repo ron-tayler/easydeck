@@ -30,6 +30,7 @@ export interface DeckFacade {
   activateProfile(id: string): Promise<void>;
 
   setVariable(name: string, value: VariableValue): void;
+  deleteVariable(name: string): void;
 
   openFolder(folderId: string): void;
   goToPage(pageId: string): void;
@@ -40,6 +41,8 @@ export interface DeckFacade {
   setBrightness(percent: number): Promise<void>;
   /** Runs a key's actions as if it had been pressed, for testing from a UI. */
   simulateKey(key: number): void;
+  /** Runs a key's long-press actions, without waiting out the hold. */
+  simulateLongPress(key: number): void;
 }
 
 /**

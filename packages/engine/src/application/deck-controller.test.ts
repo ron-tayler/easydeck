@@ -410,6 +410,63 @@ describe('DeckController', () => {
     await controller.stop();
   });
 
+  // Regression: loading a profile used to empty the painted-keys map to force
+  // a full repaint. That also forgot which keys held an image, so a key whose
+  // button had just been moved away or deleted was never cleared and kept
+  // showing the old picture on the device.
+  it('clears a key whose button was removed by an edit', async () => {
+    const { surface, controller } = await setup();
+    surface.cleared.length = 0;
+
+    const page = testProfile.root.pages[0]!;
+    const edited: ProfileDefinition = {
+      ...testProfile,
+      root: {
+        ...testProfile.root,
+        pages: [
+          { ...page, buttons: page.buttons.filter((button) => button.key !== 1) },
+          ...testProfile.root.pages.slice(1),
+        ],
+      },
+    };
+
+    controller.load(edited);
+    controller.invalidate();
+    await settle();
+
+    assert.ok(surface.cleared.includes(1), `expected key 1 to be cleared, got ${surface.cleared}`);
+  });
+
+  it('clears the key a button was moved away from', async () => {
+    const { surface, controller } = await setup();
+    surface.cleared.length = 0;
+
+    const page = testProfile.root.pages[0]!;
+    const moved: ProfileDefinition = {
+      ...testProfile,
+      root: {
+        ...testProfile.root,
+        pages: [
+          {
+            ...page,
+            // The counter moves off key 1 onto key 2, whose own button goes
+            // away — the test grid has three keys and all of them are taken.
+            buttons: page.buttons
+              .filter((button) => button.key !== 2)
+              .map((button) => (button.key === 1 ? { ...button, key: 2 } : button)),
+          },
+          ...testProfile.root.pages.slice(1),
+        ],
+      },
+    };
+
+    controller.load(moved);
+    controller.invalidate();
+    await settle();
+
+    assert.ok(surface.cleared.includes(1), `expected key 1 to be cleared, got ${surface.cleared}`);
+  });
+
   it('stops listening after stop()', async () => {
     const { surface, controller } = await setup();
     await controller.stop();

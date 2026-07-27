@@ -44,6 +44,174 @@ export function freshId(prefix: string, taken: ReadonlySet<string>): string {
   }
 }
 
+/**
+ * Names usable in `{{…}}` templates.
+ *
+ * Matches the engine's own placeholder pattern, so a variable that can be
+ * created is always a variable that can be shown on a key. Rejecting the rest
+ * at creation beats letting someone make one they can never display.
+ */
+export const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
+
+export function setProfileVariable(
+  profile: ProfileDefinition,
+  name: string,
+  value: string | number | boolean,
+): ProfileDefinition {
+  return { ...profile, variables: { ...profile.variables, [name]: value } };
+}
+
+export function removeProfileVariable(
+  profile: ProfileDefinition,
+  name: string,
+): ProfileDefinition {
+  const { [name]: _removed, ...rest } = profile.variables ?? {};
+  return { ...profile, variables: rest };
+}
+
+/** Replaces one folder wherever it sits in the tree, root included. */
+function mapFolder(
+  folder: FolderDefinition,
+  folderId: string,
+  update: (found: FolderDefinition) => FolderDefinition,
+): FolderDefinition {
+  if (folder.id === folderId) return update(folder);
+
+  return {
+    ...folder,
+    folders: folder.folders?.map((child) => mapFolder(child, folderId, update)),
+  };
+}
+
+function collectIds(
+  folder: FolderDefinition,
+  into = { folders: new Set<string>(), pages: new Set<string>() },
+): { folders: Set<string>; pages: Set<string> } {
+  into.folders.add(folder.id);
+  for (const page of folder.pages) into.pages.add(page.id);
+  for (const child of folder.folders ?? []) collectIds(child, into);
+  return into;
+}
+
+export function findFolder(
+  folder: FolderDefinition,
+  folderId: string,
+): FolderDefinition | undefined {
+  if (folder.id === folderId) return folder;
+  for (const child of folder.folders ?? []) {
+    const found = findFolder(child, folderId);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/** The folder a page belongs to. */
+export function ownerOfPage(
+  folder: FolderDefinition,
+  pageId: string,
+): FolderDefinition | undefined {
+  if (folder.pages.some((page) => page.id === pageId)) return folder;
+  for (const child of folder.folders ?? []) {
+    const found = ownerOfPage(child, pageId);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/** A new scene always gets one page: a folder with none cannot be entered. */
+export function addFolder(
+  profile: ProfileDefinition,
+  parentId: string,
+  name: string,
+): ProfileDefinition {
+  const ids = collectIds(profile.root);
+  const folder: FolderDefinition = {
+    id: freshId('folder', ids.folders),
+    name,
+    pages: [{ id: freshId('page', ids.pages), buttons: [] }],
+  };
+
+  return {
+    ...profile,
+    root: mapFolder(profile.root, parentId, (parent) => ({
+      ...parent,
+      folders: [...(parent.folders ?? []), folder],
+    })),
+  };
+}
+
+export function renameFolder(
+  profile: ProfileDefinition,
+  folderId: string,
+  name: string,
+): ProfileDefinition {
+  return { ...profile, root: mapFolder(profile.root, folderId, (folder) => ({ ...folder, name })) };
+}
+
+/**
+ * Removes a folder and everything under it.
+ *
+ * The root cannot go: a profile with no scenes has nowhere to be, and the
+ * caller gets its profile back unchanged rather than a broken one.
+ */
+export function removeFolder(profile: ProfileDefinition, folderId: string): ProfileDefinition {
+  if (folderId === profile.root.id) return profile;
+
+  const prune = (folder: FolderDefinition): FolderDefinition => ({
+    ...folder,
+    folders: (folder.folders ?? []).filter((child) => child.id !== folderId).map(prune),
+  });
+
+  return { ...profile, root: prune(profile.root) };
+}
+
+/** Adds a page to a scene, up to the cap. */
+export function addPage(
+  profile: ProfileDefinition,
+  folderId: string,
+  maxPages: number,
+): ProfileDefinition {
+  const ids = collectIds(profile.root);
+
+  return {
+    ...profile,
+    root: mapFolder(profile.root, folderId, (folder) => {
+      if (folder.pages.length >= maxPages) return folder;
+      return {
+        ...folder,
+        pages: [...folder.pages, { id: freshId('page', ids.pages), buttons: [] }],
+      };
+    }),
+  };
+}
+
+export function renamePage(
+  profile: ProfileDefinition,
+  pageId: string,
+  name: string,
+): ProfileDefinition {
+  return updatePage(profile, pageId, (page) => ({ ...page, name }));
+}
+
+/**
+ * Removes a page.
+ *
+ * A scene must keep at least one, since a folder with no pages cannot be
+ * opened — deleting the last one would strand everything below it.
+ */
+export function removePage(profile: ProfileDefinition, pageId: string): ProfileDefinition {
+  const owner = ownerOfPage(profile.root, pageId);
+  if (!owner || owner.pages.length <= 1) return profile;
+
+  return {
+    ...profile,
+    root: mapFolder(profile.root, owner.id, (folder) => ({
+      ...folder,
+      pages: folder.pages.filter((page) => page.id !== pageId),
+    })),
+  };
+}
+
 function allButtonIds(folder: FolderDefinition, into = new Set<string>()): Set<string> {
   for (const page of folder.pages) for (const button of page.buttons) into.add(button.id);
   for (const child of folder.folders ?? []) allButtonIds(child, into);

@@ -13,7 +13,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   select: [key: number];
-  run: [key: number];
+  menu: [payload: { key: number; x: number; y: number }];
   dropAction: [payload: { key: number; actionType: string; label: string }];
   dropKey: [payload: { from: number; to: number }];
 }>();
@@ -35,7 +35,7 @@ const slots = computed(() => Array.from({ length: rows.value * cols.value }, (_,
       :pressed="pressedKeys.has(index)"
       :selected="selectedKey === index"
       @select="emit('select', $event)"
-      @run="emit('run', $event)"
+      @menu="emit('menu', $event)"
       @drop-action="emit('dropAction', $event)"
       @drop-key="emit('dropKey', $event)"
     />
