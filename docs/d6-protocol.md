@@ -137,6 +137,35 @@ Note the asymmetry: **input** ids are row-major top-left (1..15), while
 Reset (`key id 0`) means the firmware restarted; treat all held keys as
 released. Duplicate press reports mean a release was lost.
 
+### Only one key is tracked at a time
+
+The firmware keeps a single "current key" rather than a set of held ones.
+Press a second key while holding the first and it reports a release for the
+first, then a press for the second; release the second and the first is
+reported as pressed again, even though it never physically moved:
+
+```
+up   key 1     <- key 1 was still being held
+DOWN key 6
+up   key 6
+DOWN key 1     <- key 1 reported pressed again
+```
+
+Measured over 268 events read straight from the HID reports, bypassing any
+driver logic: a simultaneous hold was never reported once. Most likely a
+matrix without isolating diodes, where concurrent presses are electrically
+indistinguishable.
+
+Consequences for a driver:
+
+- Chords are impossible on this hardware. Do not offer them.
+- A synthetic release is byte-identical to a real one, so it cannot be
+  filtered out. Coalescing events that arrive close together would only trade
+  this for a worse bug — swallowed fast presses.
+- Binding actions to release rather than press is still the better default,
+  but be aware that holding a key while tapping another makes the held key's
+  release action fire repeatedly.
+
 ## Known quirks
 
 - Windows does **not** hand out HID devices exclusively, so the vendor

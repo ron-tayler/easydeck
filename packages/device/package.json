@@ -19,7 +19,9 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsc -p tsconfig.json && node --test \"dist/**/*.test.js\"",
-    "poc": "tsc -p tsconfig.json && node dist/examples/poc.js"
+    "poc": "tsc -p tsconfig.json && node dist/examples/poc.js",
+    "raw-input": "tsc -p tsconfig.json && node dist/examples/raw-input.js",
+    "key-monitor": "tsc -p tsconfig.json && node dist/examples/key-monitor.js"
   },
   "dependencies": {
     "node-hid": "^3.4.0"

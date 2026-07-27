@@ -9,6 +9,16 @@ importers:
   .: {}
 
   packages/daemon:
+    dependencies:
+      '@easydeck/device':
+        specifier: workspace:*
+        version: link:../device
+      '@easydeck/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@easydeck/renderer':
+        specifier: workspace:*
+        version: link:../renderer
     devDependencies:
       '@types/node':
         specifier: ^24.13.3
