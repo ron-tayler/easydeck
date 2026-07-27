@@ -4,10 +4,10 @@
  * Run with:  pnpm --filter @easydeck/daemon start
  *
  * Reads profiles and settings from the platform's configuration directory,
- * seeding a starter profile on first run so the deck does something useful
- * out of the box. Edit the JSON and restart to see changes; a live reload
- * arrives with the WebSocket API.
+ * seeding a starter profile on first run, then serves the API a configurator
+ * connects to. Editing a profile in a text editor reloads it live.
  */
+import { startApiServer } from '../infrastructure/api/websocket-server.js';
 import { configDir } from '../infrastructure/config-paths.js';
 import { FileProfileRepository } from '../infrastructure/file-profile-repository.js';
 import { FileSettingsRepository } from '../infrastructure/file-settings-repository.js';
@@ -43,19 +43,26 @@ async function main(): Promise<void> {
   }
 
   const deck = await startDeck({ profiles, settings });
-  console.log(`Config:   ${configDir()}`);
-  console.log(`Device:   ${deck.surface.info.modelName}`);
-  console.log(`Profile:  ${deck.controller.profileId}`);
-  if (deck.warning) console.warn(`Warning:  ${deck.warning}`);
-  console.log('\nRunning. Ctrl+C to stop.\n');
+  const state = await deck.state();
 
-  deck.controller.on('error', (error) => console.error(describe(error)));
-  deck.controller.on('pageChanged', (pageId) => console.log(`page -> ${pageId}`));
+  const api = await startApiServer({ service: deck, configDirectory: configDir() });
+
+  console.log(`Config:   ${configDir()}`);
+  console.log(`Device:   ${state.device.model}`);
+  console.log(`Profile:  ${state.activeProfileId}`);
+  console.log(`API:      ${api.url}?token=${api.token}`);
+  for (const warning of state.warnings) console.warn(`Warning:  ${warning}`);
+  console.log('\nRunning. Edit a profile to reload it live. Ctrl+C to stop.\n');
+
+  deck.on('actionError', (message) => console.error(`action: ${message}`));
+  deck.on('pageChanged', (pageId) => console.log(`page -> ${pageId}`));
+  deck.on('profilesChanged', () => console.log('profiles changed on disk'));
 
   const shutdown = () => {
-    void deck
-      .stop()
-      .catch((error) => console.error(error))
+    void Promise.resolve()
+      .then(() => api.close())
+      .then(() => deck.stop())
+      .catch((error) => console.error(describe(error)))
       .finally(() => process.exit(0));
   };
   process.on('SIGINT', shutdown);
@@ -63,6 +70,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
+  console.error(describe(error));
   process.exitCode = 1;
 });

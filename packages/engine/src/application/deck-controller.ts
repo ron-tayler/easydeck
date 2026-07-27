@@ -169,6 +169,16 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     this.requestPaint();
   }
 
+  /**
+   * Runs a key's bindings as if the hardware had reported a press and
+   * release. Lets a configurator try a button without reaching for the deck,
+   * and lets tests exercise a profile with no surface at all.
+   */
+  simulatePress(key: number): void {
+    this.handleKeyDown(key);
+    this.handleKeyUp(key);
+  }
+
   // --- internals ---------------------------------------------------------
 
   private get currentPage(): PageDefinition | undefined {

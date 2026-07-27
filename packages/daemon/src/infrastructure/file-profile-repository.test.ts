@@ -82,6 +82,18 @@ describe('FileProfileRepository', () => {
     assert.ok(list.length >= 3);
   });
 
+  // Notepad on Windows saves UTF-8 with a byte order mark, and JSON.parse
+  // rejects it — so the most obvious editor on the platform would produce a
+  // profile the daemon refuses to load.
+  it('loads a profile saved with a UTF-8 byte order mark', async () => {
+    const withBom = `﻿${JSON.stringify(profile('bommed', 'С меткой'))}`;
+    await writeFile(join(directory, 'bommed.json'), withBom, 'utf8');
+
+    const loaded = await repository.load('bommed');
+    assert.equal(loaded.name, 'С меткой');
+    assert.ok((await repository.list()).some((entry) => entry.id === 'bommed'));
+  });
+
   it('reports a missing profile clearly', async () => {
     await assert.rejects(repository.load('absent'), /No profile 'absent'/);
   });

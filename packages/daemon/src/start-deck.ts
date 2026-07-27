@@ -1,13 +1,13 @@
 import { createDeviceManager } from '@easydeck/device';
-import type { Surface } from '@easydeck/device';
 import { ActionRegistry, DeckController, createActionRegistry } from '@easydeck/engine';
 import type { ProfileDefinition } from '@easydeck/engine';
 import { createKeyRenderer } from '@easydeck/renderer';
 
+import { DeckService } from './application/deck-service.js';
+import type { ProfileRepository, SettingsRepository } from './application/ports/repositories.js';
 import { NoProfilesError, ProfileNotFoundError } from './domain/errors.js';
 import { DEFAULT_SETTINGS } from './domain/settings.js';
 import type { DaemonSettings } from './domain/settings.js';
-import type { ProfileRepository, SettingsRepository } from './application/ports/repositories.js';
 import { registerDeviceActions } from './infrastructure/actions/device-actions.js';
 import { registerKeyboardActions } from './infrastructure/actions/keyboard-actions.js';
 import { registerSystemActions } from './infrastructure/actions/system-actions.js';
@@ -28,27 +28,21 @@ export interface StartDeckOptions {
    * daemon's own system, device and (if available) keyboard actions.
    */
   readonly actions?: ActionRegistry;
-}
-
-export interface RunningDeck {
-  readonly surface: Surface;
-  readonly controller: DeckController;
-  readonly settings: DaemonSettings;
-  /** Set when keyboard emulation could not be loaded; everything else works. */
-  readonly warning?: string;
-  stop(): Promise<void>;
+  /** Reload the active profile when its file changes. On by default. */
+  readonly watchProfiles?: boolean;
 }
 
 /**
  * Opens the first supported device and runs a profile on it.
  *
- * This is the whole stack in one call, and the shape the daemon's service is
- * built around.
+ * This is the whole stack in one call, and what the daemon and its examples
+ * are built around.
  */
-export async function startDeck(options: StartDeckOptions = {}): Promise<RunningDeck> {
+export async function startDeck(options: StartDeckOptions = {}): Promise<DeckService> {
+  const profiles = options.profiles ?? new FileProfileRepository();
   const settingsRepository = options.settings ?? new FileSettingsRepository();
   const settings = await settingsRepository.load();
-  const profile = options.profile ?? (await resolveProfile(options.profiles, settings));
+  const profile = options.profile ?? (await resolveProfile(profiles, settings));
 
   const surface = await createDeviceManager().openFirst({
     brightness: options.brightness ?? settings.brightness,
@@ -57,13 +51,13 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<Running
   try {
     const renderer = await createKeyRenderer();
 
-    let warning: string | undefined;
+    const warnings: string[] = [];
     let actions = options.actions;
     if (!actions) {
       actions = registerSystemActions(createActionRegistry());
       registerDeviceActions(actions, surface);
       const keyboard = await registerKeyboardActions(actions);
-      warning = keyboard.reason;
+      if (keyboard.reason) warnings.push(keyboard.reason);
     }
 
     const controller = new DeckController(
@@ -75,17 +69,21 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<Running
     controller.load(profile);
     await controller.start();
 
-    return {
+    const watchDirectory =
+      options.watchProfiles !== false && profiles instanceof FileProfileRepository
+        ? profiles.path
+        : undefined;
+
+    return new DeckService({
       surface,
       controller,
-      settings,
-      warning,
-      async stop() {
-        await controller.stop();
-        await surface.clearAllKeys();
-        await surface.close();
-      },
-    };
+      actions,
+      profiles,
+      settings: settingsRepository,
+      settingsValue: { ...settings, brightness: options.brightness ?? settings.brightness },
+      warnings,
+      watchDirectory,
+    });
   } catch (error) {
     await surface.close().catch(() => undefined);
     throw error;
@@ -93,11 +91,9 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<Running
 }
 
 async function resolveProfile(
-  repository: ProfileRepository | undefined,
+  profiles: ProfileRepository,
   settings: DaemonSettings,
 ): Promise<ProfileDefinition> {
-  const profiles = repository ?? new FileProfileRepository();
-
   if (settings.activeProfileId) {
     if (await profiles.has(settings.activeProfileId)) return profiles.load(settings.activeProfileId);
     throw new ProfileNotFoundError(settings.activeProfileId);

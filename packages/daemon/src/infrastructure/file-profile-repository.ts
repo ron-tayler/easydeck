@@ -7,6 +7,7 @@ import type { ProfileDefinition } from '@easydeck/engine';
 import { InvalidProfileIdError, ProfileNotFoundError } from '../domain/errors.js';
 import type { ProfileRepository, ProfileSummary } from '../application/ports/repositories.js';
 import { profilesDir } from './config-paths.js';
+import { parseJsonText } from './read-json.js';
 
 /**
  * Profile ids double as file names, so they are restricted rather than
@@ -94,7 +95,7 @@ export class FileProfileRepository implements ProfileRepository {
   }
 
   private async read(file: string): Promise<ProfileDefinition> {
-    const profile = JSON.parse(await readFile(file, 'utf8')) as ProfileDefinition;
+    const profile = parseJsonText<ProfileDefinition>(await readFile(file, 'utf8'));
     validateProfile(profile);
     return profile;
   }
