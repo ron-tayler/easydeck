@@ -38,6 +38,9 @@ export class ApiHandler {
       case 'getPageView':
         return { keys: await this.deck.pageView() };
 
+      case 'getPlugins':
+        return { plugins: await this.deck.plugins() };
+
       case 'listProfiles':
         return { profiles: await this.deck.listProfiles() };
 
@@ -68,8 +71,24 @@ export class ApiHandler {
         this.deck.setVariable(text(params, 'name'), value(params, 'value'));
         return { ok: true };
 
+      case 'openFolder':
+        this.deck.openFolder(text(params, 'folderId'));
+        return { ok: true };
+
       case 'goToPage':
         this.deck.goToPage(text(params, 'pageId'));
+        return { ok: true };
+
+      case 'goUp':
+        this.deck.goUp();
+        return { ok: true };
+
+      case 'goHome':
+        this.deck.goHome();
+        return { ok: true };
+
+      case 'goBack':
+        this.deck.goBack();
         return { ok: true };
 
       case 'setBrightness':

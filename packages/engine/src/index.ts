@@ -24,10 +24,14 @@ export type {
 export { BUTTON_EVENTS, stringParam, numberParam, valueParam } from './domain/action.js';
 export type {
   ProfileDefinition,
+  FolderDefinition,
   PageDefinition,
   ButtonDefinition,
   ButtonStateDefinition,
+  DeckLocation,
 } from './domain/profile.js';
+export { PROFILE_FORMAT_VERSION, MAX_PAGES_PER_FOLDER } from './domain/profile.js';
+export { ProfileTree } from './domain/profile-tree.js';
 export { validateProfile } from './domain/validate-profile.js';
 export {
   EngineError,
@@ -41,7 +45,20 @@ export type { KeyRendererPort } from './application/ports/renderer-port.js';
 export type { ClockPort, TimerHandle } from './application/ports/clock-port.js';
 export { systemClock } from './application/ports/clock-port.js';
 export { ActionRegistry } from './application/action-registry.js';
-export { registerBuiltinActions } from './application/builtin-actions.js';
+export {
+  registerBuiltinActions,
+  EASYDECK_PLUGIN_ID,
+  easydeckManifest,
+} from './application/builtin-actions.js';
+export type {
+  PluginManifest,
+  ActionDefinition,
+  ParamDefinition,
+  ParamOption,
+  ParamType,
+  LocalizedText,
+} from './domain/plugin.js';
+export { PLUGIN_API_VERSION, localized } from './domain/plugin.js';
 export { DeckController } from './application/deck-controller.js';
 export type {
   DeckControllerOptions,

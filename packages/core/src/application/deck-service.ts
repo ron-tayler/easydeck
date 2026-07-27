@@ -7,6 +7,7 @@ import type {
   ActionRegistry,
   DeckController,
   KeyView,
+  PluginManifest,
   ProfileDefinition,
   VariableValue,
 } from '@easydeck/engine';
@@ -57,7 +58,7 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     this.brightness = options.settingsValue.brightness;
     this.activeProfileId = options.controller.profileId;
 
-    options.controller.on('pageChanged', (pageId) => this.emit('pageChanged', pageId));
+    options.controller.on('locationChanged', (location) => this.emit('locationChanged', location));
     options.controller.on('error', (error) => this.emit('actionError', error.message));
     options.controller.variables.onChange(() =>
       this.emit('variablesChanged', options.controller.variables.snapshot()),
@@ -96,7 +97,9 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
         keyHeight: surface.keyImage.height,
       },
       activeProfileId: controller.profileId,
-      pageId: controller.pageId,
+      location: controller.currentLocation,
+      folderPath: controller.folderPath.map((folder) => ({ id: folder.id, name: folder.name })),
+      pages: controller.currentFolderPages.map((page) => ({ id: page.id, name: page.name })),
       brightness: this.brightness,
       variables: controller.variables.snapshot(),
       actionTypes: actions.types().sort(),
@@ -106,6 +109,10 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
 
   async pageView(): Promise<readonly KeyView[]> {
     return this.options.controller.view();
+  }
+
+  async plugins(): Promise<readonly PluginManifest[]> {
+    return this.options.actions.plugins();
   }
 
   listProfiles(): Promise<ProfileSummary[]> {
@@ -147,6 +154,22 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
 
   goToPage(pageId: string): void {
     this.options.controller.goToPage(pageId);
+  }
+
+  openFolder(folderId: string): void {
+    this.options.controller.openFolder(folderId);
+  }
+
+  goUp(): void {
+    this.options.controller.goUp();
+  }
+
+  goHome(): void {
+    this.options.controller.goHome();
+  }
+
+  goBack(): void {
+    this.options.controller.goBack();
   }
 
   async setBrightness(percent: number): Promise<void> {

@@ -1,5 +1,5 @@
-import { stringParam } from '@easydeck/engine';
-import type { ActionRegistry } from '@easydeck/engine';
+import { PLUGIN_API_VERSION, stringParam } from '@easydeck/engine';
+import type { ActionRegistry, PluginManifest } from '@easydeck/engine';
 
 /**
  * Keyboard emulation, registered only when the native backend is present.
@@ -94,6 +94,37 @@ export function resolveKey(module: NutModule, token: string): number {
   throw new Error(`Unknown key '${token}' in hotkey`);
 }
 
+export const keyboardManifest: PluginManifest = {
+  id: 'keyboard',
+  name: { en: 'Keyboard', ru: 'Клавиатура' },
+  description: {
+    en: 'Sends key combinations and types text',
+    ru: 'Отправляет сочетания клавиш и печатает текст',
+  },
+  version: '1.0.0',
+  apiVersion: PLUGIN_API_VERSION,
+  builtIn: true,
+  actions: [
+    {
+      type: 'keyboard.hotkey',
+      label: { en: 'Press hotkey', ru: 'Нажать сочетание' },
+      params: [
+        {
+          name: 'keys',
+          type: 'hotkey',
+          label: { en: 'Combination', ru: 'Сочетание' },
+          placeholder: { en: 'ctrl+shift+m' },
+        },
+      ],
+    },
+    {
+      type: 'keyboard.type-text',
+      label: { en: 'Type text', ru: 'Напечатать текст' },
+      params: [{ name: 'text', type: 'text', label: { en: 'Text', ru: 'Текст' } }],
+    },
+  ],
+};
+
 export interface KeyboardActionsResult {
   readonly available: boolean;
   readonly reason?: string;
@@ -112,18 +143,20 @@ export async function registerKeyboardActions(
     };
   }
 
-  registry.register('hotkey', async (params) => {
-    const combo = stringParam(params, 'keys');
-    const keys = combo.split('+').map((token) => resolveKey(backend, token));
+  registry.installPlugin(keyboardManifest, {
+    'keyboard.hotkey': async (params) => {
+      const combo = stringParam(params, 'keys');
+      const keys = combo.split('+').map((token) => resolveKey(backend, token));
 
-    await backend.keyboard.pressKey(...keys);
-    await wait(KEY_HOLD_MS);
-    // Release in reverse so modifiers outlive the key they modify.
-    await backend.keyboard.releaseKey(...[...keys].reverse());
-  });
+      await backend.keyboard.pressKey(...keys);
+      await wait(KEY_HOLD_MS);
+      // Release in reverse so modifiers outlive the key they modify.
+      await backend.keyboard.releaseKey(...[...keys].reverse());
+    },
 
-  registry.register('type-text', async (params) => {
-    await backend.keyboard.type(stringParam(params, 'text'));
+    'keyboard.type-text': async (params) => {
+      await backend.keyboard.type(stringParam(params, 'text'));
+    },
   });
 
   return { available: true };

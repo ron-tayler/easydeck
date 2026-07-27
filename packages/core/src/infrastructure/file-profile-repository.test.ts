@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
+import { PROFILE_FORMAT_VERSION } from '@easydeck/engine';
 import type { ProfileDefinition } from '@easydeck/engine';
 
 import { FileProfileRepository, assertSafeProfileId } from './file-profile-repository.js';
@@ -11,12 +12,17 @@ import { FileSettingsRepository } from './file-settings-repository.js';
 
 function profile(id: string, name = 'Test'): ProfileDefinition {
   return {
+    formatVersion: PROFILE_FORMAT_VERSION,
     id,
     name,
     layout: { rows: 1, cols: 2 },
-    pages: [
-      { id: 'main', buttons: [{ id: 'b', key: 0, states: [{ id: 'default', visual: {} }] }] },
-    ],
+    root: {
+      id: `${id}-root`,
+      name: 'Root',
+      pages: [
+        { id: `${id}-main`, buttons: [{ id: 'b', key: 0, states: [{ id: 'default', visual: {} }] }] },
+      ],
+    },
   };
 }
 
@@ -44,7 +50,67 @@ describe('FileProfileRepository', () => {
     assert.equal(await repository.has('main'), true);
     const loaded = await repository.load('main');
     assert.equal(loaded.name, 'Основной');
-    assert.equal(loaded.pages[0]!.buttons[0]!.id, 'b');
+    assert.equal(loaded.root.pages[0]!.buttons[0]!.id, 'b');
+  });
+
+  // Profiles are user data in a folder people are told to edit by hand, so an
+  // upgrade must never be the reason someone's deck stops working.
+  it('migrates a version 1 profile, whose pages become the root scene', async () => {
+    // Its own directory: this profile would otherwise show up in the listing
+    // assertions of neighbouring tests.
+    const isolated = await mkdtemp(join(tmpdir(), 'easydeck-migrate-'));
+    const store = new FileProfileRepository(isolated);
+
+    const legacy = {
+      id: 'legacy',
+      name: 'Legacy',
+      layout: { rows: 1, cols: 2 },
+      initialPageId: 'old-main',
+      pages: [
+        {
+          id: 'old-main',
+          buttons: [
+            {
+              id: 'b',
+              key: 0,
+              states: [
+                {
+                  id: 'default',
+                  visual: {},
+                  actions: {
+                    up: [
+                      { type: 'open', params: { target: 'https://example.com' } },
+                      { type: 'increment-variable', params: { name: 'n' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    await writeFile(join(isolated, 'legacy.json'), JSON.stringify(legacy), 'utf8');
+
+    const loaded = await store.load('legacy');
+
+    assert.equal(loaded.formatVersion, PROFILE_FORMAT_VERSION);
+    assert.equal(loaded.root.pages[0]!.id, 'old-main');
+    assert.equal(loaded.root.pages[0]!.buttons[0]!.id, 'b');
+    assert.equal(loaded.initialPageId, 'old-main');
+
+    // Renaming the actions matters as much as reshaping the tree: a profile
+    // that loads but fails on the first press is worse than one that refuses.
+    assert.deepEqual(
+      loaded.root.pages[0]!.buttons[0]!.states[0]!.actions?.up?.map((action) => action.type),
+      ['system.open', 'easydeck.increment-variable'],
+    );
+    assert.equal(
+      loaded.root.pages[0]!.buttons[0]!.states[0]!.actions?.up?.[0]!.params?.['target'],
+      'https://example.com',
+    );
+
+    await rm(isolated, { recursive: true, force: true });
   });
 
   it('lists profiles sorted, with their names', async () => {
@@ -68,7 +134,10 @@ describe('FileProfileRepository', () => {
   });
 
   it('rejects a profile that fails engine validation', async () => {
-    const broken = { ...profile('broken'), pages: [] } as ProfileDefinition;
+    const broken = {
+      ...profile('broken'),
+      root: { id: 'broken-root', name: 'Root', pages: [] },
+    } as ProfileDefinition;
     await assert.rejects(repository.save(broken), /has no pages/);
   });
 

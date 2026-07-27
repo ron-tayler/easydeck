@@ -1,5 +1,11 @@
 import { onScopeDispose, readonly, ref, shallowRef } from 'vue';
-import type { DeckState, KeyView, ProfileSummary } from '@easydeck/core';
+import type {
+  DeckState,
+  KeyView,
+  PluginManifest,
+  ProfileDefinition,
+  ProfileSummary,
+} from '@easydeck/core';
 
 import { createClient } from '../api/client.js';
 import type { DeckClient } from '../api/client.js';
@@ -17,6 +23,9 @@ const connected = ref(false);
 const state = shallowRef<DeckState | undefined>();
 const keys = shallowRef<readonly KeyView[]>([]);
 const profiles = shallowRef<readonly ProfileSummary[]>([]);
+/** The active profile in full — the left panel needs its whole folder tree. */
+const profile = shallowRef<ProfileDefinition | undefined>();
+const plugins = shallowRef<readonly PluginManifest[]>([]);
 const pressedKeys = ref<ReadonlySet<number>>(new Set());
 const lastError = ref<string | undefined>();
 const loading = ref(true);
@@ -53,12 +62,38 @@ async function refreshProfiles(): Promise<void> {
   }
 }
 
+async function refreshProfile(): Promise<void> {
+  const id = state.value?.activeProfileId;
+  if (!id) {
+    profile.value = undefined;
+    return;
+  }
+
+  try {
+    const result = await client.call<{ profile: ProfileDefinition }>('getProfile', { id });
+    profile.value = result.profile;
+  } catch {
+    profile.value = undefined;
+  }
+}
+
+async function refreshPlugins(): Promise<void> {
+  try {
+    const result = await client.call<{ plugins: PluginManifest[] }>('getPlugins');
+    plugins.value = result.plugins;
+  } catch {
+    plugins.value = [];
+  }
+}
+
 const RETRY_DELAY_MS = 1200;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
 async function refreshAll(): Promise<void> {
   loading.value = true;
-  await Promise.all([refreshState(), refreshView(), refreshProfiles()]);
+  await Promise.all([refreshState(), refreshView(), refreshProfiles(), refreshPlugins()]);
+  // Needs the state first: which profile to fetch comes from it.
+  await refreshProfile();
   loading.value = false;
 
   // Opening the device takes a moment, and the window is usually ready first,
@@ -89,9 +124,9 @@ function start(): void {
   // A repaint on the device and a repaint here are triggered by the same
   // events, so the window cannot drift from the panel.
   client.on('state', () => void refreshAll());
-  client.on('pageChanged', () => void Promise.all([refreshState(), refreshView()]));
+  client.on('locationChanged', () => void Promise.all([refreshState(), refreshView()]));
   client.on('variablesChanged', () => void Promise.all([refreshState(), refreshView()]));
-  client.on('profilesChanged', () => void refreshProfiles());
+  client.on('profilesChanged', () => void Promise.all([refreshProfiles(), refreshProfile()]));
   client.on('actionError', (payload) => {
     lastError.value = (payload as { message?: string })?.message;
   });
@@ -109,6 +144,8 @@ export function useDeck() {
     state,
     keys,
     profiles,
+    profile,
+    plugins,
     pressedKeys: readonly(pressedKeys),
     lastError,
     loading: readonly(loading),
@@ -116,7 +153,9 @@ export function useDeck() {
     transportKind: client.kind,
     refresh: refreshAll,
     pressKey: (key: number) => client.call('simulateKey', { key }),
+    openFolder: (folderId: string) => client.call('openFolder', { folderId }),
     goToPage: (pageId: string) => client.call('goToPage', { pageId }),
+    goUp: () => client.call('goUp'),
     activateProfile: (id: string) => client.call('activateProfile', { id }),
     setBrightness: (percent: number) => client.call('setBrightness', { percent }),
   };

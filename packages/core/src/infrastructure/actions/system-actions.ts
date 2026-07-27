@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
-import { numberParam, stringParam } from '@easydeck/engine';
-import type { ActionRegistry } from '@easydeck/engine';
+import { PLUGIN_API_VERSION, numberParam, stringParam } from '@easydeck/engine';
+import type { ActionRegistry, PluginManifest } from '@easydeck/engine';
 
 /**
  * Actions that reach outside the process.
@@ -21,56 +21,177 @@ import type { ActionRegistry } from '@easydeck/engine';
 const OPENABLE_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'file:']);
 const DEFAULT_HTTP_TIMEOUT_MS = 10_000;
 
+export const systemManifest: PluginManifest = {
+  id: 'system',
+  name: { en: 'System', ru: 'Система' },
+  description: {
+    en: 'Launches programs and opens files, folders and links',
+    ru: 'Запуск программ и открытие файлов, папок и ссылок',
+  },
+  version: '1.0.0',
+  apiVersion: PLUGIN_API_VERSION,
+  builtIn: true,
+  actions: [
+    {
+      type: 'system.run-program',
+      label: { en: 'Run program', ru: 'Запустить программу' },
+      params: [
+        { name: 'command', type: 'file', label: { en: 'Program', ru: 'Программа' } },
+        {
+          name: 'args',
+          type: 'text',
+          label: { en: 'Arguments', ru: 'Аргументы' },
+          placeholder: { en: 'One per line', ru: 'По одному в строке' },
+          required: false,
+        },
+        {
+          name: 'cwd',
+          type: 'directory',
+          label: { en: 'Working folder', ru: 'Рабочая папка' },
+          required: false,
+        },
+      ],
+    },
+    {
+      type: 'system.open',
+      label: { en: 'Open file, folder or link', ru: 'Открыть файл, папку или ссылку' },
+      params: [
+        {
+          name: 'target',
+          type: 'string',
+          label: { en: 'Target', ru: 'Что открыть' },
+          placeholder: { en: 'https://… or a path', ru: 'https://… или путь' },
+        },
+      ],
+    },
+  ],
+};
+
+export const httpManifest: PluginManifest = {
+  id: 'http',
+  name: { en: 'HTTP', ru: 'HTTP' },
+  description: {
+    en: 'Calls web endpoints and webhooks',
+    ru: 'Запросы к веб-адресам и вебхукам',
+  },
+  version: '1.0.0',
+  apiVersion: PLUGIN_API_VERSION,
+  builtIn: true,
+  actions: [
+    {
+      type: 'http.request',
+      label: { en: 'HTTP request', ru: 'HTTP-запрос' },
+      params: [
+        { name: 'url', type: 'string', label: { en: 'URL', ru: 'Адрес' } },
+        {
+          name: 'method',
+          type: 'select',
+          label: { en: 'Method', ru: 'Метод' },
+          required: false,
+          default: 'GET',
+          options: [
+            { value: 'GET', label: { en: 'GET' } },
+            { value: 'POST', label: { en: 'POST' } },
+            { value: 'PUT', label: { en: 'PUT' } },
+            { value: 'PATCH', label: { en: 'PATCH' } },
+            { value: 'DELETE', label: { en: 'DELETE' } },
+          ],
+        },
+        { name: 'body', type: 'text', label: { en: 'Body', ru: 'Тело' }, required: false },
+        {
+          name: 'timeoutMs',
+          type: 'number',
+          label: { en: 'Timeout, ms', ru: 'Таймаут, мс' },
+          required: false,
+          default: DEFAULT_HTTP_TIMEOUT_MS,
+          min: 100,
+        },
+      ],
+    },
+  ],
+};
+
+export const easydeckTimingActions = [
+  {
+    type: 'easydeck.delay',
+    label: { en: 'Wait', ru: 'Подождать' },
+    description: {
+      en: 'Pauses before the next action of the same button',
+      ru: 'Пауза перед следующим действием той же кнопки',
+    },
+    group: { en: 'Flow', ru: 'Поток' },
+    params: [
+      {
+        name: 'ms',
+        type: 'number' as const,
+        label: { en: 'Milliseconds', ru: 'Миллисекунды' },
+        default: 100,
+        min: 0,
+      },
+    ],
+  },
+];
+
 export function registerSystemActions(registry: ActionRegistry): ActionRegistry {
-  registry.register('run-program', (params) => {
-    const command = stringParam(params, 'command');
-    const args = toStringArray(params['args']);
-    const cwd = typeof params['cwd'] === 'string' ? params['cwd'] : undefined;
+  registry.installPlugin(systemManifest, {
+    'system.run-program': (params) => {
+      const command = stringParam(params, 'command');
+      const args = toStringArray(params['args']);
+      const cwd = typeof params['cwd'] === 'string' && params['cwd'].length > 0 ? params['cwd'] : undefined;
 
-    // Detached and unref'd: the deck must not hold the program open, nor die
-    // with it. shell:false keeps parameters from being reinterpreted.
-    const child = spawn(command, args, { cwd, detached: true, stdio: 'ignore', shell: false });
-    child.unref();
+      // Detached and unref'd: the deck must not hold the program open, nor die
+      // with it. shell:false keeps parameters from being reinterpreted.
+      const child = spawn(command, args, { cwd, detached: true, stdio: 'ignore', shell: false });
+      child.unref();
+    },
+
+    'system.open': (params) => {
+      const target = stringParam(params, 'target');
+      assertOpenable(target);
+      openTarget(target);
+    },
   });
 
-  registry.register('open', (params) => {
-    const target = stringParam(params, 'target');
-    assertOpenable(target);
+  registry.installPlugin(httpManifest, {
+    'http.request': async (params) => {
+      const url = stringParam(params, 'url');
+      assertHttp(url);
 
-    const [command, args] = openCommand(target, parseScheme(target) !== undefined);
-    const child = spawn(command, args, { detached: true, stdio: 'ignore', shell: false });
-    child.unref();
+      const method = typeof params['method'] === 'string' ? params['method'].toUpperCase() : 'GET';
+      const headers = toStringRecord(params['headers']);
+      const body = typeof params['body'] === 'string' ? params['body'] : undefined;
+      const timeout = numberParam(params, 'timeoutMs', DEFAULT_HTTP_TIMEOUT_MS);
+
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: method === 'GET' || method === 'HEAD' ? undefined : body,
+        signal: AbortSignal.timeout(timeout),
+      });
+
+      // Surfaced as a failed action so the host logs it instead of failing
+      // silently — a webhook that quietly 500s is worse than a noisy one.
+      if (!response.ok) {
+        throw new Error(`${method} ${url} responded ${response.status} ${response.statusText}`);
+      }
+    },
   });
 
-  registry.register('http-request', async (params) => {
-    const url = stringParam(params, 'url');
-    assertHttp(url);
-
-    const method = typeof params['method'] === 'string' ? params['method'].toUpperCase() : 'GET';
-    const headers = toStringRecord(params['headers']);
-    const body = typeof params['body'] === 'string' ? params['body'] : undefined;
-    const timeout = numberParam(params, 'timeoutMs', DEFAULT_HTTP_TIMEOUT_MS);
-
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: method === 'GET' || method === 'HEAD' ? undefined : body,
-      signal: AbortSignal.timeout(timeout),
-    });
-
-    // Surfaced as a failed action so the daemon logs it instead of failing
-    // silently — a webhook that quietly 500s is worse than a noisy one.
-    if (!response.ok) {
-      throw new Error(`${method} ${url} responded ${response.status} ${response.statusText}`);
-    }
-  });
-
-  registry.register('delay', async (params) => {
-    const ms = numberParam(params, 'ms', 100);
-    await new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+  registry.extendPlugin('easydeck', easydeckTimingActions, {
+    'easydeck.delay': async (params) => {
+      const ms = numberParam(params, 'ms', 100);
+      await new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+    },
   });
 
   return registry;
+}
+
+/** Hands a URL or path to whatever the platform uses to open it. */
+export function openTarget(target: string): void {
+  const [command, args] = openCommand(target, parseScheme(target) !== undefined);
+  const child = spawn(command, args, { detached: true, stdio: 'ignore', shell: false });
+  child.unref();
 }
 
 export function assertOpenable(target: string): void {

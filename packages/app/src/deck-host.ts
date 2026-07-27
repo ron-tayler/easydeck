@@ -15,6 +15,7 @@ import type {
   DeckService,
   DeckState,
   KeyView,
+  PluginManifest,
   ProfileDefinition,
   ProfileSummary,
   RunningApiServer,
@@ -132,6 +133,10 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     return this.require().pageView();
   }
 
+  plugins(): Promise<readonly PluginManifest[]> {
+    return this.require().plugins();
+  }
+
   listProfiles(): Promise<ProfileSummary[]> {
     return this.require().listProfiles();
   }
@@ -156,8 +161,24 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     this.require().setVariable(name, value);
   }
 
+  openFolder(folderId: string): void {
+    this.require().openFolder(folderId);
+  }
+
   goToPage(pageId: string): void {
     this.require().goToPage(pageId);
+  }
+
+  goUp(): void {
+    this.require().goUp();
+  }
+
+  goHome(): void {
+    this.require().goHome();
+  }
+
+  goBack(): void {
+    this.require().goBack();
   }
 
   setBrightness(percent: number): Promise<void> {
@@ -223,7 +244,7 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
   /** Re-emits a deck's events as the host's own, so clients see one stream. */
   private forward(deck: DeckService): void {
     deck.on('state', (state) => this.emit('state', state));
-    deck.on('pageChanged', (pageId) => this.emit('pageChanged', pageId));
+    deck.on('locationChanged', (location) => this.emit('locationChanged', location));
     deck.on('variablesChanged', (variables) => this.emit('variablesChanged', variables));
     deck.on('keyDown', (key) => this.emit('keyDown', key));
     deck.on('keyUp', (key) => this.emit('keyUp', key));

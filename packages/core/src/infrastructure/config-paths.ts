@@ -31,6 +31,10 @@ export function profilesDir(): string {
   return join(configDir(), 'profiles');
 }
 
+export function pluginsDir(): string {
+  return join(configDir(), 'plugins');
+}
+
 export function settingsFile(): string {
   return join(configDir(), 'settings.json');
 }

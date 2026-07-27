@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { KeyView, ProfileDefinition, VariableValue } from '@easydeck/engine';
+import { PLUGIN_API_VERSION, PROFILE_FORMAT_VERSION } from '@easydeck/engine';
+import type { KeyView, PluginManifest, ProfileDefinition, VariableValue } from '@easydeck/engine';
 
 import type { DeckState } from '../domain/api-messages.js';
 import { ApiHandler } from './api-handler.js';
@@ -10,12 +11,17 @@ import type { ProfileSummary } from './ports/repositories.js';
 
 function validProfile(id = 'p'): ProfileDefinition {
   return {
+    formatVersion: PROFILE_FORMAT_VERSION,
     id,
     name: 'Profile',
     layout: { rows: 1, cols: 2 },
-    pages: [
-      { id: 'main', buttons: [{ id: 'b', key: 0, states: [{ id: 'default', visual: {} }] }] },
-    ],
+    root: {
+      id: 'root',
+      name: 'Root',
+      pages: [
+        { id: 'main', buttons: [{ id: 'b', key: 0, states: [{ id: 'default', visual: {} }] }] },
+      ],
+    },
   };
 }
 
@@ -31,7 +37,9 @@ class FakeDeck implements DeckFacade {
       protocolVersion: 1,
       device: { model: 'Fake', rows: 1, cols: 2, keyWidth: 112, keyHeight: 112 },
       activeProfileId: 'p',
-      pageId: 'main',
+      location: { folderId: 'root', pageId: 'main' },
+      folderPath: [{ id: 'root', name: 'Root' }],
+      pages: [{ id: 'main' }],
       brightness: 60,
       variables: { a: 1 },
       actionTypes: ['set-variable'],
@@ -42,6 +50,19 @@ class FakeDeck implements DeckFacade {
   async pageView(): Promise<readonly KeyView[]> {
     this.calls.push('pageView');
     return [{ key: 0, buttonId: 'b', stateId: 'default', visual: { label: { text: 'Hi' } } }];
+  }
+
+  async plugins(): Promise<readonly PluginManifest[]> {
+    this.calls.push('plugins');
+    return [
+      {
+        id: 'demo',
+        name: { en: 'Demo' },
+        version: '1.0.0',
+        apiVersion: PLUGIN_API_VERSION,
+        actions: [{ type: 'demo.do', label: { en: 'Do it' } }],
+      },
+    ];
   }
 
   async listProfiles(): Promise<ProfileSummary[]> {
@@ -72,8 +93,24 @@ class FakeDeck implements DeckFacade {
     this.calls.push(`setVariable:${name}=${String(value)}`);
   }
 
+  openFolder(folderId: string): void {
+    this.calls.push(`openFolder:${folderId}`);
+  }
+
   goToPage(pageId: string): void {
     this.calls.push(`goToPage:${pageId}`);
+  }
+
+  goUp(): void {
+    this.calls.push('goUp');
+  }
+
+  goHome(): void {
+    this.calls.push('goHome');
+  }
+
+  goBack(): void {
+    this.calls.push('goBack');
   }
 
   async setBrightness(percent: number): Promise<void> {
@@ -100,7 +137,8 @@ describe('ApiHandler', () => {
     assert.equal(response.ok, true);
     const state = response.result as DeckState;
     assert.equal(state.device.model, 'Fake');
-    assert.equal(state.pageId, 'main');
+    assert.equal(state.location?.pageId, 'main');
+    assert.deepEqual(state.folderPath, [{ id: 'root', name: 'Root' }]);
   });
 
   // The UI renders the panel from this, rather than resolving button states
@@ -118,6 +156,17 @@ describe('ApiHandler', () => {
     });
   });
 
+  // The configurator builds its action picker and every parameter form from
+  // these declarations, so they have to travel over the API intact.
+  it('answers getPlugins with the installed manifests', async () => {
+    const response = await new ApiHandler(new FakeDeck()).handle(request('getPlugins'));
+
+    assert.equal(response.ok, true);
+    const { plugins } = response.result as { plugins: PluginManifest[] };
+    assert.equal(plugins[0]?.id, 'demo');
+    assert.equal(plugins[0]?.actions[0]?.type, 'demo.do');
+  });
+
   it('routes each method to the deck exactly once', async () => {
     const deck = new FakeDeck();
     const handler = new ApiHandler(deck);
@@ -127,6 +176,10 @@ describe('ApiHandler', () => {
     await handler.handle(request('activateProfile', { id: 'p' }));
     await handler.handle(request('setVariable', { name: 'mic', value: 'on' }));
     await handler.handle(request('goToPage', { pageId: 'second' }));
+    await handler.handle(request('openFolder', { folderId: 'tools' }));
+    await handler.handle(request('goUp'));
+    await handler.handle(request('goHome'));
+    await handler.handle(request('goBack'));
     await handler.handle(request('setBrightness', { percent: 42 }));
     await handler.handle(request('simulateKey', { key: 3 }));
 
@@ -136,6 +189,10 @@ describe('ApiHandler', () => {
       'activateProfile:p',
       'setVariable:mic=on',
       'goToPage:second',
+      'openFolder:tools',
+      'goUp',
+      'goHome',
+      'goBack',
       'setBrightness:42',
       'simulateKey:3',
     ]);
@@ -152,7 +209,7 @@ describe('ApiHandler', () => {
 
   it('validates a profile before storing it, and says what is wrong', async () => {
     const deck = new FakeDeck();
-    const broken = { ...validProfile(), pages: [] };
+    const broken = { ...validProfile(), root: { id: 'root', name: 'Root', pages: [] } };
 
     const response = await new ApiHandler(deck).handle(request('saveProfile', { profile: broken }));
 

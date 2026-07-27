@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { ButtonVisual } from '../domain/visual.js';
+import { PROFILE_FORMAT_VERSION } from '../domain/profile.js';
 import type { ProfileDefinition } from '../domain/profile.js';
+import type { ButtonVisual } from '../domain/visual.js';
 import { ActionRegistry } from './action-registry.js';
 import { registerBuiltinActions } from './builtin-actions.js';
 import { DeckController } from './deck-controller.js';
@@ -44,7 +45,6 @@ class FakeSurface implements SurfacePort {
     for (const listener of this.upListeners) listener(key);
   }
 
-  /** What each key currently shows, by last write. */
   lastText(key: number): string | undefined {
     return [...this.writes].reverse().find((w) => w.key === key)?.text;
   }
@@ -71,7 +71,6 @@ class ManualClock implements ClockPort {
     this.pending.delete(handle as number);
   }
 
-  /** Fires every timer currently scheduled. */
   fire(): void {
     for (const [handle, callback] of [...this.pending]) {
       this.pending.delete(handle);
@@ -84,69 +83,120 @@ class ManualClock implements ClockPort {
   }
 }
 
-const micProfile: ProfileDefinition = {
+/**
+ * Root scene with two pages and a child scene, exercising both ways of
+ * organising a profile at once.
+ */
+const testProfile: ProfileDefinition = {
+  formatVersion: PROFILE_FORMAT_VERSION,
   id: 'test',
   name: 'Test',
   layout: { rows: 1, cols: 3 },
   variables: { micOn: 'on', viewers: 0 },
-  pages: [
-    {
-      id: 'main',
-      buttons: [
-        {
-          id: 'mic',
-          key: 0,
-          stateFrom: 'micOn',
-          states: [
-            {
-              id: 'on',
-              visual: { background: '#0f0', label: { text: 'Мик вкл' } },
-              actions: { down: [{ type: 'set-variable', params: { name: 'micOn', value: 'off' } }] },
-            },
-            {
-              id: 'off',
-              visual: { background: '#f00', label: { text: 'Мик выкл' } },
-              actions: { down: [{ type: 'set-variable', params: { name: 'micOn', value: 'on' } }] },
-            },
-          ],
-        },
-        {
-          id: 'counter',
-          key: 1,
-          states: [
-            {
-              id: 'default',
-              visual: { background: '#222', label: { text: 'Зрителей: {{viewers}}' } },
-              actions: {
-                down: [{ type: 'increment-variable', params: { name: 'viewers' } }],
-                longPress: [{ type: 'set-variable', params: { name: 'viewers', value: 0 } }],
+  root: {
+    id: 'root',
+    name: 'Root',
+    pages: [
+      {
+        id: 'main',
+        buttons: [
+          {
+            id: 'mic',
+            key: 0,
+            stateFrom: 'micOn',
+            states: [
+              {
+                id: 'on',
+                visual: { background: '#0f0', label: { text: 'Мик вкл' } },
+                actions: {
+                  down: [{ type: 'easydeck.set-variable', params: { name: 'micOn', value: 'off' } }],
+                },
               },
-            },
-          ],
-        },
-        {
-          id: 'nav',
-          key: 2,
-          states: [
-            {
-              id: 'default',
-              visual: { background: '#00f', label: { text: 'Вторая' } },
-              actions: { up: [{ type: 'go-to-page', params: { pageId: 'second' } }] },
-            },
-          ],
-        },
-      ],
-    },
-    {
-      id: 'second',
-      buttons: [
-        { id: 'back', key: 0, states: [{ id: 'default', visual: { label: { text: 'Назад' } } }] },
-      ],
-    },
-  ],
+              {
+                id: 'off',
+                visual: { background: '#f00', label: { text: 'Мик выкл' } },
+                actions: {
+                  down: [{ type: 'easydeck.set-variable', params: { name: 'micOn', value: 'on' } }],
+                },
+              },
+            ],
+          },
+          {
+            id: 'counter',
+            key: 1,
+            states: [
+              {
+                id: 'default',
+                visual: { background: '#222', label: { text: 'Зрителей: {{viewers}}' } },
+                actions: {
+                  down: [{ type: 'easydeck.increment-variable', params: { name: 'viewers' } }],
+                  longPress: [
+                    { type: 'easydeck.set-variable', params: { name: 'viewers', value: 0 } },
+                  ],
+                },
+              },
+            ],
+          },
+          {
+            id: 'to-page-2',
+            key: 2,
+            states: [
+              {
+                id: 'default',
+                visual: { background: '#00f', label: { text: 'Стр. 2' } },
+                actions: {
+                  up: [{ type: 'easydeck.go-to-page', params: { pageId: 'main-2' } }],
+                },
+              },
+            ],
+          },
+        ],
+      },
+      {
+        id: 'main-2',
+        buttons: [
+          {
+            id: 'to-tools',
+            key: 0,
+            states: [
+              {
+                id: 'default',
+                visual: { label: { text: 'Инструменты' } },
+                actions: { up: [{ type: 'easydeck.open-folder', params: { folderId: 'tools' } }] },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    folders: [
+      {
+        id: 'tools',
+        name: 'Tools',
+        pages: [
+          {
+            id: 'tools-main',
+            buttons: [
+              {
+                id: 'back',
+                key: 0,
+                states: [
+                  {
+                    id: 'default',
+                    visual: { label: { text: 'Наверх' } },
+                    actions: { up: [{ type: 'easydeck.go-up' }] },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
 };
 
-async function setup(profile = micProfile) {
+async function setup(profile = testProfile) {
   const surface = new FakeSurface();
   const clock = new ManualClock();
   const registry = registerBuiltinActions(new ActionRegistry());
@@ -163,12 +213,12 @@ async function setup(profile = micProfile) {
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 describe('DeckController', () => {
-  it('paints every button of the initial page, with variables substituted', async () => {
-    const { surface } = await setup();
+  it('starts on the root folderial first page and paints it', async () => {
+    const { surface, controller } = await setup();
 
+    assert.deepEqual(controller.currentLocation, { folderId: 'root', pageId: 'main' });
     assert.equal(surface.lastText(0), '#0f0|Мик вкл');
     assert.equal(surface.lastText(1), '#222|Зрителей: 0');
-    assert.equal(surface.lastText(2), '#00f|Вторая');
   });
 
   it('refuses a profile authored for a different layout', async () => {
@@ -176,7 +226,7 @@ describe('DeckController', () => {
     const controller = new DeckController(surface, fakeRenderer, new ActionRegistry());
 
     assert.throws(
-      () => controller.load({ ...micProfile, layout: { rows: 3, cols: 5 } }),
+      () => controller.load({ ...testProfile, layout: { rows: 3, cols: 5 } }),
       /authored for 3x5, but the surface is 1x3/,
     );
   });
@@ -217,7 +267,6 @@ describe('DeckController', () => {
     await settle();
     assert.equal(surface.lastText(1), '#222|Зрителей: 2');
 
-    // Released before the timer fires: no longPress.
     surface.release(1);
     assert.equal(clock.pendingCount, 0);
 
@@ -228,8 +277,6 @@ describe('DeckController', () => {
   });
 
   it('swallows the release that follows a long press', async () => {
-    // Otherwise hold-to-reset would reset the counter and then count the
-    // release as a click, leaving it at 1.
     const { surface, clock } = await setup();
 
     surface.press(1);
@@ -241,16 +288,85 @@ describe('DeckController', () => {
     assert.equal(surface.lastText(1), '#222|Зрителей: 0');
   });
 
-  it('runs up actions and clears keys the new page does not use', async () => {
+  it('moves between pages of a folder and clears keys the new page does not use', async () => {
     const { surface, controller } = await setup();
 
     surface.press(2);
     surface.release(2);
     await settle();
 
-    assert.equal(controller.pageId, 'second');
-    assert.equal(surface.lastText(0), '-|Назад');
+    assert.deepEqual(controller.currentLocation, { folderId: 'root', pageId: 'main-2' });
+    assert.equal(surface.lastText(0), '-|Инструменты');
     assert.deepEqual(surface.cleared, [1, 2]);
+  });
+
+  it('enters a child folder and comes back up', async () => {
+    const { surface, controller } = await setup();
+
+    controller.goToPage('main-2');
+    await settle();
+    surface.press(0);
+    surface.release(0);
+    await settle();
+
+    assert.deepEqual(controller.currentLocation, { folderId: 'tools', pageId: 'tools-main' });
+    assert.deepEqual(
+      controller.folderPath.map((f) => f.id),
+      ['root', 'tools'],
+    );
+
+    surface.press(0);
+    surface.release(0);
+    await settle();
+    assert.equal(controller.currentLocation?.folderId, 'root');
+  });
+
+  // A "back" button on the top level should be inert, not throw: the profile
+  // author cannot know where the user will be when they press it.
+  it('treats going up from the root as a no-op', async () => {
+    const { controller } = await setup();
+
+    assert.doesNotThrow(() => controller.goUp());
+    assert.equal(controller.currentLocation?.folderId, 'root');
+  });
+
+  it('retraces visited locations with goBack', async () => {
+    const { controller } = await setup();
+
+    controller.goToPage('main-2');
+    controller.openFolder('tools');
+    await settle();
+
+    controller.goBack();
+    assert.equal(controller.currentLocation?.pageId, 'main-2');
+
+    controller.goBack();
+    assert.equal(controller.currentLocation?.pageId, 'main');
+
+    // Exhausted history is silent, for the same reason goUp is.
+    assert.doesNotThrow(() => controller.goBack());
+  });
+
+  it('reports the pages of the current folder for a page strip', async () => {
+    const { controller } = await setup();
+
+    assert.deepEqual(
+      controller.currentFolderPages.map((page) => page.id),
+      ['main', 'main-2'],
+    );
+
+    controller.openFolder('tools');
+    assert.deepEqual(
+      controller.currentFolderPages.map((page) => page.id),
+      ['tools-main'],
+    );
+  });
+
+  it('rejects navigating to something that does not exist', async () => {
+    const { controller } = await setup();
+
+    assert.throws(() => controller.openFolder('nope'), /No folder 'nope'/);
+    assert.throws(() => controller.goToPage('nope'), /No page 'nope'/);
   });
 
   it('keeps running when an action fails, and reports it', async () => {
@@ -261,21 +377,25 @@ describe('DeckController', () => {
     });
     const controller = new DeckController(surface, fakeRenderer, registry);
     controller.load({
-      ...micProfile,
-      pages: [
-        {
-          id: 'main',
-          buttons: [
-            {
-              id: 'b',
-              key: 0,
-              states: [
-                { id: 'default', visual: { label: { text: 'x' } }, actions: { down: [{ type: 'boom' }] } },
-              ],
-            },
-          ],
-        },
-      ],
+      ...testProfile,
+      root: {
+        id: 'root',
+        name: 'Root',
+        pages: [
+          {
+            id: 'main',
+            buttons: [
+              {
+                id: 'b',
+                key: 0,
+                states: [
+                  { id: 'default', visual: { label: { text: 'x' } }, actions: { down: [{ type: 'boom' }] } },
+                ],
+              },
+            ],
+          },
+        ],
+      },
     });
 
     const errors: Error[] = [];

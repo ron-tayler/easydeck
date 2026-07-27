@@ -9,6 +9,7 @@ import { NoProfilesError, ProfileNotFoundError } from './domain/errors.js';
 import { DEFAULT_SETTINGS } from './domain/settings.js';
 import type { DaemonSettings } from './domain/settings.js';
 import { registerDeviceActions } from './infrastructure/actions/device-actions.js';
+import { registerEasyDeckFolderActions } from './infrastructure/actions/easydeck-actions.js';
 import { registerKeyboardActions } from './infrastructure/actions/keyboard-actions.js';
 import { registerSystemActions } from './infrastructure/actions/system-actions.js';
 import { FileProfileRepository } from './infrastructure/file-profile-repository.js';
@@ -55,6 +56,7 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
     let actions = options.actions;
     if (!actions) {
       actions = registerSystemActions(createActionRegistry());
+      registerEasyDeckFolderActions(actions);
       registerDeviceActions(actions, surface);
       const keyboard = await registerKeyboardActions(actions);
       if (keyboard.reason) warnings.push(keyboard.reason);

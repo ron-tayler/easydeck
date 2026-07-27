@@ -55,7 +55,9 @@ async function main(): Promise<void> {
   console.log('\nRunning. Edit a profile to reload it live. Ctrl+C to stop.\n');
 
   deck.on('actionError', (message) => console.error(`action: ${message}`));
-  deck.on('pageChanged', (pageId) => console.log(`page -> ${pageId}`));
+  deck.on('locationChanged', (location) =>
+    console.log(`location -> ${location.folderId} / ${location.pageId}`),
+  );
   deck.on('profilesChanged', () => console.log('profiles changed on disk'));
 
   const shutdown = () => {

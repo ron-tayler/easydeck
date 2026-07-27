@@ -7,6 +7,7 @@ import type { ProfileDefinition } from '@easydeck/engine';
 import { InvalidProfileIdError, ProfileNotFoundError } from '../domain/errors.js';
 import type { ProfileRepository, ProfileSummary } from '../application/ports/repositories.js';
 import { profilesDir } from './config-paths.js';
+import { migrateProfile } from './migrate-profile.js';
 import { parseJsonText } from './read-json.js';
 
 /**
@@ -95,7 +96,9 @@ export class FileProfileRepository implements ProfileRepository {
   }
 
   private async read(file: string): Promise<ProfileDefinition> {
-    const profile = parseJsonText<ProfileDefinition>(await readFile(file, 'utf8'));
+    // Migrated before validation: an older document is valid for its own
+    // version, and refusing it would punish a user for upgrading.
+    const profile = migrateProfile(parseJsonText(await readFile(file, 'utf8')));
     validateProfile(profile);
     return profile;
   }

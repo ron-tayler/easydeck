@@ -1,4 +1,4 @@
-import type { KeyView, ProfileDefinition, VariableValue } from '@easydeck/engine';
+import type { KeyView, PluginManifest, ProfileDefinition, VariableValue } from '@easydeck/engine';
 
 import type { DeckState } from '../../domain/api-messages.js';
 import type { DeckEvents } from './deck-events.js';
@@ -15,6 +15,13 @@ export interface DeckFacade {
   state(): Promise<DeckState>;
   /** The current page, resolved — what each key is showing right now. */
   pageView(): Promise<readonly KeyView[]>;
+  /**
+   * Installed plugins with their action declarations.
+   *
+   * The configurator builds its action picker and every parameter form from
+   * these, which is why a plugin describes its parameters as data.
+   */
+  plugins(): Promise<readonly PluginManifest[]>;
 
   listProfiles(): Promise<ProfileSummary[]>;
   getProfile(id: string): Promise<ProfileDefinition>;
@@ -23,7 +30,13 @@ export interface DeckFacade {
   activateProfile(id: string): Promise<void>;
 
   setVariable(name: string, value: VariableValue): void;
+
+  openFolder(folderId: string): void;
   goToPage(pageId: string): void;
+  goUp(): void;
+  goHome(): void;
+  goBack(): void;
+
   setBrightness(percent: number): Promise<void>;
   /** Runs a key's actions as if it had been pressed, for testing from a UI. */
   simulateKey(key: number): void;

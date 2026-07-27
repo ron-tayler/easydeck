@@ -1,4 +1,4 @@
-import type { VariableValue } from '@easydeck/engine';
+import type { DeckLocation, VariableValue } from '@easydeck/engine';
 
 import type { DeckState } from '../../domain/api-messages.js';
 
@@ -13,7 +13,7 @@ import type { DeckState } from '../../domain/api-messages.js';
  */
 export interface DeckEvents {
   state: [state: DeckState];
-  pageChanged: [pageId: string];
+  locationChanged: [location: DeckLocation];
   variablesChanged: [variables: Record<string, VariableValue>];
   keyDown: [key: number];
   keyUp: [key: number];

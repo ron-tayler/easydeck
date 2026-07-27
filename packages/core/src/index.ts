@@ -14,6 +14,7 @@
 // core hands it.
 export type {
   ProfileDefinition,
+  FolderDefinition,
   PageDefinition,
   ButtonDefinition,
   ButtonStateDefinition,
@@ -22,7 +23,14 @@ export type {
   ButtonVisual,
   KeyView,
   VariableValue,
+  PluginManifest,
+  ActionDefinition,
+  ParamDefinition,
+  ParamOption,
+  ParamType,
+  LocalizedText,
 } from '@easydeck/engine';
+export { PLUGIN_API_VERSION, localized } from '@easydeck/engine';
 
 export type { DaemonSettings } from './domain/settings.js';
 export { DEFAULT_SETTINGS, normalizeSettings } from './domain/settings.js';
@@ -53,7 +61,9 @@ export { ApiHandler } from './application/api-handler.js';
 export { DeckService } from './application/deck-service.js';
 export type { DeckServiceEvents, DeckServiceOptions } from './application/deck-service.js';
 
-export { configDir, profilesDir, settingsFile } from './infrastructure/config-paths.js';
+export { configDir, profilesDir, pluginsDir, settingsFile } from './infrastructure/config-paths.js';
+export { registerEasyDeckFolderActions } from './infrastructure/actions/easydeck-actions.js';
+export { migrateProfile } from './infrastructure/migrate-profile.js';
 export { FileProfileRepository, assertSafeProfileId } from './infrastructure/file-profile-repository.js';
 export { FileSettingsRepository } from './infrastructure/file-settings-repository.js';
 export { registerSystemActions } from './infrastructure/actions/system-actions.js';

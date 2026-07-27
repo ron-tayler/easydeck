@@ -35,7 +35,7 @@ export type ServerMessage = ResponseMessage | EventMessage;
 export type ApiEvent =
   /** Full snapshot, sent on connect and after a profile is (re)loaded. */
   | 'state'
-  | 'pageChanged'
+  | 'locationChanged'
   | 'variablesChanged'
   | 'keyDown'
   | 'keyUp'
@@ -55,7 +55,12 @@ export interface DeckState {
     readonly keyHeight: number;
   };
   readonly activeProfileId?: string;
-  readonly pageId?: string;
+  /** Where the deck is: which scene, which of its pages. */
+  readonly location?: { readonly folderId: string; readonly pageId: string };
+  /** Root first, current folder last — a breadcrumb the UI can render. */
+  readonly folderPath: readonly { readonly id: string; readonly name: string }[];
+  /** Pages of the current folder, in author order, for the page strip. */
+  readonly pages: readonly { readonly id: string; readonly name?: string }[];
   readonly brightness: number;
   readonly variables: Record<string, string | number | boolean>;
   readonly actionTypes: readonly string[];

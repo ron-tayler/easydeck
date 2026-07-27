@@ -104,8 +104,8 @@ export async function startApiServer(options: ApiServerOptions): Promise<Running
 
   const service = options.service;
   service.onDeckEvent('state', (state) => broadcast({ type: 'event', event: 'state', payload: state }));
-  service.onDeckEvent('pageChanged', (pageId) =>
-    broadcast({ type: 'event', event: 'pageChanged', payload: { pageId } }),
+  service.onDeckEvent('locationChanged', (location) =>
+    broadcast({ type: 'event', event: 'locationChanged', payload: location }),
   );
   service.onDeckEvent('variablesChanged', (variables) =>
     broadcast({ type: 'event', event: 'variablesChanged', payload: { variables } }),

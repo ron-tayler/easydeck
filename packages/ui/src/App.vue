@@ -1,183 +1,235 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import DeckGrid from './components/DeckGrid.vue';
-import { SUPPORTED_LOCALES, setLocale } from './i18n/index.js';
-import type { Locale } from './i18n/index.js';
+import FolderTree from './components/FolderTree.vue';
+import PluginList from './components/PluginList.vue';
+import SettingsDialog from './components/SettingsDialog.vue';
 import { useDeck } from './composables/useDeck.js';
 
-const { t, locale } = useI18n();
+const { t } = useI18n();
 const deck = useDeck();
+const settingsOpen = ref(false);
 
-const transportLabel = computed(() =>
-  deck.transportKind === 'ipc' ? t('status.transportIpc') : t('status.transportWebsocket'),
-);
-
-const variables = computed(() => Object.entries(deck.state.value?.variables ?? {}));
-
-function onLocale(event: Event) {
-  setLocale((event.target as HTMLSelectElement).value as Locale);
-}
+const folderPath = computed(() => deck.state.value?.folderPath ?? []);
+const pages = computed(() => deck.state.value?.pages ?? []);
+const currentFolderId = computed(() => deck.state.value?.location?.folderId);
+/** Ancestors of the current folder, so the whole branch reads as active. */
+const openIds = computed(() => new Set(folderPath.value.map((folder) => folder.id)));
+/** The tree is rendered from the root's children plus the root itself. */
+const rootFolders = computed(() => (deck.profile.value ? [deck.profile.value.root] : []));
 </script>
 
 <template>
   <div class="app">
     <header>
-      <div>
-        <h1>{{ t('app.title') }}</h1>
-        <p class="tagline">{{ t('app.tagline') }}</p>
-      </div>
+      <span class="brand">{{ t('app.title') }}</span>
 
-      <label class="locale">
-        <span class="sr-only">{{ t('language.label') }}</span>
-        <select :value="locale" @change="onLocale">
-          <option v-for="code in SUPPORTED_LOCALES" :key="code" :value="code">
-            {{ code.toUpperCase() }}
-          </option>
-        </select>
-      </label>
+      <div class="status">
+        <template v-if="deck.state.value">
+          <span class="dot ok" />
+          <span>{{ deck.state.value.device.model }}</span>
+        </template>
+        <template v-else-if="deck.loading.value">
+          <span class="dot" />
+          <span class="muted">{{ t('status.connecting') }}</span>
+        </template>
+        <template v-else>
+          <span class="dot bad" />
+          <span class="muted">{{ t('status.noDeck') }}</span>
+        </template>
+      </div>
     </header>
 
     <p v-if="deck.lastError.value" class="error">
       {{ deck.lastError.value }}
-      <button type="button" @click="deck.lastError.value = undefined">{{ t('errors.dismiss') }}</button>
+      <button type="button" @click="deck.lastError.value = undefined">
+        {{ t('errors.dismiss') }}
+      </button>
     </p>
 
-    <section class="status">
-      <template v-if="deck.state.value">
-        <span class="dot ok" />
-        <strong>{{ deck.state.value.device.model }}</strong>
-        <span class="muted">
-          {{ t('status.profile') }}: {{ deck.state.value.activeProfileId ?? '—' }} ·
-          {{ t('status.page') }}: {{ deck.state.value.pageId ?? '—' }} ·
-          {{ transportLabel }}
-        </span>
-      </template>
-      <template v-else-if="deck.loading.value">
-        <span class="dot" />
-        <span class="muted">{{ t('status.connecting') }}</span>
-      </template>
-      <template v-else>
-        <span class="dot bad" />
-        <span class="muted">{{ t('status.noDeck') }}</span>
-      </template>
-    </section>
+    <div class="panes">
+      <aside class="left">
+        <div class="toolbar">
+          <button
+            type="button"
+            class="icon"
+            :title="t('settings.open')"
+            :aria-label="t('settings.open')"
+            @click="settingsOpen = true"
+          >
+            ⚙
+          </button>
+        </div>
 
-    <main>
-      <section class="panel">
-        <h2>{{ t('deck.title') }}</h2>
+        <div class="scroll">
+          <h2>{{ t('folders.title') }}</h2>
+          <FolderTree
+            :folders="rootFolders"
+            :current-folder-id="currentFolderId"
+            :open-ids="openIds"
+            @open="deck.openFolder"
+          />
+          <p v-if="rootFolders.length === 0" class="muted empty">{{ t('folders.none') }}</p>
+        </div>
+      </aside>
+
+      <main>
         <DeckGrid
           :state="deck.state.value"
           :keys="deck.keys.value"
           :pressed-keys="deck.pressedKeys.value"
           @press="deck.pressKey"
         />
-        <p class="hint">{{ t('deck.hint') }}</p>
-      </section>
 
-      <aside>
-        <section>
-          <h2>{{ t('profiles.title') }}</h2>
-          <ul class="list">
-            <li v-for="profile in deck.profiles.value" :key="profile.id">
-              <span>{{ profile.name }}</span>
-              <button
-                v-if="profile.id !== deck.state.value?.activeProfileId"
-                type="button"
-                @click="deck.activateProfile(profile.id)"
-              >
-                {{ t('profiles.activate') }}
-              </button>
-              <span v-else class="badge">{{ t('profiles.active') }}</span>
-            </li>
-            <li v-if="deck.profiles.value.length === 0" class="muted">{{ t('profiles.none') }}</li>
-          </ul>
-        </section>
+        <!-- Numbers only, no arrows: a scene has at most sixteen pages, so
+             they all fit and paging through them would be pointless. -->
+        <div v-if="pages.length > 1" class="pages">
+          <button
+            v-for="(page, index) in pages"
+            :key="page.id"
+            type="button"
+            class="page"
+            :class="{ current: page.id === deck.state.value?.location?.pageId }"
+            :title="page.name"
+            @click="deck.goToPage(page.id)"
+          >
+            {{ index + 1 }}
+          </button>
+        </div>
+      </main>
 
-        <section>
-          <h2>{{ t('variables.title') }}</h2>
-          <ul class="list">
-            <li v-for="[name, value] in variables" :key="name">
-              <span class="muted">{{ name }}</span>
-              <code>{{ value }}</code>
-            </li>
-            <li v-if="variables.length === 0" class="muted">{{ t('variables.none') }}</li>
-          </ul>
-        </section>
+      <aside class="right">
+        <h2>{{ t('plugins.title') }}</h2>
+        <PluginList :plugins="deck.plugins.value" />
       </aside>
-    </main>
+    </div>
+
+    <SettingsDialog
+      v-if="settingsOpen"
+      :state="deck.state.value"
+      :plugins="deck.plugins.value"
+      :transport-kind="deck.transportKind"
+      @close="settingsOpen = false"
+    />
   </div>
 </template>
 
 <style scoped>
 .app {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 24px 28px 40px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  height: 100vh;
 }
 
 header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-1);
+  flex: none;
 }
 
-h1 { font-size: 20px; margin: 0; }
-h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin: 0 0 10px; }
-
-.tagline { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
+.brand {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
 
 .status {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  font-size: 14px;
+  gap: 7px;
+  font-size: 12px;
 }
 
-.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); flex: none; }
-.dot.ok { background: #3fb950; }
-.dot.bad { background: #f85149; }
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex: none;
+}
+
+.dot.ok { background: var(--ok); }
+.dot.bad { background: var(--danger); }
+
+.panes {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 260px;
+}
+
+.left,
+.right {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-1);
+}
+
+.left { border-right: 1px solid var(--border); }
+.right { border-left: 1px solid var(--border); }
+
+.toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.left .scroll {
+  overflow-y: auto;
+  padding: 12px;
+}
+
+h2 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.right h2 { padding: 12px 12px 8px; margin: 0; }
 
 main {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
-  gap: 24px;
-  align-items: start;
-}
-
-@media (max-width: 880px) {
-  main { grid-template-columns: 1fr; }
-}
-
-.panel { display: flex; flex-direction: column; }
-.hint { color: var(--text-muted); font-size: 12px; margin: 12px 0 0; }
-
-aside { display: flex; flex-direction: column; gap: 22px; }
-
-.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.list li {
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 13px;
-  padding: 7px 10px;
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  gap: 16px;
+  padding: 24px;
 }
 
-.badge { color: #3fb950; font-size: 12px; }
-code { font-family: ui-monospace, monospace; font-size: 12px; }
+.pages {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.page { min-width: 28px; padding: 3px 8px; }
+.page.current { border-color: var(--accent); color: var(--accent); }
+
+.empty { font-size: 12px; margin: 6px 0 0; }
 
 .error {
   display: flex;
@@ -185,18 +237,10 @@ code { font-family: ui-monospace, monospace; font-size: 12px; }
   justify-content: space-between;
   gap: 12px;
   margin: 0;
-  padding: 10px 14px;
-  border-radius: 10px;
-  background: rgb(248 81 73 / 12%);
-  border: 1px solid rgb(248 81 73 / 35%);
+  padding: 8px 16px;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
   font-size: 13px;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
+  flex: none;
 }
 </style>

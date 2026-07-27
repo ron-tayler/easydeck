@@ -1,24 +1,29 @@
 export default {
   app: {
     title: 'EasyDeck',
-    tagline: 'Closing this window keeps the deck running in the tray.',
   },
   status: {
     connecting: 'Connecting…',
-    connected: 'Connected',
-    disconnected: 'Not connected',
     device: 'Device',
     profile: 'Profile',
-    page: 'Page',
     noDeck: 'No deck is running',
     transportIpc: 'in-app',
     transportWebsocket: 'over WebSocket',
   },
+  folders: {
+    title: 'Folders',
+    none: 'No profile loaded',
+  },
   deck: {
     title: 'Panel',
-    empty: 'This key is free',
-    press: 'Press',
     hint: 'Click a key to run it, exactly as pressing it on the device would.',
+    pages: 'Pages',
+  },
+  plugins: {
+    title: 'Actions',
+    search: 'Search actions',
+    builtIn: 'built in',
+    nothing: 'Nothing matches',
   },
   profiles: {
     title: 'Profiles',
@@ -34,7 +39,40 @@ export default {
     title: 'Something went wrong',
     dismiss: 'Dismiss',
   },
-  language: {
-    label: 'Language',
+  settings: {
+    open: 'Settings',
+    close: 'Close',
+    soon: 'not yet',
+    system: {
+      title: 'System',
+      language: 'Language',
+      theme: 'Theme',
+      autostart: 'Start with the system',
+      languages: { en: 'English', ru: 'Русский' },
+      themes: { system: 'Follow the system', light: 'Light', dark: 'Dark' },
+    },
+    plugins: {
+      title: 'Plugins',
+      summary: '{count} actions available',
+      openFolder: 'Open plugins folder',
+    },
+    core: {
+      title: 'Core',
+      explanation:
+        'EasyDeck serves the same protocol over a local WebSocket, so external tools and plugins can drive the deck.',
+      transport: 'This window uses',
+      protocol: 'Protocol version',
+    },
+    deck: {
+      title: 'Deck',
+      layout: 'Layout',
+      keySize: 'Key image',
+      brightness: 'Brightness',
+    },
+    about: {
+      title: 'About',
+      text: 'EasyDeck — open control software for the FIFINE AmpliGame D6 and other Stream Dock devices.',
+      openConfig: 'Open config folder',
+    },
   },
 };

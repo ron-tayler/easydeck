@@ -1,6 +1,7 @@
+import { PROFILE_FORMAT_VERSION } from '@easydeck/engine';
 import type { ProfileDefinition } from '@easydeck/engine';
 
-/** A text editor that exists on the platform the daemon is running on. */
+/** A text editor that exists on the platform the app is running on. */
 function textEditor(): { command: string; label: string } {
   if (process.platform === 'win32') return { command: 'notepad', label: 'Блокнот' };
   if (process.platform === 'darwin') return { command: 'open', label: 'Редактор' };
@@ -10,9 +11,11 @@ function textEditor(): { command: string; label: string } {
 /**
  * Written to the profile directory on first run.
  *
- * Deliberately practical rather than showy: every button here does something
- * a person actually wants on day one, and the file doubles as documentation
- * of the profile format once they open it in an editor.
+ * Deliberately practical rather than showy: every button does something a
+ * person actually wants on day one, and the file doubles as documentation of
+ * the profile format once they open it in an editor. It also shows both ways
+ * of organising a deck — a second page of the same scene, and a nested scene
+ * entered from a button.
  *
  * Only actions known to work are used. Keyboard emulation is deliberately
  * absent — see the known issues in the README — because a starter profile
@@ -22,155 +25,207 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
   const editor = textEditor();
 
   return {
+    formatVersion: PROFILE_FORMAT_VERSION,
     id: 'starter',
     name: 'Starter',
     layout: { rows: 3, cols: 5 },
-    initialPageId: 'main',
     variables: { clicks: 0, bright: 'normal' },
-    pages: [
-      {
-        id: 'main',
-        name: 'Главная',
-        buttons: [
-          {
-            id: 'browser',
-            key: 0,
-            states: [
-              {
-                id: 'default',
-                visual: { background: '#1f4e79', label: { text: 'Браузер', fontSize: 16 } },
-                actions: { up: [{ type: 'open', params: { target: 'https://github.com' } }] },
-              },
-            ],
-          },
-          {
-            id: 'editor',
-            key: 1,
-            states: [
-              {
-                id: 'default',
-                visual: { background: '#4a4a2d', label: { text: editor.label, fontSize: 16 } },
-                actions: { up: [{ type: 'run-program', params: { command: editor.command } }] },
-              },
-            ],
-          },
-          {
-            // The most useful button a newcomer can have: it opens the folder
-            // holding this very file, so the profile is easy to find and edit.
-            id: 'profiles-folder',
-            key: 2,
-            states: [
-              {
-                id: 'default',
-                visual: { background: '#3d3d5c', label: { text: 'Профили', fontSize: 15 } },
-                actions: { up: [{ type: 'open', params: { target: configDirectory } }] },
-              },
-            ],
-          },
-          {
-            id: 'counter',
-            key: 4,
-            states: [
-              {
-                id: 'default',
-                visual: {
-                  background: '#20242b',
-                  label: { text: '{{clicks}}', fontSize: 40, color: '#ffd166' },
+    root: {
+      id: 'root',
+      name: 'Главная',
+      pages: [
+        {
+          id: 'main',
+          name: 'Основное',
+          buttons: [
+            {
+              id: 'browser',
+              key: 0,
+              states: [
+                {
+                  id: 'default',
+                  visual: { background: '#1f4e79', label: { text: 'Браузер', fontSize: 16 } },
+                  actions: { up: [{ type: 'system.open', params: { target: 'https://github.com' } }] },
                 },
-                actions: {
-                  up: [{ type: 'increment-variable', params: { name: 'clicks' } }],
-                  longPress: [{ type: 'set-variable', params: { name: 'clicks', value: 0 } }],
+              ],
+            },
+            {
+              id: 'editor',
+              key: 1,
+              states: [
+                {
+                  id: 'default',
+                  visual: { background: '#4a4a2d', label: { text: editor.label, fontSize: 16 } },
+                  actions: {
+                    up: [{ type: 'system.run-program', params: { command: editor.command } }],
+                  },
                 },
-              },
-            ],
-          },
-          {
-            id: 'brightness',
-            key: 5,
-            stateFrom: 'bright',
-            states: [
-              {
-                id: 'normal',
-                visual: { background: '#2f4f4f', label: { text: 'Ярче', fontSize: 16 } },
-                actions: {
-                  up: [
-                    { type: 'set-brightness', params: { percent: 100 } },
-                    { type: 'set-variable', params: { name: 'bright', value: 'high' } },
+              ],
+            },
+            {
+              // The most useful button a newcomer can have: it opens the folder
+              // holding this very file, so the profile is easy to find and edit.
+              id: 'profiles-folder',
+              key: 2,
+              states: [
+                {
+                  id: 'default',
+                  visual: { background: '#3d3d5c', label: { text: 'Профили', fontSize: 15 } },
+                  actions: { up: [{ type: 'system.open', params: { target: configDirectory } }] },
+                },
+              ],
+            },
+            {
+              id: 'counter',
+              key: 4,
+              states: [
+                {
+                  id: 'default',
+                  visual: {
+                    background: '#20242b',
+                    label: { text: '{{clicks}}', fontSize: 40, color: '#ffd166' },
+                  },
+                  actions: {
+                    up: [{ type: 'easydeck.increment-variable', params: { name: 'clicks' } }],
+                    longPress: [
+                      { type: 'easydeck.set-variable', params: { name: 'clicks', value: 0 } },
+                    ],
+                  },
+                },
+              ],
+            },
+            {
+              id: 'brightness',
+              key: 5,
+              stateFrom: 'bright',
+              states: [
+                {
+                  id: 'normal',
+                  visual: { background: '#2f4f4f', label: { text: 'Ярче', fontSize: 16 } },
+                  actions: {
+                    up: [
+                      { type: 'deck.set-brightness', params: { percent: 100 } },
+                      { type: 'easydeck.set-variable', params: { name: 'bright', value: 'high' } },
+                    ],
+                  },
+                },
+                {
+                  id: 'high',
+                  visual: { background: '#5f7f7f', label: { text: 'Тусклее', fontSize: 15 } },
+                  actions: {
+                    up: [
+                      { type: 'deck.set-brightness', params: { percent: 40 } },
+                      { type: 'easydeck.set-variable', params: { name: 'bright', value: 'normal' } },
+                    ],
+                  },
+                },
+              ],
+            },
+            {
+              // Same scene, second screen — cheaper than a folder when all you
+              // needed was more room.
+              id: 'to-page-2',
+              key: 9,
+              states: [
+                {
+                  id: 'default',
+                  visual: {
+                    background: '#2a2f38',
+                    label: { text: 'Стр. 2 >', fontSize: 14, color: '#9ad1ff' },
+                  },
+                  actions: { up: [{ type: 'easydeck.go-to-page', params: { pageId: 'main-2' } }] },
+                },
+              ],
+            },
+            {
+              // A different scene, entered like a folder.
+              id: 'to-tools',
+              key: 14,
+              states: [
+                {
+                  id: 'default',
+                  visual: {
+                    background: '#3a3d40',
+                    label: { text: 'Инструменты', fontSize: 13, color: '#9ad1ff' },
+                  },
+                  actions: { up: [{ type: 'easydeck.open-folder', params: { folderId: 'tools' } }] },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: 'main-2',
+          name: 'Ещё',
+          buttons: [
+            {
+              id: 'status',
+              key: 0,
+              states: [
+                {
+                  id: 'default',
+                  visual: {
+                    background: '#0f4c5c',
+                    label: { text: 'Нажатий: {{clicks}}', fontSize: 13 },
+                  },
+                },
+              ],
+            },
+            {
+              id: 'to-page-1',
+              key: 9,
+              states: [
+                {
+                  id: 'default',
+                  visual: {
+                    background: '#2a2f38',
+                    label: { text: '< Стр. 1', fontSize: 14, color: '#9ad1ff' },
+                  },
+                  actions: { up: [{ type: 'easydeck.go-to-page', params: { pageId: 'main' } }] },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      folders: [
+        {
+          id: 'tools',
+          name: 'Инструменты',
+          pages: [
+            {
+              id: 'tools-main',
+              buttons: [
+                {
+                  id: 'sleep',
+                  key: 0,
+                  states: [
+                    {
+                      id: 'default',
+                      visual: { background: '#26262b', label: { text: 'Сон', fontSize: 16 } },
+                      actions: { up: [{ type: 'deck.sleep-panel' }] },
+                    },
                   ],
                 },
-              },
-              {
-                id: 'high',
-                visual: { background: '#5f7f7f', label: { text: 'Тусклее', fontSize: 15 } },
-                actions: {
-                  up: [
-                    { type: 'set-brightness', params: { percent: 40 } },
-                    { type: 'set-variable', params: { name: 'bright', value: 'normal' } },
+                {
+                  id: 'up',
+                  key: 14,
+                  states: [
+                    {
+                      id: 'default',
+                      visual: {
+                        background: '#3a3d40',
+                        label: { text: '< Наверх', fontSize: 14, color: '#9ad1ff' },
+                      },
+                      actions: { up: [{ type: 'easydeck.go-up' }] },
+                    },
                   ],
                 },
-              },
-            ],
-          },
-          {
-            id: 'to-tools',
-            key: 14,
-            states: [
-              {
-                id: 'default',
-                visual: {
-                  background: '#3a3d40',
-                  label: { text: 'Ещё >', fontSize: 15, color: '#9ad1ff' },
-                },
-                actions: { up: [{ type: 'go-to-page', params: { pageId: 'tools' } }] },
-              },
-            ],
-          },
-        ],
-      },
-      {
-        id: 'tools',
-        name: 'Инструменты',
-        buttons: [
-          {
-            id: 'sleep',
-            key: 0,
-            states: [
-              {
-                id: 'default',
-                visual: { background: '#26262b', label: { text: 'Сон', fontSize: 16 } },
-                actions: { up: [{ type: 'sleep-panel' }] },
-              },
-            ],
-          },
-          {
-            id: 'status',
-            key: 2,
-            states: [
-              {
-                id: 'default',
-                visual: {
-                  background: '#0f4c5c',
-                  label: { text: 'Нажатий: {{clicks}}', fontSize: 13 },
-                },
-              },
-            ],
-          },
-          {
-            id: 'back',
-            key: 14,
-            states: [
-              {
-                id: 'default',
-                visual: {
-                  background: '#3a3d40',
-                  label: { text: '< Назад', fontSize: 15, color: '#9ad1ff' },
-                },
-                actions: { up: [{ type: 'go-to-page', params: { pageId: 'main' } }] },
-              },
-            ],
-          },
-        ],
-      },
-    ],
+              ],
+            },
+          ],
+        },
+      ],
+    },
   };
 }

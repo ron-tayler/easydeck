@@ -5,9 +5,12 @@ import { EngineError } from '../domain/errors.js';
 import type {
   ButtonDefinition,
   ButtonStateDefinition,
+  DeckLocation,
+  FolderDefinition,
   PageDefinition,
   ProfileDefinition,
 } from '../domain/profile.js';
+import { ProfileTree } from '../domain/profile-tree.js';
 import { renderTemplate } from '../domain/template.js';
 import { validateProfile } from '../domain/validate-profile.js';
 import { VariableStore } from '../domain/variables.js';
@@ -31,17 +34,20 @@ export interface DeckControllerOptions {
   /** How long a key must be held before `longPress` fires. */
   readonly longPressMs?: number;
   readonly clock?: ClockPort;
+  /** How many locations `goBack` can retrace. */
+  readonly historyLimit?: number;
 }
 
 export interface DeckControllerEvents {
   /** Something failed in a way that should not stop the deck. */
   error: [error: Error];
-  pageChanged: [pageId: string];
+  locationChanged: [location: DeckLocation];
   /** Emitted after every repaint pass, with the keys actually written. */
   painted: [keys: number[]];
 }
 
 const DEFAULT_LONG_PRESS_MS = 500;
+const DEFAULT_HISTORY_LIMIT = 32;
 
 /**
  * Runs a profile on a surface: presses in, actions and repaints out.
@@ -56,7 +62,10 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   readonly variables = new VariableStore();
 
   private profile?: ProfileDefinition;
-  private currentPageId?: string;
+  private tree?: ProfileTree;
+  private location?: DeckLocation;
+  /** Visited locations, most recent last, for `goBack`. */
+  private readonly history: DeckLocation[] = [];
   /** Explicit state overrides, for buttons not bound to a variable. */
   private readonly stateOverrides = new Map<string, string>();
   /** Serialized visual last written to each key, for change detection. */
@@ -71,6 +80,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   private paintQueued = false;
 
   private readonly longPressMs: number;
+  private readonly historyLimit: number;
   private readonly clock: ClockPort;
 
   constructor(
@@ -81,15 +91,28 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   ) {
     super();
     this.longPressMs = options.longPressMs ?? DEFAULT_LONG_PRESS_MS;
+    this.historyLimit = options.historyLimit ?? DEFAULT_HISTORY_LIMIT;
     this.clock = options.clock ?? systemClock;
   }
 
-  get pageId(): string | undefined {
-    return this.currentPageId;
+  get currentLocation(): DeckLocation | undefined {
+    return this.location;
   }
 
   get profileId(): string | undefined {
     return this.profile?.id;
+  }
+
+  /** Root first, current folder last — the breadcrumb a UI shows. */
+  get folderPath(): FolderDefinition[] {
+    if (!this.tree || !this.location) return [];
+    return this.tree.pathTo(this.location.folderId);
+  }
+
+  /** Pages of the folder the deck is in, in author order. */
+  get currentFolderPages(): readonly PageDefinition[] {
+    if (!this.tree || !this.location) return [];
+    return this.tree.folder(this.location.folderId)?.pages ?? [];
   }
 
   /** Validates and installs a profile. Does not paint until `start`. */
@@ -105,11 +128,13 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     }
 
     this.profile = profile;
+    this.tree = new ProfileTree(profile);
     this.stateOverrides.clear();
+    this.history.length = 0;
     // Force a full repaint: the new profile may reuse keys with the same
     // visuals, and stale bookkeeping would skip writing them.
     this.painted.clear();
-    this.currentPageId = profile.initialPageId ?? profile.pages[0]!.id;
+    this.location = this.initialLocation(profile, this.tree);
 
     for (const [name, value] of Object.entries(profile.variables ?? {})) {
       this.variables.set(name, value);
@@ -144,15 +169,50 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     await this.paintChain.catch(() => undefined);
   }
 
-  goToPage(pageId: string): void {
-    if (!this.profile) throw new EngineError('No profile loaded');
-    if (!this.profile.pages.some((page) => page.id === pageId)) {
-      throw new EngineError(`Profile '${this.profile.id}' has no page '${pageId}'`);
-    }
-    if (this.currentPageId === pageId) return;
+  // --- navigation --------------------------------------------------------
 
-    this.currentPageId = pageId;
-    this.emit('pageChanged', pageId);
+  openFolder(folderId: string): void {
+    const tree = this.requireTree();
+    const folder = tree.folder(folderId);
+    if (!folder) throw new EngineError(`No folder '${folderId}' in profile '${this.profile!.id}'`);
+
+    const page = folder.pages[0];
+    if (!page) throw new EngineError(`Folder '${folderId}' has no pages`);
+
+    this.moveTo({ folderId, pageId: page.id });
+  }
+
+  /** Any page is reachable, not only a sibling — the folder follows the page. */
+  goToPage(pageId: string): void {
+    const tree = this.requireTree();
+    const owner = tree.ownerOf(pageId);
+    if (!owner) throw new EngineError(`No page '${pageId}' in profile '${this.profile!.id}'`);
+
+    this.moveTo({ folderId: owner.id, pageId });
+  }
+
+  goUp(): void {
+    const tree = this.requireTree();
+    if (!this.location) return;
+
+    const parent = tree.parentOf(this.location.folderId);
+    // At the root there is nowhere to go, and that is not an error: a button
+    // labelled "back" should be harmless on the top level, not throw.
+    if (parent) this.openFolder(parent.id);
+  }
+
+  goHome(): void {
+    this.openFolder(this.requireTree().root.id);
+  }
+
+  goBack(): void {
+    const previous = this.history.pop();
+    if (!previous) return;
+
+    // Popped rather than pushed again, so repeated presses walk backwards
+    // instead of bouncing between two locations.
+    this.location = previous;
+    this.emit('locationChanged', previous);
     this.requestPaint();
   }
 
@@ -211,8 +271,39 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
 
   // --- internals ---------------------------------------------------------
 
+  private requireTree(): ProfileTree {
+    if (!this.tree) throw new EngineError('No profile loaded');
+    return this.tree;
+  }
+
+  private initialLocation(profile: ProfileDefinition, tree: ProfileTree): DeckLocation {
+    if (profile.initialPageId) {
+      const owner = tree.ownerOf(profile.initialPageId);
+      if (owner) return { folderId: owner.id, pageId: profile.initialPageId };
+    }
+
+    const folder = (profile.initialFolderId && tree.folder(profile.initialFolderId)) || tree.root;
+    return { folderId: folder.id, pageId: folder.pages[0]!.id };
+  }
+
+  private moveTo(location: DeckLocation): void {
+    if (this.location?.folderId === location.folderId && this.location.pageId === location.pageId) {
+      return;
+    }
+
+    if (this.location) {
+      this.history.push(this.location);
+      if (this.history.length > this.historyLimit) this.history.shift();
+    }
+
+    this.location = location;
+    this.emit('locationChanged', location);
+    this.requestPaint();
+  }
+
   private get currentPage(): PageDefinition | undefined {
-    return this.profile?.pages.find((page) => page.id === this.currentPageId);
+    if (!this.tree || !this.location) return undefined;
+    return this.tree.page(this.location.pageId);
   }
 
   private findButton(buttonId: string): ButtonDefinition | undefined {
@@ -309,9 +400,13 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     return {
       variables: this.variables,
       button: { id: button.id, key: button.key },
-      pageId: this.currentPageId ?? '',
+      location: this.location ?? { folderId: '', pageId: '' },
       profileId: this.profile?.id ?? '',
+      openFolder: (folderId) => this.openFolder(folderId),
       goToPage: (pageId) => this.goToPage(pageId),
+      goUp: () => this.goUp(),
+      goHome: () => this.goHome(),
+      goBack: () => this.goBack(),
       setButtonState: (buttonId, stateId) => this.setButtonState(buttonId, stateId),
     };
   }

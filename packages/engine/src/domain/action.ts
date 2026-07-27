@@ -27,16 +27,29 @@ export type ButtonEvent = 'down' | 'up' | 'longPress';
 
 export const BUTTON_EVENTS: readonly ButtonEvent[] = ['down', 'up', 'longPress'];
 
-/** What a handler is allowed to do to the deck while running. */
+/**
+ * What a handler is allowed to do to the deck while running.
+ *
+ * Note that every navigation method is something a user has to put on a
+ * button: nothing moves between folders or pages by itself. Where the deck
+ * goes is entirely a matter of what the profile says.
+ */
 export interface ActionContext {
   readonly variables: VariableStore;
   /** The button whose event triggered this action. */
   readonly button: { readonly id: string; readonly key: number };
-  readonly pageId: string;
+  readonly location: { readonly folderId: string; readonly pageId: string };
   readonly profileId: string;
 
-  /** Navigates to another page of the current profile. */
+  /** Enters a folder, landing on its first page. */
+  openFolder(folderId: string): void;
+  /** Switches page. Any page of the profile is reachable, not just a sibling. */
   goToPage(pageId: string): void;
+  /** Leaves for the parent folder. Does nothing at the root. */
+  goUp(): void;
+  goHome(): void;
+  /** Returns to the previous location, as navigation history remembers it. */
+  goBack(): void;
   /**
    * Forces a button's state. On a button bound to a variable this writes the
    * variable instead, so both ways of changing state stay in agreement.
