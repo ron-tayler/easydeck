@@ -46,10 +46,33 @@ pnpm --filter @easydeck/renderer preview
 
 # with a D6 plugged in (close the FIFINE software first — both can hold the
 # device at once, and then they fight over the panel):
+pnpm --filter @easydeck/daemon start       # the daemon proper: profiles from disk
 pnpm --filter @easydeck/device poc         # raw device zone: colors + key events
 pnpm --filter @easydeck/renderer demo      # rendered buttons with labels and icons
+pnpm --filter @easydeck/device key-monitor # what the firmware thinks is pressed
 pnpm --filter @easydeck/renderer alignment # check a model's frame geometry
 ```
+
+On first run the daemon writes a starter profile to the platform's config
+directory (`%APPDATA%\EasyDeck` on Windows, `~/Library/Application Support/EasyDeck`
+on macOS, `~/.config/easydeck` on Linux; override with `EASYDECK_CONFIG_DIR`).
+Edit the JSON and restart to see changes — live reload comes with the API.
+
+**Profiles are executable content.** A profile can launch programs, so importing
+one from someone else is as consequential as running their script.
+
+## Known issues
+
+- **Keyboard emulation does not work yet.** The `hotkey` and `type-text` actions
+  load their native backend, resolve key codes and run without error, but the
+  keystrokes do not reach the target application on Windows. Timing has been
+  ruled out; UI privilege isolation (a target running elevated while the daemon
+  is not) is the next thing to check. Everything else in the daemon works, and
+  the starter profile avoids these two actions on purpose. Verify with
+  `pnpm --filter @easydeck/daemon keyboard-check`, which exercises the backend
+  with no deck involved.
+- **Chords are impossible on the D6.** Its firmware tracks one pressed key at a
+  time; see [docs/d6-protocol.md](docs/d6-protocol.md).
 
 ## Acknowledgements
 

@@ -19,12 +19,17 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsc -p tsconfig.json && node --test \"dist/**/*.test.js\"",
-    "demo": "tsc -p tsconfig.json && node dist/examples/run-profile.js"
+    "demo": "tsc -p tsconfig.json && node dist/examples/run-profile.js",
+    "start": "tsc -p tsconfig.json && node dist/examples/run-daemon.js",
+    "keyboard-check": "tsc -p tsconfig.json && node dist/examples/keyboard-check.js"
   },
   "dependencies": {
     "@easydeck/device": "workspace:*",
     "@easydeck/engine": "workspace:*",
     "@easydeck/renderer": "workspace:*"
+  },
+  "optionalDependencies": {
+    "@nut-tree-fork/nut-js": "^4.2.6"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
