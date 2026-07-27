@@ -253,6 +253,7 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
   private forward(deck: DeckService): void {
     deck.on('state', (state) => this.emit('state', state));
     deck.on('locationChanged', (location) => this.emit('locationChanged', location));
+    deck.on('viewChanged', (keys) => this.emit('viewChanged', keys));
     deck.on('variablesChanged', (variables) => this.emit('variablesChanged', variables));
     deck.on('keyDown', (key) => this.emit('keyDown', key));
     deck.on('keyUp', (key) => this.emit('keyUp', key));

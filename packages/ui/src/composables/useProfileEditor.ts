@@ -4,6 +4,7 @@ import type {
   FolderDefinition,
   PageDefinition,
   ProfileDefinition,
+  VariableDeclaration,
 } from '@easydeck/core';
 
 /**
@@ -53,20 +54,38 @@ export function freshId(prefix: string, taken: ReadonlySet<string>): string {
  */
 export const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 
+/**
+ * Adds a variable, or edits the one already declared under that name.
+ *
+ * Declaring rather than just storing a value is what lets a button bound to it
+ * behave sensibly: the type decides whether states are matched, counted
+ * through or flipped.
+ */
 export function setProfileVariable(
   profile: ProfileDefinition,
-  name: string,
-  value: string | number | boolean,
+  declaration: VariableDeclaration,
 ): ProfileDefinition {
-  return { ...profile, variables: { ...profile.variables, [name]: value } };
+  const existing = profile.variables ?? [];
+  const at = existing.findIndex((variable) => variable.name === declaration.name);
+
+  // Edited in place rather than appended, so renaming a type or a default does
+  // not shuffle the list under the user mid-edit.
+  const variables =
+    at === -1
+      ? [...existing, declaration]
+      : existing.map((variable, index) => (index === at ? declaration : variable));
+
+  return { ...profile, variables };
 }
 
 export function removeProfileVariable(
   profile: ProfileDefinition,
   name: string,
 ): ProfileDefinition {
-  const { [name]: _removed, ...rest } = profile.variables ?? {};
-  return { ...profile, variables: rest };
+  return {
+    ...profile,
+    variables: (profile.variables ?? []).filter((variable) => variable.name !== name),
+  };
 }
 
 /** Replaces one folder wherever it sits in the tree, root included. */
@@ -305,6 +324,35 @@ export function removeKey(
   return updatePage(profile, pageId, (page) => ({
     ...page,
     buttons: page.buttons.filter((button) => button.key !== key),
+  }));
+}
+
+/**
+ * A button with nothing on it: no colour, no label, no behaviour.
+ *
+ * Deliberately blank rather than pre-filled — it exists so the editor has
+ * something to open, and anything we invented here would only have to be
+ * cleared again.
+ */
+export function createEmptyButton(profile: ProfileDefinition, key: number): ButtonDefinition {
+  return {
+    id: freshId('button', allButtonIds(profile.root)),
+    key,
+    states: [{ id: 'default', visual: {} }],
+  };
+}
+
+/** Puts an edited button back where it came from. */
+export function replaceButton(
+  profile: ProfileDefinition,
+  pageId: string,
+  button: ButtonDefinition,
+): ProfileDefinition {
+  return updatePage(profile, pageId, (page) => ({
+    ...page,
+    buttons: page.buttons.some((existing) => existing.id === button.id)
+      ? page.buttons.map((existing) => (existing.id === button.id ? button : existing))
+      : [...page.buttons, button],
   }));
 }
 

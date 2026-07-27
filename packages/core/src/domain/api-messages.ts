@@ -7,6 +7,8 @@
  * us, and a hand-written client stays a dozen lines.
  */
 
+import type { VariableDeclaration } from '@easydeck/engine';
+
 export const API_PROTOCOL_VERSION = 1;
 
 export interface RequestMessage {
@@ -36,6 +38,8 @@ export type ApiEvent =
   /** Full snapshot, sent on connect and after a profile is (re)loaded. */
   | 'state'
   | 'locationChanged'
+  /** The panel was repainted; a mirror of it should refresh. */
+  | 'viewChanged'
   | 'variablesChanged'
   | 'keyDown'
   | 'keyUp'
@@ -63,6 +67,12 @@ export interface DeckState {
   readonly pages: readonly { readonly id: string; readonly name?: string }[];
   readonly brightness: number;
   readonly variables: Record<string, string | number | boolean>;
+  /**
+   * What each variable is, alongside what it holds: the configurator needs the
+   * type to draw the right control, and the owning plugin to know which ones
+   * it must not offer to delete.
+   */
+  readonly variableDeclarations: readonly VariableDeclaration[];
   readonly actionTypes: readonly string[];
   readonly warnings: readonly string[];
 }

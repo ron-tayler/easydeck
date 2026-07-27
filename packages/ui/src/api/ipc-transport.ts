@@ -34,7 +34,18 @@ export function createIpcTransport(): Transport {
 
   return {
     kind: 'ipc',
-    send: (message) => bridge.request(message),
+
+    /**
+     * Sent as plain data, never as whatever object the caller happened to
+     * hold.
+     *
+     * Electron's IPC uses the structured clone algorithm, which throws on a
+     * Vue reactive proxy — and a UI naturally has its state in reactive
+     * objects. The WebSocket transport serialises to JSON anyway, so doing it
+     * here as well makes the two behave identically instead of one of them
+     * failing on values the other accepts.
+     */
+    send: (message) => bridge.request(JSON.parse(JSON.stringify(message))),
     onEvent: (listener) => bridge.onEvent(listener),
     onConnected: (listener) => {
       listener(true);

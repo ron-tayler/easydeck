@@ -34,6 +34,7 @@ export function registerIpc(host: DeckHost): void {
 
   host.onDeckEvent('state', (state) => forward('state', state));
   host.onDeckEvent('locationChanged', (location) => forward('locationChanged', location));
+  host.onDeckEvent('viewChanged', (keys) => forward('viewChanged', { keys }));
   host.onDeckEvent('variablesChanged', (variables) => forward('variablesChanged', { variables }));
   host.onDeckEvent('keyDown', (key) => forward('keyDown', { key }));
   host.onDeckEvent('keyUp', (key) => forward('keyUp', { key }));

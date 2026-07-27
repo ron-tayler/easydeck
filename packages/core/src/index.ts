@@ -23,6 +23,9 @@ export type {
   ButtonVisual,
   KeyView,
   VariableValue,
+  VariableType,
+  VariableOption,
+  VariableDeclaration,
   PluginManifest,
   ActionDefinition,
   ParamDefinition,
@@ -68,6 +71,7 @@ export { FileProfileRepository, assertSafeProfileId } from './infrastructure/fil
 export { FileSettingsRepository } from './infrastructure/file-settings-repository.js';
 export { registerSystemActions } from './infrastructure/actions/system-actions.js';
 export { registerDeviceActions } from './infrastructure/actions/device-actions.js';
+export type { BrightnessControl } from './infrastructure/actions/device-actions.js';
 export { registerKeyboardActions } from './infrastructure/actions/keyboard-actions.js';
 export type { KeyboardActionsResult } from './infrastructure/actions/keyboard-actions.js';
 export { toSurfacePort } from './infrastructure/surface-adapter.js';

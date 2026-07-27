@@ -113,6 +113,40 @@ describe('FileProfileRepository', () => {
     await rm(isolated, { recursive: true, force: true });
   });
 
+  /**
+   * Version 2 stored variables as bare values. Their types have to be guessed
+   * on the way up, and guessing wrong would change how every button bound to
+   * one of them picks its state.
+   */
+  it('migrates version 2 variables into declarations, inferring their types', async () => {
+    const isolated = await mkdtemp(join(tmpdir(), 'easydeck-vars-'));
+    const store = new FileProfileRepository(isolated);
+
+    const legacy = {
+      formatVersion: 2,
+      id: 'legacy2',
+      name: 'Legacy 2',
+      layout: { rows: 1, cols: 2 },
+      variables: { clicks: 7, muted: true, scene: 'intro' },
+      root: { id: 'root', name: 'Root', pages: [{ id: 'main', buttons: [] }] },
+    };
+    await writeFile(join(isolated, 'legacy2.json'), JSON.stringify(legacy), 'utf8');
+
+    const loaded = await store.load('legacy2');
+
+    assert.equal(loaded.formatVersion, PROFILE_FORMAT_VERSION);
+    assert.deepEqual(
+      [...(loaded.variables ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
+      [
+        { name: 'clicks', type: 'number', initial: 7 },
+        { name: 'muted', type: 'boolean', initial: true },
+        { name: 'scene', type: 'string', initial: 'intro' },
+      ],
+    );
+
+    await rm(isolated, { recursive: true, force: true });
+  });
+
   it('lists profiles sorted, with their names', async () => {
     await repository.save(profile('zulu'));
     await repository.save(profile('alpha'));

@@ -1,5 +1,5 @@
 import type { ActionDescriptor, ButtonEvent } from './action.js';
-import type { VariableValue } from './variables.js';
+import type { VariableDeclaration, VariableValue } from './variables.js';
 import type { ButtonVisualTemplate } from './visual.js';
 
 /**
@@ -7,7 +7,7 @@ import type { ButtonVisualTemplate } from './visual.js';
  * it, so an old file can be recognised and upgraded instead of failing to
  * load with a confusing validation error.
  */
-export const PROFILE_FORMAT_VERSION = 2;
+export const PROFILE_FORMAT_VERSION = 3;
 
 /**
  * Adding a page is meant to be cheaper than creating a folder, but a scene
@@ -21,6 +21,16 @@ export interface ButtonStateDefinition {
   readonly id: string;
   readonly visual: ButtonVisualTemplate;
   readonly actions?: Partial<Record<ButtonEvent, readonly ActionDescriptor[]>>;
+  /**
+   * Value of the bound variable this state stands for.
+   *
+   * Only meaningful on a button with `stateFrom`, and only needed when the
+   * state's own id is not the value — which is the common case as soon as the
+   * variable is a boolean or an enum, since "on" is a better state name than
+   * "true". Two states may claim the same value; the first one wins, so the
+   * others act as spares rather than as an error.
+   */
+  readonly when?: VariableValue;
 }
 
 export interface ButtonDefinition {
@@ -31,11 +41,26 @@ export interface ButtonDefinition {
   readonly states: readonly ButtonStateDefinition[];
   readonly initialStateId?: string;
   /**
-   * Binds the current state to a variable: its value names the state.
+   * Binds the current state to a variable.
    *
    * This is what makes a button reflect the world rather than its own press
    * history — a mic button bound to `micOn` follows the mic even when
    * something else mutes it.
+   *
+   * How a value picks a state depends on the variable's declared type, and
+   * this is the one rule a profile author has to hold in their head:
+   *
+   * - a state whose `when` equals the value always wins, whatever the type;
+   * - failing that, a state whose *id* equals the value wins, which is what
+   *   every profile written before `when` existed relies on;
+   * - `number` then falls back to a carousel: the value indexes the states and
+   *   wraps round, so a counter walks them in order. That is why being able to
+   *   reorder states matters;
+   * - `boolean` falls back to position — first state false, second true — so
+   *   they can be named "off" and "on" rather than "false" and "true";
+   * - `string` and `enum` have no further fallback. An unmatched value leaves
+   *   the button showing what it already showed, which is quieter than
+   *   blanking a key because a plugin published something unexpected.
    */
   readonly stateFrom?: string;
 }
@@ -74,7 +99,13 @@ export interface ProfileDefinition {
   /** Where to start. Defaults to the root folder's first page. */
   readonly initialFolderId?: string;
   readonly initialPageId?: string;
-  readonly variables?: Readonly<Record<string, VariableValue>>;
+  /**
+   * Variables the profile's author created, declared rather than merely
+   * seeded: the type is what tells the configurator which control to draw and
+   * the controller how to map values onto states. Plugin variables are not
+   * listed here — they belong to their plugin and arrive with it.
+   */
+  readonly variables?: readonly VariableDeclaration[];
 }
 
 /** Where the deck currently is. */

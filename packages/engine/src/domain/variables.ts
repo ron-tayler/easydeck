@@ -1,4 +1,115 @@
+import type { LocalizedText } from './plugin.js';
+
 export type VariableValue = string | number | boolean;
+
+/**
+ * What a variable holds, and therefore how everything downstream treats it.
+ *
+ * The store itself stays untyped on purpose — it is a plain key-value map, and
+ * an action that writes a number to a string variable should not explode
+ * mid-macro. Types are a *declaration*: they tell the configurator which
+ * control to draw and the controller how to map a value onto button states.
+ * Nothing enforces them at run time beyond coercing on the way in.
+ */
+export type VariableType = 'boolean' | 'number' | 'string' | 'enum';
+
+export const VARIABLE_TYPES: readonly VariableType[] = ['boolean', 'number', 'string', 'enum'];
+
+export interface VariableOption {
+  readonly value: string;
+  readonly label?: LocalizedText;
+}
+
+/**
+ * A variable someone has declared, as opposed to one that merely exists.
+ *
+ * Two things declare variables: a profile, for the ones its author created,
+ * and a plugin, for the ones it needs in order to publish anything. A plugin's
+ * declaration is the point of the whole mechanism — it lets a plugin expose
+ * live data (a scene name, a mute flag, a listener count) that buttons can
+ * bind to, without the user having to create a variable by hand and spell its
+ * name identically in two places.
+ */
+export interface VariableDeclaration {
+  readonly name: string;
+  readonly type: VariableType;
+  /** Shown instead of the bare name where there is room for it. */
+  readonly label?: LocalizedText;
+  readonly description?: LocalizedText;
+  /** Value the variable starts at when a profile is loaded. */
+  readonly initial?: VariableValue;
+  /** `enum` only: the values it may take, in the order they are offered. */
+  readonly options?: readonly VariableOption[];
+  /**
+   * The plugin that declared it; absent for a variable the user created.
+   *
+   * A plugin's variable cannot be deleted from the configurator — the plugin
+   * writes to it regardless, so deleting it would only produce a variable that
+   * reappears with no explanation. Its value stays editable, because setting
+   * one by hand is exactly how you test a button that binds to it.
+   */
+  readonly pluginId?: string;
+}
+
+/**
+ * Truthiness as a profile author would expect rather than as JavaScript would:
+ * the strings "false" and "0" read as false, because that is what a variable
+ * round-tripped through JSON or typed into a field usually means.
+ */
+export function isTruthy(value: VariableValue | undefined): boolean {
+  if (value === undefined) return false;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  return value !== '' && value !== 'false' && value !== '0';
+}
+
+/** The type a value would be declared as, for variables nobody declared. */
+export function inferVariableType(value: VariableValue | undefined): VariableType {
+  if (typeof value === 'boolean') return 'boolean';
+  if (typeof value === 'number') return 'number';
+  return 'string';
+}
+
+/**
+ * Brings a raw value in line with a declared type.
+ *
+ * Applied where values enter from outside — the configurator, a stored
+ * profile, an API client — so that a boolean variable holds `true` rather than
+ * the string `"true"`, which would otherwise compare unequal to everything
+ * that matters.
+ */
+export function coerceVariable(type: VariableType, raw: VariableValue): VariableValue {
+  switch (type) {
+    case 'boolean':
+      return typeof raw === 'boolean' ? raw : isTruthy(raw);
+
+    case 'number': {
+      const parsed = typeof raw === 'number' ? raw : Number(raw);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    default:
+      return typeof raw === 'string' ? raw : String(raw);
+  }
+}
+
+/** What a declared variable holds before anything has written to it. */
+export function initialVariableValue(declaration: VariableDeclaration): VariableValue {
+  if (declaration.initial !== undefined) {
+    return coerceVariable(declaration.type, declaration.initial);
+  }
+
+  switch (declaration.type) {
+    case 'boolean':
+      return false;
+    case 'number':
+      return 0;
+    case 'enum':
+      return declaration.options?.[0]?.value ?? '';
+    default:
+      return '';
+  }
+}
 
 export interface VariableChange {
   readonly name: string;
@@ -63,11 +174,7 @@ export class VariableStore {
 
   /** Truthiness as a profile author would expect: "false" and "0" are false. */
   truthy(name: string): boolean {
-    const value = this.values.get(name);
-    if (value === undefined) return false;
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value !== 0;
-    return value !== '' && value !== 'false' && value !== '0';
+    return isTruthy(this.values.get(name));
   }
 
   snapshot(): Record<string, VariableValue> {

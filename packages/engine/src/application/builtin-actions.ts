@@ -135,10 +135,11 @@ export const easydeckManifest: PluginManifest = {
       label: { en: 'Set button state', ru: 'Задать состояние кнопки' },
       group: { en: 'Buttons', ru: 'Кнопки' },
       params: [
-        { name: 'stateId', type: 'string', label: { en: 'State', ru: 'Состояние' } },
         {
+          // Declared before the state, because the state's choices depend on
+          // which button is picked here.
           name: 'buttonId',
-          type: 'string',
+          type: 'profile-button',
           label: { en: 'Button', ru: 'Кнопка' },
           description: {
             en: 'Leave empty for the button being pressed',
@@ -146,6 +147,7 @@ export const easydeckManifest: PluginManifest = {
           },
           required: false,
         },
+        { name: 'stateId', type: 'button-state', label: { en: 'State', ru: 'Состояние' } },
       ],
     },
   ],

@@ -40,7 +40,9 @@ const justify = computed(() => {
  * percent of the key's width, so an authored size lands at the same relative
  * scale here as it does on the panel.
  */
-const fontSize = computed(() => `calc(${label.value?.fontSize ?? 22} * 1cqw)`);
+const fontSize = computed(
+  () => `calc(${label.value?.fontSize ?? 22} * 1cqw * var(--key-label-scale))`,
+);
 
 function onDragStart(event: DragEvent): void {
   if (!props.view) return;
@@ -151,7 +153,10 @@ function onDrop(event: DragEvent): void {
   line-height: 1.15;
   word-break: break-word;
   flex-direction: column;
-  font-weight: 500;
+  /* The device's own font at its own weight; anything else makes the same
+     nominal size read as a different size. */
+  font-family: 'EasyDeck Sans', system-ui, sans-serif;
+  font-weight: 400;
   pointer-events: none;
 }
 </style>

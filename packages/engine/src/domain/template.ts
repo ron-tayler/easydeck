@@ -3,6 +3,12 @@ import type { VariableValue } from './variables.js';
 /**
  * `{{name}}` placeholders in button text.
  *
+ * Published as its own entry point (`@easydeck/engine/template`) because a
+ * configurator has to substitute exactly as the engine does when previewing a
+ * label. Reimplementing it there would put two subtly different templating
+ * rules in one product; this module has no Node dependencies, so a browser
+ * bundle can import it directly.
+ *
  * Deliberately not an expression language: profile documents are edited in a
  * GUI by people who are not programmers, and a template that cannot fail is
  * worth more here than one that can compute. Anything richer belongs in an

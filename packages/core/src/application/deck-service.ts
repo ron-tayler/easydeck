@@ -57,8 +57,10 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     this.warnings = [...(options.warnings ?? [])];
     this.brightness = options.settingsValue.brightness;
     this.activeProfileId = options.controller.profileId;
+    this.publishBrightness();
 
     options.controller.on('locationChanged', (location) => this.emit('locationChanged', location));
+    options.controller.on('painted', (keys) => this.emit('viewChanged', keys));
     options.controller.on('error', (error) => this.emit('actionError', error.message));
     options.controller.variables.onChange(() =>
       this.emit('variablesChanged', options.controller.variables.snapshot()),
@@ -102,6 +104,7 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
       pages: controller.currentFolderPages.map((page) => ({ id: page.id, name: page.name })),
       brightness: this.brightness,
       variables: controller.variables.snapshot(),
+      variableDeclarations: controller.variableDeclarations,
       actionTypes: actions.types().sort(),
       warnings: this.warnings,
     };
@@ -176,11 +179,26 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     this.options.controller.goBack();
   }
 
+  /** What the panel is set to now, for anything computing a change from it. */
+  get currentBrightness(): number {
+    return this.brightness;
+  }
+
   async setBrightness(percent: number): Promise<void> {
     const clamped = Math.min(100, Math.max(0, Math.round(percent)));
     await this.options.surface.setBrightness(clamped);
     this.brightness = clamped;
+    this.publishBrightness();
     await this.persistSettings({ brightness: clamped });
+  }
+
+  /**
+   * Mirrors brightness into the variable the deck plugin declares, so a key can
+   * show or follow it. Published from here because this is where the value is
+   * actually decided — anywhere else would be a second copy to keep in step.
+   */
+  private publishBrightness(): void {
+    this.options.controller.variables.set('deck.brightness', this.brightness);
   }
 
   simulateKey(key: number): void {

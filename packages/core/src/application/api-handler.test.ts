@@ -42,6 +42,7 @@ class FakeDeck implements DeckFacade {
       pages: [{ id: 'main' }],
       brightness: 60,
       variables: { a: 1 },
+      variableDeclarations: [{ name: 'a', type: 'number' as const }],
       actionTypes: ['set-variable'],
       warnings: [],
     };

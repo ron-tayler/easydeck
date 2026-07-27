@@ -2,6 +2,7 @@ import { BUTTON_EVENTS } from './action.js';
 import { InvalidProfileError } from './errors.js';
 import { MAX_PAGES_PER_FOLDER } from './profile.js';
 import type { FolderDefinition, ProfileDefinition } from './profile.js';
+import { VARIABLE_TYPES } from './variables.js';
 
 /**
  * Checks a profile document before anything tries to run it.
@@ -34,6 +35,33 @@ export function validateProfile(profile: ProfileDefinition): void {
     throw new InvalidProfileError(
       `Profile '${profile.id}' starts on page '${profile.initialPageId}', which does not exist`,
     );
+  }
+
+  validateVariables(profile);
+}
+
+function validateVariables(profile: ProfileDefinition): void {
+  const names = new Set<string>();
+
+  for (const variable of profile.variables ?? []) {
+    if (!variable.name) {
+      throw new InvalidProfileError(`Profile '${profile.id}' declares a variable without a name`);
+    }
+    if (names.has(variable.name)) {
+      throw new InvalidProfileError(`Duplicate variable '${variable.name}'`);
+    }
+    names.add(variable.name);
+
+    if (!VARIABLE_TYPES.includes(variable.type)) {
+      throw new InvalidProfileError(
+        `Variable '${variable.name}' has unknown type '${variable.type}'`,
+      );
+    }
+    // An enum with nothing to choose from is a variable nobody can set, which
+    // is always an authoring mistake rather than an empty-but-valid state.
+    if (variable.type === 'enum' && (variable.options ?? []).length === 0) {
+      throw new InvalidProfileError(`Enum variable '${variable.name}' has no options`);
+    }
   }
 }
 

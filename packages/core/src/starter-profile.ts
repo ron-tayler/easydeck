@@ -29,7 +29,15 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
     id: 'starter',
     name: 'Starter',
     layout: { rows: 3, cols: 5 },
-    variables: { clicks: 0, bright: 'normal' },
+    variables: [
+      { name: 'clicks', type: 'number', initial: 0 },
+      {
+        name: 'bright',
+        type: 'enum',
+        initial: 'normal',
+        options: [{ value: 'normal' }, { value: 'bright' }],
+      },
+    ],
     root: {
       id: 'root',
       name: 'Главная',

@@ -11,8 +11,20 @@
  * single byte of JPEG.
  */
 
-export type { VariableValue, VariableChange } from './domain/variables.js';
-export { VariableStore } from './domain/variables.js';
+export type {
+  VariableValue,
+  VariableChange,
+  VariableType,
+  VariableOption,
+  VariableDeclaration,
+} from './domain/variables.js';
+export {
+  VariableStore,
+  VARIABLE_TYPES,
+  coerceVariable,
+  inferVariableType,
+  initialVariableValue,
+} from './domain/variables.js';
 export { referencedVariables, renderTemplate, hasPlaceholders } from './domain/template.js';
 export type { ButtonVisual, ButtonVisualTemplate, IconSpec, LabelSpec } from './domain/visual.js';
 export type {

@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { ButtonDefinition, FolderDefinition, ProfileDefinition } from '@easydeck/core';
+import type {
+  ButtonDefinition,
+  FolderDefinition,
+  ProfileDefinition,
+  VariableDeclaration,
+  VariableValue,
+} from '@easydeck/core';
 
 import ContextMenu from './components/ContextMenu.vue';
 import type { MenuItem } from './components/ContextMenu.vue';
@@ -10,13 +16,16 @@ import FolderTree from './components/FolderTree.vue';
 import PluginList from './components/PluginList.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
 import { useDeck } from './composables/useDeck.js';
+import ButtonEditor from './components/ButtonEditor.vue';
 import PromptDialog from './components/PromptDialog.vue';
 import VariablesDialog from './components/VariablesDialog.vue';
 import {
   addActionToKey,
   addFolder,
   addPage,
+  createEmptyButton,
   findFolder,
+  replaceButton,
   fromClipboard,
   ownerOfPage,
   pasteButton,
@@ -40,6 +49,13 @@ const settingsOpen = ref(false);
 const variablesOpen = ref(false);
 const selectedKey = ref<number | undefined>();
 const menu = ref<{ key: number; x: number; y: number } | undefined>();
+/**
+ * Shallow on purpose: a deep `ref` wraps whatever it holds in a reactive
+ * proxy, and a proxy cannot be structuredClone'd — which is exactly what the
+ * editor does to work on a copy. The button is replaced wholesale anyway, so
+ * there is nothing for deep reactivity to earn here.
+ */
+const editing = shallowRef<ButtonDefinition | undefined>();
 const folderMenu = ref<{ folderId: string; x: number; y: number } | undefined>();
 const pageMenu = ref<{ pageId: string; x: number; y: number } | undefined>();
 
@@ -100,7 +116,9 @@ const menuItems = computed<MenuItem[]>(() => {
   const occupied = key !== undefined && deck.keys.value.some((view) => view.key === key);
 
   return [
-    { id: 'settings', label: t('menu.settings'), disabled: true, note: t('settings.soon') },
+    occupied
+      ? { id: 'settings', label: t('menu.settings') }
+      : { id: 'create', label: t('menu.create') },
     { id: 'press', label: t('menu.press'), disabled: !occupied, separated: true },
     { id: 'longPress', label: t('menu.longPress'), disabled: !occupied },
     { id: 'copy', label: t('menu.copy'), disabled: !occupied, separated: true },
@@ -115,6 +133,17 @@ async function onMenuChoose(id: string): Promise<void> {
   if (key === undefined) return;
 
   switch (id) {
+    case 'create': {
+      // Created and opened in one move: a blank button is only interesting
+      // once you start filling it in.
+      const profile = deck.profile.value;
+      if (!profile) return;
+      editing.value = createEmptyButton(profile, key);
+      return;
+    }
+    case 'settings':
+      editing.value = findButton(key);
+      return;
     case 'press':
       await deck.pressKey(key);
       return;
@@ -171,6 +200,71 @@ async function pasteFromClipboard(key: number): Promise<void> {
   await edit((profile) => pasteButton(profile, currentPageId.value!, key, button));
 }
 
+// --- button editor -------------------------------------------------------
+
+/**
+ * Every folder and page of the profile, flattened.
+ *
+ * Navigation actions can target anywhere, not just the current scene, so the
+ * pickers in the editor have to offer the whole profile.
+ */
+const allFolders = computed(() => {
+  const out: { id: string; name: string }[] = [];
+  const walk = (folder: FolderDefinition, prefix: string): void => {
+    const name = prefix ? `${prefix} › ${folder.name}` : folder.name;
+    out.push({ id: folder.id, name });
+    for (const child of folder.folders ?? []) walk(child, name);
+  };
+  if (deck.profile.value) walk(deck.profile.value.root, '');
+  return out;
+});
+
+const allPages = computed(() => {
+  const out: { id: string; name: string }[] = [];
+  const walk = (folder: FolderDefinition): void => {
+    folder.pages.forEach((page, index) => {
+      out.push({ id: page.id, name: `${folder.name} · ${page.name ?? index + 1}` });
+    });
+    for (const child of folder.folders ?? []) walk(child);
+  };
+  if (deck.profile.value) walk(deck.profile.value.root);
+  return out;
+});
+
+/**
+ * Buttons of the page being edited.
+ *
+ * Only these: set-button-state resolves its target on the current page, so
+ * offering anything else would be offering something that cannot work.
+ */
+const pageButtons = computed(() => {
+  const pageId = currentPageId.value;
+  const profile = deck.profile.value;
+  if (!pageId || !profile) return [];
+
+  const pending: FolderDefinition[] = [profile.root];
+  while (pending.length > 0) {
+    const folder = pending.pop()!;
+    const page = folder.pages.find((candidate) => candidate.id === pageId);
+    if (page) {
+      return page.buttons.map((button) => ({
+        id: button.id,
+        name: `${button.key + 1} · ${button.states[0]?.visual.label?.text ?? button.id}`,
+        states: button.states.map((state) => state.id),
+      }));
+    }
+    pending.push(...(folder.folders ?? []));
+  }
+
+  return [];
+});
+
+async function onEditorSave(button: ButtonDefinition): Promise<void> {
+  editing.value = undefined;
+  selectedKey.value = button.key;
+  await edit((profile) => replaceButton(profile, currentPageId.value!, button));
+}
+
 // --- variables -----------------------------------------------------------
 
 /**
@@ -181,13 +275,28 @@ async function pasteFromClipboard(key: number): Promise<void> {
  * keeps them from disagreeing, which is the only way the difference would
  * ever become visible.
  */
-async function onSetVariable(payload: { name: string; value: string }): Promise<void> {
-  const numeric = Number(payload.value);
-  const value: string | number | boolean =
-    payload.value.trim() !== '' && Number.isFinite(numeric) ? numeric : payload.value;
+async function onSetVariable(payload: { name: string; value: VariableValue }): Promise<void> {
+  await deck.setVariable(payload.name, payload.value);
 
-  await deck.setVariable(payload.name, value);
-  await editProfile((profile) => setProfileVariable(profile, payload.name, value));
+  // Stored as the starting value only where the profile owns the declaration.
+  // A plugin's variable has no place in the document: the plugin decides what
+  // it holds, and freezing a snapshot of that would be misleading.
+  await editProfile((profile) => {
+    const declared = (profile.variables ?? []).find(
+      (variable) => variable.name === payload.name,
+    );
+    return declared
+      ? setProfileVariable(profile, { ...declared, initial: payload.value })
+      : profile;
+  });
+}
+
+/** Adds a variable to the profile, or edits the declaration already there. */
+async function onDeclareVariable(declaration: VariableDeclaration): Promise<void> {
+  await editProfile((profile) => setProfileVariable(profile, declaration));
+  if (declaration.initial !== undefined) {
+    await deck.setVariable(declaration.name, declaration.initial);
+  }
 }
 
 async function onRemoveVariable(name: string): Promise<void> {
@@ -582,9 +691,24 @@ onBeforeUnmount(() => {
       @close="pageMenu = undefined"
     />
 
+    <ButtonEditor
+      v-if="editing"
+      :button="editing"
+      :plugins="deck.plugins.value"
+      :variables="deck.state.value?.variables ?? {}"
+      :folders="allFolders"
+      :pages="allPages"
+      :buttons="pageButtons"
+      :declarations="deck.state.value?.variableDeclarations ?? []"
+      @save="onEditorSave"
+      @cancel="editing = undefined"
+    />
+
     <VariablesDialog
       v-if="variablesOpen"
       :variables="deck.state.value?.variables ?? {}"
+      :declarations="deck.state.value?.variableDeclarations ?? []"
+      @declare="onDeclareVariable"
       @set="onSetVariable"
       @remove="onRemoveVariable"
       @close="variablesOpen = false"

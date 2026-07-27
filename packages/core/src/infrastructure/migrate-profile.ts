@@ -1,5 +1,5 @@
-import { PROFILE_FORMAT_VERSION } from '@easydeck/engine';
-import type { ProfileDefinition } from '@easydeck/engine';
+import { PROFILE_FORMAT_VERSION, inferVariableType } from '@easydeck/engine';
+import type { ProfileDefinition, VariableValue } from '@easydeck/engine';
 
 /**
  * Brings a stored profile up to the current format.
@@ -19,7 +19,36 @@ export function migrateProfile(raw: unknown): ProfileDefinition {
 
   if (version >= PROFILE_FORMAT_VERSION) return document as unknown as ProfileDefinition;
 
-  return migrateV1ToV2(document);
+  // Each step upgrades by one, so a version 1 file walks the same path a
+  // version 2 file takes — there is only ever one migration to reason about.
+  const v2 = version < 2 ? migrateV1ToV2(document) : (document as unknown as ProfileDefinition);
+  return migrateV2ToV3(v2 as unknown as Record<string, unknown>);
+}
+
+/**
+ * Version 2 stored variables as a plain name-to-value map.
+ *
+ * Version 3 declares them instead, because a value alone cannot say how a
+ * button bound to it should behave. The type is inferred from the value that
+ * was there, which is the only honest guess available and matches what the
+ * engine did implicitly before types existed.
+ */
+function migrateV2ToV3(document: Record<string, unknown>): ProfileDefinition {
+  const stored = document['variables'];
+  const declarations =
+    typeof stored === 'object' && stored !== null && !Array.isArray(stored)
+      ? Object.entries(stored as Record<string, VariableValue>).map(([name, initial]) => ({
+          name,
+          type: inferVariableType(initial),
+          initial,
+        }))
+      : ((stored ?? []) as ProfileDefinition['variables']);
+
+  return {
+    ...(document as unknown as ProfileDefinition),
+    formatVersion: PROFILE_FORMAT_VERSION,
+    variables: declarations,
+  };
 }
 
 /**

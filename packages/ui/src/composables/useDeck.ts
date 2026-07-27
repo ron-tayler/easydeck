@@ -27,7 +27,15 @@ const profiles = shallowRef<readonly ProfileSummary[]>([]);
 const profile = shallowRef<ProfileDefinition | undefined>();
 const plugins = shallowRef<readonly PluginManifest[]>([]);
 const pressedKeys = ref<ReadonlySet<number>>(new Set());
-const lastError = ref<string | undefined>();
+
+/**
+ * Whatever went wrong last, shown in the banner.
+ *
+ * Exported so the app's error handler can write to it too: a component that
+ * throws while rendering would otherwise fail invisibly, and "the dialog does
+ * not open and nothing is said" is the worst kind of bug to chase.
+ */
+export const lastError = ref<string | undefined>();
 const loading = ref(true);
 
 let started = false;
@@ -125,6 +133,9 @@ function start(): void {
   // events, so the window cannot drift from the panel.
   client.on('state', () => void refreshAll());
   client.on('locationChanged', () => void Promise.all([refreshState(), refreshView()]));
+  // Follows the repaint itself rather than guessing from what might have
+  // caused it: a button state can change with no variable involved at all.
+  client.on('viewChanged', () => void refreshView());
   client.on('variablesChanged', () => void Promise.all([refreshState(), refreshView()]));
   client.on('profilesChanged', () => void Promise.all([refreshProfiles(), refreshProfile()]));
   client.on('actionError', (payload) => {

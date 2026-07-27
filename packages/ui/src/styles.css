@@ -60,6 +60,18 @@
 :root {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 15px;
+
+  /*
+   * Perceptual correction for key labels.
+   *
+   * The maths is already exact — the device draws a label at `size × 1.12` on
+   * a 112px frame, which is `size` percent of the key, and the preview uses
+   * the same percentage. But a preview key is drawn several times larger than
+   * the physical one, and at that scale the text reads heavier than it looks
+   * on the deck. One constant, used everywhere a key is previewed, so it can
+   * be tuned in a single place rather than in each component.
+   */
+  --key-label-scale: 0.8;
 }
 
 * {

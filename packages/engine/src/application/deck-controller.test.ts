@@ -92,7 +92,10 @@ const testProfile: ProfileDefinition = {
   id: 'test',
   name: 'Test',
   layout: { rows: 1, cols: 3 },
-  variables: { micOn: 'on', viewers: 0 },
+  variables: [
+    { name: 'micOn', type: 'string', initial: 'on' },
+    { name: 'viewers', type: 'number', initial: 0 },
+  ],
   root: {
     id: 'root',
     name: 'Root',

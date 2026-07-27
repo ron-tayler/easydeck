@@ -2,6 +2,12 @@ import type { ActionContext, ActionDescriptor, ActionHandler } from '../domain/a
 import { ActionFailedError, EngineError, UnknownActionError } from '../domain/errors.js';
 import { PLUGIN_API_VERSION } from '../domain/plugin.js';
 import type { ActionDefinition, ParamDefinition, PluginManifest } from '../domain/plugin.js';
+import { hasPlaceholders, renderTemplate } from '../domain/template.js';
+import type {
+  VariableDeclaration,
+  VariableStore,
+  VariableValue,
+} from '../domain/variables.js';
 
 /**
  * Installed plugins and the code behind their actions.
@@ -122,6 +128,23 @@ export class ActionRegistry {
     return [...this.manifests.values()];
   }
 
+  /**
+   * Every variable the installed plugins declare, stamped with its owner.
+   *
+   * Stamped here rather than in each manifest so a plugin cannot claim to own
+   * someone else's variable, and so the configurator can tell at a glance
+   * which variables it must not offer to delete.
+   */
+  variables(): VariableDeclaration[] {
+    const declared: VariableDeclaration[] = [];
+    for (const manifest of this.manifests.values()) {
+      for (const variable of manifest.variables ?? []) {
+        declared.push({ ...variable, pluginId: manifest.id });
+      }
+    }
+    return declared;
+  }
+
   definition(type: string): ActionDefinition | undefined {
     return this.definitions.get(type);
   }
@@ -130,7 +153,7 @@ export class ActionRegistry {
     const handler = this.handlers.get(action.type);
     if (!handler) throw new UnknownActionError(action.type);
 
-    const params = action.params ?? {};
+    const params = resolveParams(action.params ?? {}, context.variables);
     const definition = this.definitions.get(action.type);
     if (definition) assertParams(definition, params);
 
@@ -140,6 +163,41 @@ export class ActionRegistry {
       throw new ActionFailedError(action.type, context.button.id, { cause });
     }
   }
+}
+
+/**
+ * Substitutes `{{variable}}` into every text parameter, for every action.
+ *
+ * Done here rather than in the handlers that happen to want it: a label
+ * already reads `{{viewers}}`, so a profile where the same placeholder is
+ * inert in "type text" or in a URL is simply confusing. One rule — text is a
+ * template, wherever it appears — is easier to hold in your head than a list
+ * of which parameters are special, and any plugin written later gets it for
+ * free without knowing variables exist.
+ *
+ * Validation runs on the result, so a required parameter filled only by an
+ * unset variable fails the same way an empty one does.
+ *
+ * The cost of this is that literal `{{` in typed text is not typeable. That
+ * trade was already made for labels; making it twice, differently, would be
+ * worse than making it once.
+ */
+function resolveParams(
+  params: Readonly<Record<string, unknown>>,
+  variables: VariableStore,
+): Readonly<Record<string, unknown>> {
+  let resolved: Record<string, unknown> | undefined;
+  let values: Record<string, VariableValue> | undefined;
+
+  for (const [name, value] of Object.entries(params)) {
+    if (typeof value !== 'string' || !hasPlaceholders(value)) continue;
+
+    resolved ??= { ...params };
+    values ??= variables.snapshot();
+    resolved[name] = renderTemplate(value, values);
+  }
+
+  return resolved ?? params;
 }
 
 /**

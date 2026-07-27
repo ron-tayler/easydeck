@@ -12,6 +12,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@easydeck/engine": "workspace:*",
+    "dejavu-fonts-ttf": "^2.37.3",
     "vue": "^3.5.40",
     "vue-i18n": "^11.4.8"
   },

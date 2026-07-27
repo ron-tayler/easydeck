@@ -1,4 +1,4 @@
-import type { VariableValue } from './variables.js';
+import type { VariableDeclaration, VariableValue } from './variables.js';
 
 /**
  * Bumped when the plugin contract changes in a way that breaks existing
@@ -45,6 +45,16 @@ export type ParamType =
   | 'profile-folder'
   /** A page of the current profile. */
   | 'profile-page'
+  /** A button of the current page; empty means the one being pressed. */
+  | 'profile-button'
+  /**
+   * A state of whichever button a nearby `profile-button` parameter names.
+   *
+   * The only parameter type that depends on another. It exists because
+   * choosing a state by typing its name is a guess, and the set of valid
+   * answers is knowable the moment the target button is known.
+   */
+  | 'button-state'
   /** A path on disk, offered through the platform's file picker. */
   | 'file'
   | 'directory'
@@ -94,6 +104,17 @@ export interface PluginManifest {
   /** Ships in the box and cannot be uninstalled. */
   readonly builtIn?: boolean;
   readonly actions: readonly ActionDefinition[];
+  /**
+   * Variables the plugin publishes, declared up front.
+   *
+   * This is how a plugin exposes live data for buttons to show and bind to:
+   * it declares the variable here and writes to it whenever the world changes.
+   * Declaring beats letting the plugin invent variables as it goes, because
+   * the configurator can then offer them by name and type before the plugin
+   * has ever written anything — otherwise a variable only becomes bindable
+   * after it first happens to change, which is impossible to design against.
+   */
+  readonly variables?: readonly VariableDeclaration[];
 }
 
 /** Picks the best translation available, falling back to English. */
