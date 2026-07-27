@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { DeckHost } from './deck-host.js';
-import { createTray } from './tray.js';
+import { assetPath, createTray } from './tray.js';
 import { registerIpc } from './ipc.js';
 import { registerPowerHandlers } from './power.js';
 
@@ -34,6 +34,8 @@ function createWindow(): BrowserWindow {
     show: false,
     backgroundColor: '#16181d',
     title: 'EasyDeck',
+    // Same mark as the tray, at a size the taskbar and Alt-Tab can use.
+    icon: assetPath('icon-256.png'),
     webPreferences: {
       preload: join(here, '..', 'renderer', 'preload.cjs'),
       // The renderer gets no Node access: it reaches the core only through the

@@ -1,6 +1,15 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { Menu, Tray, nativeImage } from 'electron';
+import type { NativeImage } from 'electron';
 
 import type { DeckHost, HostStatus } from './deck-host.js';
+
+/** Built by `pnpm icons`; see scripts/make-icons.mjs. */
+export function assetPath(name: string): string {
+  return fileURLToPath(new URL(`../assets/${name}`, import.meta.url));
+}
 
 export interface TrayOptions {
   readonly onShow: () => void;
@@ -57,28 +66,25 @@ function describe(status: HostStatus): string {
 }
 
 /**
- * A placeholder icon drawn as a data URL.
+ * The tray image, at both scale factors.
  *
- * Keeps the skeleton free of binary assets; a real icon set lands with
- * packaging, where each platform wants its own sizes and formats anyway.
+ * PNG, not SVG: `nativeImage` decodes PNG and JPEG only, so the SVG data URL
+ * this replaced produced a valid-looking but *empty* image — and an empty tray
+ * icon is invisible rather than broken, which is why it survived so long.
+ *
+ * The 2x representation matters on any scaled display, which is most of them:
+ * without it the system upscales the 16px art and the grid turns to mush.
  */
-function trayIcon() {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">
-    <rect width="32" height="32" rx="7" fill="#1668dc"/>
-    <g fill="#ffffff">
-      <rect x="7" y="8" width="5" height="5" rx="1.2"/>
-      <rect x="13.5" y="8" width="5" height="5" rx="1.2"/>
-      <rect x="20" y="8" width="5" height="5" rx="1.2"/>
-      <rect x="7" y="14" width="5" height="5" rx="1.2"/>
-      <rect x="13.5" y="14" width="5" height="5" rx="1.2"/>
-      <rect x="20" y="14" width="5" height="5" rx="1.2"/>
-      <rect x="7" y="20" width="5" height="5" rx="1.2"/>
-      <rect x="13.5" y="20" width="5" height="5" rx="1.2"/>
-      <rect x="20" y="20" width="5" height="5" rx="1.2"/>
-    </g>
-  </svg>`;
+function trayIcon(): NativeImage {
+  const icon = nativeImage.createFromPath(assetPath('icon-16.png'));
 
-  return nativeImage.createFromDataURL(
-    `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`,
-  );
+  if (icon.isEmpty()) {
+    // Loudly, because the failure mode is silence: the app runs, the tray
+    // works, and nothing shows up in it.
+    console.error(`EasyDeck: tray icon missing at ${assetPath('icon-16.png')}; run "pnpm icons"`);
+    return icon;
+  }
+
+  icon.addRepresentation({ scaleFactor: 2, buffer: readFileSync(assetPath('icon-32.png')) });
+  return icon;
 }
