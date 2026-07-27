@@ -35,6 +35,9 @@ export class ApiHandler {
       case 'getState':
         return this.deck.state();
 
+      case 'getPageView':
+        return { keys: await this.deck.pageView() };
+
       case 'listProfiles':
         return { profiles: await this.deck.listProfiles() };
 

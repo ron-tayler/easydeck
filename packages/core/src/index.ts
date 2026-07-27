@@ -19,6 +19,8 @@ export type {
   ButtonStateDefinition,
   ActionDescriptor,
   ButtonEvent,
+  ButtonVisual,
+  KeyView,
   VariableValue,
 } from '@easydeck/engine';
 

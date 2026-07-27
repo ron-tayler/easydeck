@@ -3,7 +3,13 @@ import { watch } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
 
 import type { Surface } from '@easydeck/device';
-import type { ActionRegistry, DeckController, ProfileDefinition, VariableValue } from '@easydeck/engine';
+import type {
+  ActionRegistry,
+  DeckController,
+  KeyView,
+  ProfileDefinition,
+  VariableValue,
+} from '@easydeck/engine';
 
 import type { DeckState } from '../domain/api-messages.js';
 import { ProfileNotFoundError } from '../domain/errors.js';
@@ -96,6 +102,10 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
       actionTypes: actions.types().sort(),
       warnings: this.warnings,
     };
+  }
+
+  async pageView(): Promise<readonly KeyView[]> {
+    return this.options.controller.view();
   }
 
   listProfiles(): Promise<ProfileSummary[]> {

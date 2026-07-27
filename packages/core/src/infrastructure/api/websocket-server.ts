@@ -89,8 +89,13 @@ export async function startApiServer(options: ApiServerOptions): Promise<Running
       })();
     });
 
-    // A fresh client should not have to ask what it is looking at.
-    void options.service.state().then((state) => send(ws, { type: 'event', event: 'state', payload: state }));
+    // A fresh client should not have to ask what it is looking at. If no deck
+    // is attached yet the snapshot simply is not available — the client will
+    // get one from the 'state' event as soon as there is something to send.
+    void options.service
+      .state()
+      .then((state) => send(ws, { type: 'event', event: 'state', payload: state }))
+      .catch(() => undefined);
   });
 
   const broadcast = (message: EventMessage) => {

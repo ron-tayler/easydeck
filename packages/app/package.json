@@ -13,7 +13,8 @@
     "start": "tsc -p tsconfig.json && electron ."
   },
   "dependencies": {
-    "@easydeck/core": "workspace:*"
+    "@easydeck/core": "workspace:*",
+    "@easydeck/ui": "workspace:*"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",

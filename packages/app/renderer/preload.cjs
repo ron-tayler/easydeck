@@ -22,4 +22,11 @@ contextBridge.exposeInMainWorld('easydeck', {
     ipcRenderer.on('easydeck:status', wrapped);
     return () => ipcRenderer.off('easydeck:status', wrapped);
   },
+
+  /** Subscribes to protocol events. Returns an unsubscribe function. */
+  onEvent: (listener) => {
+    const wrapped = (_event, message) => listener(message);
+    ipcRenderer.on('easydeck:event', wrapped);
+    return () => ipcRenderer.off('easydeck:event', wrapped);
+  },
 });

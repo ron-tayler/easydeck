@@ -43,7 +43,11 @@ export { systemClock } from './application/ports/clock-port.js';
 export { ActionRegistry } from './application/action-registry.js';
 export { registerBuiltinActions } from './application/builtin-actions.js';
 export { DeckController } from './application/deck-controller.js';
-export type { DeckControllerOptions, DeckControllerEvents } from './application/deck-controller.js';
+export type {
+  DeckControllerOptions,
+  DeckControllerEvents,
+  KeyView,
+} from './application/deck-controller.js';
 
 import { ActionRegistry } from './application/action-registry.js';
 import { registerBuiltinActions } from './application/builtin-actions.js';

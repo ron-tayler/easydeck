@@ -14,6 +14,7 @@ import type {
   DeckEvents,
   DeckService,
   DeckState,
+  KeyView,
   ProfileDefinition,
   ProfileSummary,
   RunningApiServer,
@@ -127,6 +128,10 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     return this.require().state();
   }
 
+  pageView(): Promise<readonly KeyView[]> {
+    return this.require().pageView();
+  }
+
   listProfiles(): Promise<ProfileSummary[]> {
     return this.require().listProfiles();
   }
@@ -190,6 +195,11 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
 
       const state = await deck.state();
       this.setStatus({ state: 'running', device: state.device.model, profileId: state.activeProfileId });
+
+      // Opening the device takes a second or two, so a UI that connected
+      // first will have been told there is no deck. Announcing the state on
+      // every successful start is what brings it back in line.
+      this.emit('state', state);
     } catch (error) {
       // No device, a busy device, a broken profile — all are states to show,
       // never reasons for the app to fail to open.

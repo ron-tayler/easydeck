@@ -1,4 +1,4 @@
-import type { ProfileDefinition, VariableValue } from '@easydeck/engine';
+import type { KeyView, ProfileDefinition, VariableValue } from '@easydeck/engine';
 
 import type { DeckState } from '../../domain/api-messages.js';
 import type { DeckEvents } from './deck-events.js';
@@ -13,6 +13,8 @@ import type { ProfileSummary } from './repositories.js';
  */
 export interface DeckFacade {
   state(): Promise<DeckState>;
+  /** The current page, resolved — what each key is showing right now. */
+  pageView(): Promise<readonly KeyView[]>;
 
   listProfiles(): Promise<ProfileSummary[]>;
   getProfile(id: string): Promise<ProfileDefinition>;

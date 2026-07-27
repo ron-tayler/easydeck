@@ -51,7 +51,12 @@ function createWindow(): BrowserWindow {
     created.hide();
   });
 
-  void created.loadFile(join(here, '..', 'renderer', 'index.html'));
+  // A dev server URL wins when set, so the UI can be iterated on with hot
+  // reload; otherwise the built configurator is loaded straight off disk.
+  const devServer = process.env['EASYDECK_UI_URL'];
+  if (devServer) void created.loadURL(devServer);
+  else void created.loadFile(join(here, '..', '..', 'ui', 'dist', 'index.html'));
+
   return created;
 }
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { ProfileDefinition, VariableValue } from '@easydeck/engine';
+import type { KeyView, ProfileDefinition, VariableValue } from '@easydeck/engine';
 
 import type { DeckState } from '../domain/api-messages.js';
 import { ApiHandler } from './api-handler.js';
@@ -37,6 +37,11 @@ class FakeDeck implements DeckFacade {
       actionTypes: ['set-variable'],
       warnings: [],
     };
+  }
+
+  async pageView(): Promise<readonly KeyView[]> {
+    this.calls.push('pageView');
+    return [{ key: 0, buttonId: 'b', stateId: 'default', visual: { label: { text: 'Hi' } } }];
   }
 
   async listProfiles(): Promise<ProfileSummary[]> {
@@ -96,6 +101,21 @@ describe('ApiHandler', () => {
     const state = response.result as DeckState;
     assert.equal(state.device.model, 'Fake');
     assert.equal(state.pageId, 'main');
+  });
+
+  // The UI renders the panel from this, rather than resolving button states
+  // and templates a second time and drifting from the engine.
+  it('answers getPageView with fully resolved keys', async () => {
+    const response = await new ApiHandler(new FakeDeck()).handle(request('getPageView'));
+
+    assert.equal(response.ok, true);
+    const { keys } = response.result as { keys: KeyView[] };
+    assert.deepEqual(keys[0], {
+      key: 0,
+      buttonId: 'b',
+      stateId: 'default',
+      visual: { label: { text: 'Hi' } },
+    });
   });
 
   it('routes each method to the deck exactly once', async () => {

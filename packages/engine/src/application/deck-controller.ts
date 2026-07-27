@@ -19,6 +19,14 @@ import type { ClockPort, TimerHandle } from './ports/clock-port.js';
 import type { KeyRendererPort } from './ports/renderer-port.js';
 import type { SurfacePort } from './ports/surface-port.js';
 
+/** What a single key shows right now, with everything already resolved. */
+export interface KeyView {
+  readonly key: number;
+  readonly buttonId: string;
+  readonly stateId: string;
+  readonly visual: ButtonVisual;
+}
+
 export interface DeckControllerOptions {
   /** How long a key must be held before `longPress` fires. */
   readonly longPressMs?: number;
@@ -161,6 +169,28 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     else this.stateOverrides.set(buttonId, stateId);
 
     this.requestPaint();
+  }
+
+  /**
+   * The current page with every button resolved: its active state and the
+   * visual after variable substitution.
+   *
+   * Exposed so a configurator can mirror the panel without reimplementing
+   * state binding and templating — the two things most likely to drift
+   * between an engine and a UI that each resolve them separately.
+   */
+  view(): KeyView[] {
+    const page = this.currentPage;
+    if (!page) return [];
+
+    return [...page.buttons]
+      .sort((a, b) => a.key - b.key)
+      .map((button) => ({
+        key: button.key,
+        buttonId: button.id,
+        stateId: this.resolveState(button).id,
+        visual: this.resolveVisual(button),
+      }));
   }
 
   /** Forces every key to be rewritten on the next pass. */
