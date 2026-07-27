@@ -1,0 +1,24 @@
+{
+  "name": "@easydeck/app",
+  "version": "0.1.0",
+  "description": "Desktop app zone: the Electron main process that hosts the core, the tray icon and window lifecycle, the IPC bridge to the UI, and platform packaging",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "rebuild-native": "electron-rebuild -f",
+    "start": "tsc -p tsconfig.json && electron ."
+  },
+  "dependencies": {
+    "@easydeck/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
+    "@types/node": "^24.13.3",
+    "electron": "^43.2.0",
+    "typescript": "~5.9.3"
+  }
+}

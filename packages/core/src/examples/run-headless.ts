@@ -1,7 +1,7 @@
 /**
  * The daemon as a user would actually run it.
  *
- * Run with:  pnpm --filter @easydeck/daemon start
+ * Run with:  pnpm --filter @easydeck/core start
  *
  * Reads profiles and settings from the platform's configuration directory,
  * seeding a starter profile on first run, then serves the API a configurator
@@ -12,7 +12,7 @@ import { configDir } from '../infrastructure/config-paths.js';
 import { FileProfileRepository } from '../infrastructure/file-profile-repository.js';
 import { FileSettingsRepository } from '../infrastructure/file-settings-repository.js';
 import { startDeck } from '../start-deck.js';
-import { createStarterProfile } from './starter-profile.js';
+import { createStarterProfile } from '../starter-profile.js';
 
 /**
  * Flattens an error and everything that caused it.

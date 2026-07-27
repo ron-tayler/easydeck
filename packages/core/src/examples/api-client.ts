@@ -2,7 +2,7 @@
  * A minimal client for the daemon API — and the shortest possible
  * documentation of the protocol.
  *
- * Run with:  pnpm --filter @easydeck/daemon api-client
+ * Run with:  pnpm --filter @easydeck/core api-client
  * (the daemon must already be running)
  *
  * Connects, asks for the state, lists the profiles, then streams events until

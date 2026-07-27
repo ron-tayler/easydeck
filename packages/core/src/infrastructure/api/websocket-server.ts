@@ -5,13 +5,14 @@ import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
 
 import { ApiHandler } from '../../application/api-handler.js';
-import type { DeckService } from '../../application/deck-service.js';
+import type { ApiSource } from '../../application/ports/deck-facade.js';
 import type { EventMessage, ServerMessage } from '../../domain/api-messages.js';
 import { API_PROTOCOL_VERSION } from '../../domain/api-messages.js';
 import { loadOrCreateToken, originAllowed, tokenMatches } from './auth-token.js';
 
 export interface ApiServerOptions {
-  readonly service: DeckService;
+  /** The deck, or a host that owns one and outlives it across lock cycles. */
+  readonly service: ApiSource;
   /** Directory the token is stored in. */
   readonly configDirectory: string;
   readonly port?: number;
@@ -97,15 +98,17 @@ export async function startApiServer(options: ApiServerOptions): Promise<Running
   };
 
   const service = options.service;
-  service.on('state', (state) => broadcast({ type: 'event', event: 'state', payload: state }));
-  service.on('pageChanged', (pageId) => broadcast({ type: 'event', event: 'pageChanged', payload: { pageId } }));
-  service.on('variablesChanged', (variables) =>
+  service.onDeckEvent('state', (state) => broadcast({ type: 'event', event: 'state', payload: state }));
+  service.onDeckEvent('pageChanged', (pageId) =>
+    broadcast({ type: 'event', event: 'pageChanged', payload: { pageId } }),
+  );
+  service.onDeckEvent('variablesChanged', (variables) =>
     broadcast({ type: 'event', event: 'variablesChanged', payload: { variables } }),
   );
-  service.on('keyDown', (key) => broadcast({ type: 'event', event: 'keyDown', payload: { key } }));
-  service.on('keyUp', (key) => broadcast({ type: 'event', event: 'keyUp', payload: { key } }));
-  service.on('profilesChanged', () => broadcast({ type: 'event', event: 'profilesChanged' }));
-  service.on('actionError', (message) =>
+  service.onDeckEvent('keyDown', (key) => broadcast({ type: 'event', event: 'keyDown', payload: { key } }));
+  service.onDeckEvent('keyUp', (key) => broadcast({ type: 'event', event: 'keyUp', payload: { key } }));
+  service.onDeckEvent('profilesChanged', () => broadcast({ type: 'event', event: 'profilesChanged' }));
+  service.onDeckEvent('actionError', (message) =>
     broadcast({ type: 'event', event: 'actionError', payload: { message } }),
   );
 

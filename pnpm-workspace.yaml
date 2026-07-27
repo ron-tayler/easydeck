@@ -4,3 +4,4 @@ packages:
 onlyBuiltDependencies:
   - node-hid
   - '@julusian/jpeg-turbo'
+  - electron

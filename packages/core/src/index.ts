@@ -1,5 +1,5 @@
 /**
- * @easydeck/daemon — the composition root.
+ * @easydeck/core — the composition root.
  *
  * The only place that knows about every other zone at once: it opens a
  * surface from @easydeck/device, builds a renderer from @easydeck/renderer,
@@ -8,6 +8,19 @@
  * actions that launch programs or press keys, and the API a configurator
  * talks to.
  */
+
+// Re-exported because they appear in this package's own public interface:
+// a consumer should not have to depend on @easydeck/engine to name the types
+// core hands it.
+export type {
+  ProfileDefinition,
+  PageDefinition,
+  ButtonDefinition,
+  ButtonStateDefinition,
+  ActionDescriptor,
+  ButtonEvent,
+  VariableValue,
+} from '@easydeck/engine';
 
 export type { DaemonSettings } from './domain/settings.js';
 export { DEFAULT_SETTINGS, normalizeSettings } from './domain/settings.js';
@@ -32,7 +45,8 @@ export type {
   ProfileSummary,
   SettingsRepository,
 } from './application/ports/repositories.js';
-export type { DeckFacade } from './application/ports/deck-facade.js';
+export type { DeckFacade, ApiSource } from './application/ports/deck-facade.js';
+export type { DeckEvents } from './application/ports/deck-events.js';
 export { ApiHandler } from './application/api-handler.js';
 export { DeckService } from './application/deck-service.js';
 export type { DeckServiceEvents, DeckServiceOptions } from './application/deck-service.js';
@@ -52,3 +66,4 @@ export { loadOrCreateToken, tokenMatches, originAllowed } from './infrastructure
 
 export { startDeck } from './start-deck.js';
 export type { StartDeckOptions } from './start-deck.js';
+export { createStarterProfile } from './starter-profile.js';

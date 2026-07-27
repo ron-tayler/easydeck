@@ -1,7 +1,7 @@
 /**
  * Runs the demo profile on real hardware — the whole stack end to end.
  *
- * Run with:  pnpm --filter @easydeck/daemon demo
+ * Run with:  pnpm --filter @easydeck/core demo
  */
 import { startDeck } from '../start-deck.js';
 import { DEMO_PROFILE } from './demo-profile.js';

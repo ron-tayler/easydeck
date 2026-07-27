@@ -1,7 +1,7 @@
 /**
  * Verifies keyboard emulation without involving the deck at all.
  *
- * Run with:  pnpm --filter @easydeck/daemon keyboard-check
+ * Run with:  pnpm --filter @easydeck/core keyboard-check
  *
  * Reports whether the optional native backend loaded and how a combination
  * resolves, then — after a countdown long enough to focus a text editor —
@@ -29,7 +29,7 @@ async function main(): Promise<void> {
 
   if (!result.available) {
     console.error(result.reason);
-    console.error('\nInstall it with:  pnpm --filter @easydeck/daemon add @nut-tree-fork/nut-js');
+    console.error('\nInstall it with:  pnpm --filter @easydeck/core add @nut-tree-fork/nut-js');
     process.exitCode = 1;
     return;
   }

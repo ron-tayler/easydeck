@@ -1,7 +1,7 @@
 {
-  "name": "@easydeck/daemon",
+  "name": "@easydeck/core",
   "version": "0.1.0",
-  "description": "Daemon zone: the headless background service that wires device + engine + renderer together, persists configuration and exposes the WebSocket API for UIs",
+  "description": "Core zone: wires device + engine + renderer together, persists profiles and settings, owns the actions that touch the machine, and serves the API. Runs inside the desktop app's main process or headless",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -20,7 +20,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsc -p tsconfig.json && node --test \"dist/**/*.test.js\"",
     "demo": "tsc -p tsconfig.json && node dist/examples/run-profile.js",
-    "start": "tsc -p tsconfig.json && node dist/examples/run-daemon.js",
+    "start": "tsc -p tsconfig.json && node dist/examples/run-headless.js",
     "keyboard-check": "tsc -p tsconfig.json && node dist/examples/keyboard-check.js",
     "api-client": "tsc -p tsconfig.json && node dist/examples/api-client.js"
   },

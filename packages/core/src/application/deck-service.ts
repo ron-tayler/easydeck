@@ -8,18 +8,12 @@ import type { ActionRegistry, DeckController, ProfileDefinition, VariableValue }
 import type { DeckState } from '../domain/api-messages.js';
 import { ProfileNotFoundError } from '../domain/errors.js';
 import type { DaemonSettings } from '../domain/settings.js';
+import type { DeckEvents } from './ports/deck-events.js';
 import type { DeckFacade } from './ports/deck-facade.js';
 import type { ProfileRepository, ProfileSummary, SettingsRepository } from './ports/repositories.js';
 
-export interface DeckServiceEvents {
-  state: [state: DeckState];
-  pageChanged: [pageId: string];
-  variablesChanged: [variables: Record<string, VariableValue>];
-  keyDown: [key: number];
-  keyUp: [key: number];
-  profilesChanged: [];
-  actionError: [message: string];
-}
+/** Alias kept for readability at the call sites; see DeckEvents. */
+export type DeckServiceEvents = DeckEvents;
 
 export interface DeckServiceOptions {
   readonly surface: Surface;
@@ -67,6 +61,12 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     options.surface.on('keyUp', (event) => this.emit('keyUp', event.key));
 
     if (options.watchDirectory) this.startWatching(options.watchDirectory);
+  }
+
+  onDeckEvent<E extends keyof DeckEvents>(event: E, listener: (...args: DeckEvents[E]) => void): void {
+    // The cast only bridges Node's conditional listener typing; the signature
+    // above is the one callers see, and it is exact.
+    this.on(event, listener as never);
   }
 
   get surface(): Surface {
