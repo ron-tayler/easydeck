@@ -18,6 +18,7 @@ export default {
     title: 'Panel',
     hint: 'Click a key to run it, exactly as pressing it on the device would.',
     pages: 'Pages',
+    editHint: 'Drag an action onto a key, drag keys to swap them. Select a key to copy, paste or delete it. Double-click runs it.',
   },
   plugins: {
     title: 'Actions',

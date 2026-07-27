@@ -1,16 +1,26 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import type { ButtonDefinition, FolderDefinition, ProfileDefinition } from '@easydeck/core';
 
 import DeckGrid from './components/DeckGrid.vue';
 import FolderTree from './components/FolderTree.vue';
 import PluginList from './components/PluginList.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
 import { useDeck } from './composables/useDeck.js';
+import {
+  addActionToKey,
+  fromClipboard,
+  pasteButton,
+  removeKey,
+  swapKeys,
+  toClipboard,
+} from './composables/useProfileEditor.js';
 
 const { t } = useI18n();
 const deck = useDeck();
 const settingsOpen = ref(false);
+const selectedKey = ref<number | undefined>();
 
 const folderPath = computed(() => deck.state.value?.folderPath ?? []);
 const pages = computed(() => deck.state.value?.pages ?? []);
@@ -19,6 +29,115 @@ const currentFolderId = computed(() => deck.state.value?.location?.folderId);
 const openIds = computed(() => new Set(folderPath.value.map((folder) => folder.id)));
 /** The tree is rendered from the root's children plus the root itself. */
 const rootFolders = computed(() => (deck.profile.value ? [deck.profile.value.root] : []));
+
+const currentPageId = computed(() => deck.state.value?.location?.pageId);
+
+async function edit(change: (profile: ProfileDefinition) => ProfileDefinition): Promise<void> {
+  const profile = deck.profile.value;
+  const pageId = currentPageId.value;
+  if (!profile || !pageId) return;
+
+  try {
+    await deck.saveProfile(change(profile));
+  } catch (error) {
+    deck.lastError.value = (error as Error).message;
+  }
+}
+
+function onDropAction(payload: { key: number; actionType: string; label: string }): void {
+  selectedKey.value = payload.key;
+  void edit((profile) =>
+    addActionToKey(profile, currentPageId.value!, payload.key, payload.actionType, payload.label),
+  );
+}
+
+function onDropKey(payload: { from: number; to: number }): void {
+  selectedKey.value = payload.to;
+  void edit((profile) => swapKeys(profile, currentPageId.value!, payload.from, payload.to));
+}
+
+/**
+ * Copy and paste ride on the document's own clipboard events rather than a
+ * global shortcut.
+ *
+ * That is what makes them safe without a single check for "is another window
+ * focused": the browser only fires these when this document has focus, so a
+ * stray Ctrl+V in another program cannot reach the deck. What is left to
+ * guard is a key actually being selected, and the caret not sitting in a text
+ * field, where copying text has to keep working.
+ */
+function editingText(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  const tag = element?.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || element?.isContentEditable === true;
+}
+
+function onCopy(event: ClipboardEvent): void {
+  if (settingsOpen.value || editingText(event.target) || selectedKey.value === undefined) return;
+
+  const page = deck.profile.value?.root && currentPageId.value;
+  if (!page) return;
+
+  const button = findButton(selectedKey.value);
+  if (!button) return;
+
+  event.clipboardData?.setData('text/plain', toClipboard(button));
+  event.preventDefault();
+}
+
+function onPaste(event: ClipboardEvent): void {
+  if (settingsOpen.value || editingText(event.target) || selectedKey.value === undefined) return;
+
+  const text = event.clipboardData?.getData('text/plain');
+  if (!text) return;
+
+  const button = fromClipboard(text);
+  if (!button) return; // Not one of ours: leave the paste to whoever wants it.
+
+  event.preventDefault();
+  const key = selectedKey.value;
+  void edit((profile) => pasteButton(profile, currentPageId.value!, key, button));
+}
+
+function onKeydown(event: KeyboardEvent): void {
+  if (settingsOpen.value || editingText(event.target) || selectedKey.value === undefined) return;
+  if (event.key !== 'Delete') return;
+
+  const key = selectedKey.value;
+  event.preventDefault();
+  void edit((profile) => removeKey(profile, currentPageId.value!, key));
+}
+
+/** Looks the button up in the profile, which is where its full definition is. */
+function findButton(key: number): ButtonDefinition | undefined {
+  const pageId = currentPageId.value;
+  const profile = deck.profile.value;
+  if (!pageId || !profile) return undefined;
+
+  // Walked with an explicit stack rather than recursion: a folder tree is
+  // small, and this keeps the return type obvious.
+  const pending: FolderDefinition[] = [profile.root];
+  while (pending.length > 0) {
+    const folder = pending.pop()!;
+    const page = folder.pages.find((candidate) => candidate.id === pageId);
+    if (page) return page.buttons.find((button) => button.key === key);
+    pending.push(...(folder.folders ?? []));
+  }
+
+  return undefined;
+}
+
+onMounted(() => {
+  document.addEventListener('copy', onCopy);
+  document.addEventListener('paste', onPaste);
+  document.addEventListener('keydown', onKeydown);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('copy', onCopy);
+  document.removeEventListener('paste', onPaste);
+  document.removeEventListener('keydown', onKeydown);
+});
 </script>
 
 <template>
@@ -80,8 +199,14 @@ const rootFolders = computed(() => (deck.profile.value ? [deck.profile.value.roo
           :state="deck.state.value"
           :keys="deck.keys.value"
           :pressed-keys="deck.pressedKeys.value"
-          @press="deck.pressKey"
+          :selected-key="selectedKey"
+          @select="selectedKey = $event"
+          @run="deck.pressKey"
+          @drop-action="onDropAction"
+          @drop-key="onDropKey"
         />
+
+        <p class="hint">{{ t('deck.editHint') }}</p>
 
         <!-- Numbers only, no arrows: a scene has at most sixteen pages, so
              they all fit and paging through them would be pointless. -->
@@ -228,6 +353,8 @@ main {
 
 .page { min-width: 28px; padding: 3px 8px; }
 .page.current { border-color: var(--accent); color: var(--accent); }
+
+.hint { color: var(--text-muted); font-size: 12px; margin: 0; text-align: center; max-width: 640px; }
 
 .empty { font-size: 12px; margin: 6px 0 0; }
 

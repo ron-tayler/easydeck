@@ -41,6 +41,14 @@ const isOpen = (pluginId: string): boolean => searching.value || !collapsed.valu
 const say = (text: LocalizedText | undefined): string =>
   text === undefined ? '' : (text[locale.value] ?? text.en);
 
+function onDragStart(event: DragEvent, action: ActionDefinition): void {
+  event.dataTransfer?.setData(
+    'application/x-easydeck-action',
+    JSON.stringify({ type: action.type, label: say(action.label) }),
+  );
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+}
+
 interface Group {
   readonly plugin: PluginManifest;
   readonly actions: readonly ActionDefinition[];
@@ -90,9 +98,15 @@ const groups = computed<Group[]>(() => {
 
         <ul v-show="isOpen(group.plugin.id)">
           <li v-for="action in group.actions" :key="action.type">
-            <!-- Draggable onto a key in the next step; the title already
-                 carries the full type so a profile author can find it. -->
-            <div class="action" :title="action.type">
+            <!-- The label travels with the type so a freshly created button
+                 says what it does without the drop handler knowing any
+                 particular action. -->
+            <div
+              class="action"
+              :title="action.type"
+              draggable="true"
+              @dragstart="onDragStart($event, action)"
+            >
               <span class="label">{{ say(action.label) }}</span>
               <span v-if="action.description" class="desc">{{ say(action.description) }}</span>
             </div>

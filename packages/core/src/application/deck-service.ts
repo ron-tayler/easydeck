@@ -196,9 +196,34 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
   }
 
   private async applyProfile(profile: ProfileDefinition): Promise<void> {
-    this.options.controller.load(profile);
+    const { controller } = this.options;
+
+    // Editing one button reloads the whole profile it belongs to. Landing
+    // back on the first page and resetting every counter each time would make
+    // a configurator unusable, so reloading the *same* profile keeps where
+    // the deck was and what its variables held. Switching profiles still
+    // starts clean, which is what switching is for.
+    const reloading = controller.profileId === profile.id;
+    const previousLocation = reloading ? controller.currentLocation : undefined;
+    const previousVariables = reloading ? controller.variables.snapshot() : undefined;
+
+    controller.load(profile);
+
+    for (const [name, value] of Object.entries(previousVariables ?? {})) {
+      controller.variables.set(name, value);
+    }
+
+    if (previousLocation) {
+      try {
+        controller.goToPage(previousLocation.pageId);
+      } catch {
+        // The edit removed the page the deck was on; the profile's own
+        // starting point is the sensible place to be instead.
+      }
+    }
+
     this.activeProfileId = profile.id;
-    this.options.controller.invalidate();
+    controller.invalidate();
     this.emit('state', await this.state());
   }
 

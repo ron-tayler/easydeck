@@ -153,6 +153,13 @@ export function useDeck() {
     transportKind: client.kind,
     refresh: refreshAll,
     pressKey: (key: number) => client.call('simulateKey', { key }),
+    saveProfile: async (profile: ProfileDefinition) => {
+      await client.call('saveProfile', { profile });
+      // The save triggers a reload on the host, which announces new state;
+      // refreshing here as well keeps the window responsive rather than
+      // waiting a round trip for the event to come back.
+      await refreshAll();
+    },
     openFolder: (folderId: string) => client.call('openFolder', { folderId }),
     goToPage: (pageId: string) => client.call('goToPage', { pageId }),
     goUp: () => client.call('goUp'),

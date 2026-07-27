@@ -8,9 +8,15 @@ const props = defineProps<{
   state?: DeckState;
   keys: readonly KeyView[];
   pressedKeys: ReadonlySet<number>;
+  selectedKey?: number;
 }>();
 
-const emit = defineEmits<{ press: [key: number] }>();
+const emit = defineEmits<{
+  select: [key: number];
+  run: [key: number];
+  dropAction: [payload: { key: number; actionType: string; label: string }];
+  dropKey: [payload: { from: number; to: number }];
+}>();
 
 const rows = computed(() => props.state?.device.rows ?? 3);
 const cols = computed(() => props.state?.device.cols ?? 5);
@@ -27,7 +33,11 @@ const slots = computed(() => Array.from({ length: rows.value * cols.value }, (_,
       :index="index"
       :view="byKey.get(index)"
       :pressed="pressedKeys.has(index)"
-      @press="emit('press', $event)"
+      :selected="selectedKey === index"
+      @select="emit('select', $event)"
+      @run="emit('run', $event)"
+      @drop-action="emit('dropAction', $event)"
+      @drop-key="emit('dropKey', $event)"
     />
   </div>
 </template>
