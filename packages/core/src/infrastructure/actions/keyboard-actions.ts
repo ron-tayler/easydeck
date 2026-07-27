@@ -1,6 +1,8 @@
 import { PLUGIN_API_VERSION, stringParam } from '@easydeck/engine';
 import type { ActionRegistry, PluginManifest } from '@easydeck/engine';
 
+import { loadUnicodeTyper } from './win32-typing.js';
+
 /**
  * Keyboard emulation, registered only when the native backend is present.
  *
@@ -134,6 +136,8 @@ export async function registerKeyboardActions(
   registry: ActionRegistry,
 ): Promise<KeyboardActionsResult> {
   const backend = await loadBackend();
+  const unicode = await loadUnicodeTyper();
+
   if (!backend) {
     return {
       available: false,
@@ -154,8 +158,18 @@ export async function registerKeyboardActions(
       await backend.keyboard.releaseKey(...[...keys].reverse());
     },
 
+    /**
+     * Prefers the unicode path wherever it exists.
+     *
+     * The fallback presses the keys that *would* produce each character under
+     * the layout that happens to be active, so the same profile types
+     * different text depending on what the user last switched to. Where
+     * Windows can be told the character directly, it is.
+     */
     'keyboard.type-text': async (params) => {
-      await backend.keyboard.type(stringParam(params, 'text'));
+      const text = stringParam(params, 'text');
+      if (unicode) unicode.type(text);
+      else await backend.keyboard.type(text);
     },
   });
 

@@ -27,6 +27,7 @@
     "@easydeck/device": "workspace:*",
     "@easydeck/engine": "workspace:*",
     "@easydeck/renderer": "workspace:*",
+    "koffi": "^3.1.2",
     "ws": "^8.21.1"
   },
   "optionalDependencies": {

@@ -52,12 +52,29 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
   try {
     const renderer = await createKeyRenderer();
 
+    const initialBrightness = options.brightness ?? settings.brightness;
+
+    /*
+     * Brightness belongs to the service — it clamps, persists and reports it —
+     * but actions have to be registered before the service can be built. This
+     * holder closes the cycle, and hands the plugin the one operation it
+     * needs rather than the whole service.
+     */
+    let service: DeckService | undefined;
+    const brightness = {
+      current: () => service?.currentBrightness ?? initialBrightness,
+      set: async (percent: number) => {
+        if (service) await service.setBrightness(percent);
+        else await surface.setBrightness(Math.min(100, Math.max(0, Math.round(percent))));
+      },
+    };
+
     const warnings: string[] = [];
     let actions = options.actions;
     if (!actions) {
       actions = registerSystemActions(createActionRegistry());
       registerEasyDeckFolderActions(actions);
-      registerDeviceActions(actions, surface);
+      registerDeviceActions(actions, surface, brightness);
       const keyboard = await registerKeyboardActions(actions);
       if (keyboard.reason) warnings.push(keyboard.reason);
     }
@@ -76,16 +93,17 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
         ? profiles.path
         : undefined;
 
-    return new DeckService({
+    service = new DeckService({
       surface,
       controller,
       actions,
       profiles,
       settings: settingsRepository,
-      settingsValue: { ...settings, brightness: options.brightness ?? settings.brightness },
+      settingsValue: { ...settings, brightness: initialBrightness },
       warnings,
       watchDirectory,
     });
+    return service;
   } catch (error) {
     await surface.close().catch(() => undefined);
     throw error;
