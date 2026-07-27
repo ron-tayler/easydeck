@@ -1,0 +1,16 @@
+{
+  "name": "@easydeck/ui",
+  "version": "0.1.0",
+  "description": "UI zone: the web configurator served by the daemon — drag & drop actions onto keys, edit profiles, upload icons. Framework choice pending",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "~5.9.3"
+  }
+}

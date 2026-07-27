@@ -1,0 +1,16 @@
+{
+  "name": "easydeck",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cross-platform, community-driven control software for the FIFINE AmpliGame D6 and other Stream Dock family stream controllers",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.26.2",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "@easydeck/renderer",
+  "version": "0.1.0",
+  "description": "Renderer zone: turns a button's visual state (background, icon, label) into a device-ready JPEG via canvas rasterization and libjpeg-turbo with iterative quality fitting",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node --test \"dist/**/*.test.js\"",
+    "demo": "tsc -p tsconfig.json && node dist/examples/live-demo.js",
+    "preview": "tsc -p tsconfig.json && node dist/examples/preview.js",
+    "alignment": "tsc -p tsconfig.json && node dist/examples/alignment.js"
+  },
+  "dependencies": {
+    "@julusian/jpeg-turbo": "^3.0.1",
+    "@napi-rs/canvas": "^1.0.2",
+    "dejavu-fonts-ttf": "^2.37.3",
+    "jpeg-js": "^0.4.4"
+  },
+  "devDependencies": {
+    "@easydeck/device": "workspace:*",
+    "@types/node": "^24.13.3",
+    "typescript": "~5.9.3"
+  }
+}
