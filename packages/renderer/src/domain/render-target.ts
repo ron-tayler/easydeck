@@ -10,6 +10,15 @@ export interface RenderTarget {
   readonly rotationDegrees: 0 | 90 | 180 | 270;
   /** Hard limit for the encoded JPEG. */
   readonly maxBytes: number;
+  /**
+   * Space between neighbouring key displays, in the same pixels as the key.
+   *
+   * Matters only for a picture stretched across several keys: the strip that
+   * falls between two displays is behind the bezel and has to be skipped, or
+   * the picture repeats a sliver of itself at every seam. Defaults to 0, which
+   * is right for a preview drawn as one continuous sheet.
+   */
+  readonly gap?: number;
 }
 
 /** Raw pixels handed from the rasterizer to the encoder. */

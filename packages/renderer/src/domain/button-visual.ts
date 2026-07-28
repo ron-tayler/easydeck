@@ -10,8 +10,20 @@ export interface ButtonVisual {
   readonly background?: string;
   /** Corner rounding in pixels at 100x100 scale. Defaults to 12. */
   readonly cornerRadius?: number;
+  /** Drawn behind everything: this key's share of a multi-key picture. */
+  readonly backdrop?: BackdropSlice;
   readonly icon?: IconSpec;
   readonly label?: LabelSpec;
+}
+
+/** One key's share of a picture spread across a rectangle of keys. */
+export interface BackdropSlice {
+  readonly source: Uint8Array | string;
+  readonly col: number;
+  readonly row: number;
+  readonly cols: number;
+  readonly rows: number;
+  readonly fit?: 'contain' | 'cover';
 }
 
 export interface IconSpec {

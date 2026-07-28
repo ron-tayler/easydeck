@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import { EASYDECK_PLUGIN_ID } from '@easydeck/engine';
 import type { ActionDefinition, ActionRegistry } from '@easydeck/engine';
 
-import { configDir, pluginsDir, profilesDir } from '../config-paths.js';
+import { configDir, iconsDir, pluginsDir, profilesDir } from '../config-paths.js';
 import { openTarget } from './system-actions.js';
 
 /**
@@ -33,6 +33,11 @@ const folderActions: readonly ActionDefinition[] = [
     label: { en: 'Open plugins folder', ru: 'Открыть папку плагинов' },
     group: { en: 'Folders', ru: 'Папки' },
   },
+  {
+    type: 'easydeck.open-icons-folder',
+    label: { en: 'Open icons folder', ru: 'Открыть папку иконок' },
+    group: { en: 'Folders', ru: 'Папки' },
+  },
 ];
 
 export function registerEasyDeckFolderActions(registry: ActionRegistry): ActionRegistry {
@@ -47,5 +52,6 @@ export function registerEasyDeckFolderActions(registry: ActionRegistry): ActionR
     'easydeck.open-config-folder': () => openDirectory(configDir()),
     'easydeck.open-profiles-folder': () => openDirectory(profilesDir()),
     'easydeck.open-plugins-folder': () => openDirectory(pluginsDir()),
+    'easydeck.open-icons-folder': () => openDirectory(iconsDir()),
   });
 }

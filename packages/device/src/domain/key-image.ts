@@ -13,4 +13,15 @@ export interface KeyImageFormat {
   readonly rotationDegrees: 0 | 90 | 180 | 270;
   /** Hard firmware limit for a single encoded image. */
   readonly maxBytes: number;
+  /**
+   * Space between two neighbouring key displays, in the same pixels as the
+   * image itself.
+   *
+   * Only a picture stretched across several keys cares. The keys are not
+   * touching, so the part of the picture that falls between them is hidden by
+   * the bezel and must be *skipped*, not squeezed into the visible strips —
+   * otherwise every seam repeats a sliver of the image and the picture looks
+   * concertinaed.
+   */
+  readonly gap: number;
 }

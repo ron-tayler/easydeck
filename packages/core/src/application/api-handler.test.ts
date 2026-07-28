@@ -5,6 +5,7 @@ import { PLUGIN_API_VERSION, PROFILE_FORMAT_VERSION } from '@easydeck/engine';
 import type { KeyView, PluginManifest, ProfileDefinition, VariableValue } from '@easydeck/engine';
 
 import type { DeckState } from '../domain/api-messages.js';
+import type { LibraryImage } from '../infrastructure/icon-library.js';
 import { ApiHandler } from './api-handler.js';
 import type { DeckFacade } from './ports/deck-facade.js';
 import type { ProfileSummary } from './ports/repositories.js';
@@ -69,6 +70,11 @@ class FakeDeck implements DeckFacade {
   async listProfiles(): Promise<ProfileSummary[]> {
     this.calls.push('listProfiles');
     return [{ id: 'p', name: 'Profile' }];
+  }
+
+  async listIcons(): Promise<readonly LibraryImage[]> {
+    this.calls.push('listIcons');
+    return [{ name: 'mic', source: 'data:image/png;base64,AA==', bytes: 1 }];
   }
 
   async getProfile(id: string): Promise<ProfileDefinition> {

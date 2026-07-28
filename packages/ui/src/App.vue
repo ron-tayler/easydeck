@@ -4,10 +4,20 @@ import { useI18n } from 'vue-i18n';
 import type {
   ButtonDefinition,
   FolderDefinition,
+  LibraryImage,
   ProfileDefinition,
   VariableDeclaration,
   VariableValue,
 } from '@easydeck/core';
+/*
+ * From the engine's own entry point, not from core.
+ *
+ * Core is a Node package: importing a *value* from it drags the filesystem,
+ * child_process and the HID stack into a browser bundle. Types are free, values
+ * are not — which is why this file imports types from core and constants from
+ * a module with no I/O in it.
+ */
+import { MAX_PAGES_PER_FOLDER, PROFILE_FORMAT_VERSION } from '@easydeck/engine/profile';
 
 import ContextMenu from './components/ContextMenu.vue';
 import type { MenuItem } from './components/ContextMenu.vue';
@@ -19,6 +29,8 @@ import { useDeck } from './composables/useDeck.js';
 import ButtonEditor from './components/ButtonEditor.vue';
 import PromptDialog from './components/PromptDialog.vue';
 import VariablesDialog from './components/VariablesDialog.vue';
+import ConfirmDialog from './components/ConfirmDialog.vue';
+import { confirmAction, pendingConfirm, settleConfirm } from './composables/useConfirm.js';
 import {
   addActionToKey,
   addFolder,
@@ -35,13 +47,14 @@ import {
   removeProfileVariable,
   renameFolder,
   renamePage,
+  setButtonSpan,
   setProfileVariable,
   swapKeys,
   toClipboard,
 } from './composables/useProfileEditor.js';
 
-/** Mirrors the engine's cap; a scene with more pages stops being navigable. */
-const MAX_PAGES = 16;
+/** The engine's own cap, not a copy of it: two numbers would drift. */
+const MAX_PAGES = MAX_PAGES_PER_FOLDER;
 
 const { t } = useI18n();
 const deck = useDeck();
@@ -139,10 +152,12 @@ async function onMenuChoose(id: string): Promise<void> {
       const profile = deck.profile.value;
       if (!profile) return;
       editing.value = createEmptyButton(profile, key);
+      void refreshUserIcons();
       return;
     }
     case 'settings':
       editing.value = findButton(key);
+      void refreshUserIcons();
       return;
     case 'press':
       await deck.pressKey(key);
@@ -157,7 +172,7 @@ async function onMenuChoose(id: string): Promise<void> {
       await pasteFromClipboard(key);
       return;
     case 'delete':
-      await edit((profile) => removeKey(profile, currentPageId.value!, key));
+      await deleteKey(key);
       return;
     default:
       return;
@@ -259,10 +274,90 @@ const pageButtons = computed(() => {
   return [];
 });
 
+/**
+ * The user's icon folder, refreshed each time the editor opens.
+ *
+ * Not held in the deck's state: it is a folder people edit outside the app, so
+ * the only reading worth trusting is one taken when the picker is about to be
+ * shown.
+ */
+const userIcons = shallowRef<readonly LibraryImage[]>([]);
+
+async function refreshUserIcons(): Promise<void> {
+  try {
+    userIcons.value = await deck.listIcons();
+  } catch {
+    // An unreadable folder costs the user the built-in set and nothing else.
+    userIcons.value = [];
+  }
+}
+
 async function onEditorSave(button: ButtonDefinition): Promise<void> {
   editing.value = undefined;
   selectedKey.value = button.key;
   await edit((profile) => replaceButton(profile, currentPageId.value!, button));
+}
+
+/** What each key on this page already spans, so the grid can clamp a drag. */
+const pageSpans = computed(() => {
+  const pageId = currentPageId.value;
+  const profile = deck.profile.value;
+  if (!pageId || !profile) return [];
+
+  const pending: FolderDefinition[] = [profile.root];
+  while (pending.length > 0) {
+    const folder = pending.pop()!;
+    const page = folder.pages.find((candidate) => candidate.id === pageId);
+    if (page) {
+      return page.buttons.map((button) => ({
+        key: button.key,
+        colSpan: button.colSpan,
+        rowSpan: button.rowSpan,
+      }));
+    }
+    pending.push(...(folder.folders ?? []));
+  }
+
+  return [];
+});
+
+async function onResize(payload: { key: number; colSpan: number; rowSpan: number }): Promise<void> {
+  await edit((profile) =>
+    setButtonSpan(profile, currentPageId.value!, payload.key, payload.colSpan, payload.rowSpan),
+  );
+}
+
+// --- profiles ------------------------------------------------------------
+
+/**
+ * Creates an empty profile and switches to it.
+ *
+ * Laid out for the device that is actually connected: a profile authored for a
+ * different grid is refused by the engine, and silently producing one nobody
+ * can load would be a strange way to start.
+ */
+async function createProfile(name: string): Promise<void> {
+  const device = deck.state.value?.device;
+  if (!device) return;
+
+  const trimmed = name.trim() || t('profiles.newTitle');
+  const taken = new Set(deck.profiles.value.map((item) => item.id));
+
+  // Derived from the name so the file on disk is recognisable, but never
+  // trusted to be unique or even non-empty — a profile named only in Cyrillic
+  // would otherwise get an empty id.
+  const base = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  let id = base || 'profile';
+  for (let index = 2; taken.has(id); index++) id = `${base || 'profile'}-${index}`;
+
+  await deck.saveProfile({
+    formatVersion: PROFILE_FORMAT_VERSION,
+    id,
+    name: trimmed,
+    layout: { rows: device.rows, cols: device.cols },
+    root: { id: 'root', name: trimmed, pages: [{ id: 'main', buttons: [] }] },
+  });
+  await deck.activateProfile(id);
 }
 
 // --- variables -----------------------------------------------------------
@@ -367,7 +462,13 @@ function onFolderMenuChoose(action: string): void {
       );
       return;
     case 'delete':
-      void editProfile((current) => removeFolder(current, id));
+      void (async () => {
+        const name = folder?.name ?? '';
+        if (!(await confirmAction('folder', t('confirm.folder.title', { name }), t('confirm.folder.message')))) {
+          return;
+        }
+        await editProfile((current) => removeFolder(current, id));
+      })();
       return;
     default:
       return;
@@ -415,7 +516,10 @@ function onPageMenuChoose(action: string): void {
       );
       return;
     case 'delete':
-      void editProfile((current) => removePage(current, pageId));
+      void (async () => {
+        if (!(await confirmAction('page', t('confirm.page.title'), t('confirm.page.message')))) return;
+        await editProfile((current) => removePage(current, pageId));
+      })();
       return;
     default:
       return;
@@ -504,7 +608,15 @@ function onKeydown(event: KeyboardEvent): void {
 
   const key = selectedKey.value;
   event.preventDefault();
-  void edit((profile) => removeKey(profile, currentPageId.value!, key));
+  void deleteKey(key);
+}
+
+/** One path for both routes to it: the Delete key and the context menu. */
+async function deleteKey(key: number): Promise<void> {
+  if (!(await confirmAction('button', t('confirm.button.title'), t('confirm.button.message')))) {
+    return;
+  }
+  await edit((profile) => removeKey(profile, currentPageId.value!, key));
 }
 
 /** Looks the button up in the profile, which is where its full definition is. */
@@ -617,18 +729,49 @@ onBeforeUnmount(() => {
       </aside>
 
       <main>
+        <!--
+          No delete button here, deliberately. A profile holds every folder,
+          page and button someone has built; removing one is not an edit but a
+          loss, and it does not belong one slip away from the selector used to
+          switch between them.
+        -->
+        <div class="profiles">
+          <label class="sr-only" for="profile-select">{{ t('profiles.label') }}</label>
+          <select
+            id="profile-select"
+            :value="deck.state.value?.activeProfileId ?? ''"
+            :disabled="deck.profiles.value.length === 0"
+            @change="deck.activateProfile(($event.target as HTMLSelectElement).value)"
+          >
+            <option v-for="item in deck.profiles.value" :key="item.id" :value="item.id">
+              {{ item.name }}
+            </option>
+          </select>
+
+          <button
+            type="button"
+            class="icon"
+            :title="t('profiles.add')"
+            :aria-label="t('profiles.add')"
+            :disabled="!deck.state.value"
+            @click="ask(t('profiles.newTitle'), '', createProfile)"
+          >
+            ＋
+          </button>
+        </div>
+
         <DeckGrid
           :state="deck.state.value"
           :keys="deck.keys.value"
           :pressed-keys="deck.pressedKeys.value"
           :selected-key="selectedKey"
+          :spans="pageSpans"
+          @resize="onResize"
           @select="onSelect"
           @menu="onMenu"
           @drop-action="onDropAction"
           @drop-key="onDropKey"
         />
-
-        <p class="hint">{{ t('deck.editHint') }}</p>
 
         <!-- Numbers only, no arrows: a scene has at most sixteen pages, so
              they all fit and paging through them would be pointless. -->
@@ -700,6 +843,7 @@ onBeforeUnmount(() => {
       :pages="allPages"
       :buttons="pageButtons"
       :declarations="deck.state.value?.variableDeclarations ?? []"
+      :user-icons="userIcons"
       @save="onEditorSave"
       @cancel="editing = undefined"
     />
@@ -712,6 +856,14 @@ onBeforeUnmount(() => {
       @set="onSetVariable"
       @remove="onRemoveVariable"
       @close="variablesOpen = false"
+    />
+
+    <ConfirmDialog
+      v-if="pendingConfirm"
+      :title="pendingConfirm.title"
+      :message="pendingConfirm.message"
+      @confirm="settleConfirm(true, $event)"
+      @cancel="settleConfirm(false)"
     />
 
     <PromptDialog
@@ -843,6 +995,18 @@ main {
   padding: 24px;
 }
 
+/* As wide as the keypad, so the selector reads as belonging to it rather
+   than floating above the column. */
+.profiles {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  max-width: 640px;
+}
+
+.profiles select { flex: 1; min-width: 0; }
+.profiles .icon { flex: none; width: 30px; padding: 4px 0; }
+
 .pages {
   display: flex;
   gap: 6px;
@@ -854,8 +1018,6 @@ main {
 .page { min-width: 28px; padding: 3px 8px; }
 .page.current { border-color: var(--accent); color: var(--accent); }
 .page.add { color: var(--text-muted); }
-
-.hint { color: var(--text-muted); font-size: 12px; margin: 0; text-align: center; max-width: 640px; }
 
 .empty { font-size: 12px; margin: 6px 0 0; }
 

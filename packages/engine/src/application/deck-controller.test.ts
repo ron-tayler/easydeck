@@ -60,6 +60,12 @@ const fakeRenderer: KeyRendererPort = {
 class ManualClock implements ClockPort {
   private pending = new Map<number, () => void>();
   private next = 1;
+  /** Advanced by hand, so animation timing is asserted rather than waited on. */
+  time = 0;
+
+  now(): number {
+    return this.time;
+  }
 
   setTimeout(callback: () => void): TimerHandle {
     const handle = this.next++;

@@ -24,7 +24,7 @@ export function validateProfile(profile: ProfileDefinition): void {
   // Ids are checked across the whole tree, not per level: navigation actions
   // reference them globally, so a duplicate anywhere is ambiguous.
   const seen = { folders: new Set<string>(), pages: new Set<string>() };
-  validateFolder(profile.root, rows * cols, seen, `${rows}x${cols}`);
+  validateFolder(profile.root, rows * cols, cols, seen, `${rows}x${cols}`);
 
   if (profile.initialFolderId && !seen.folders.has(profile.initialFolderId)) {
     throw new InvalidProfileError(
@@ -68,6 +68,7 @@ function validateVariables(profile: ProfileDefinition): void {
 function validateFolder(
   folder: FolderDefinition,
   keyCount: number,
+  cols: number,
   seen: { folders: Set<string>; pages: Set<string> },
   layoutLabel: string,
 ): void {
@@ -92,10 +93,65 @@ function validateFolder(
     seen.pages.add(page.id);
 
     validateButtons(page.id, page.buttons ?? [], keyCount, layoutLabel);
+    validateSpans(page.id, page.buttons ?? [], keyCount, cols, layoutLabel);
   }
 
   for (const child of folder.folders ?? []) {
-    validateFolder(child, keyCount, seen, layoutLabel);
+    validateFolder(child, keyCount, cols, seen, layoutLabel);
+  }
+}
+
+/**
+ * Merged regions must fit the grid, and must not overlap each other.
+ *
+ * Overlap is refused rather than resolved by some precedence rule, exactly as
+ * a spreadsheet refuses to merge over a merge: whichever rule we picked, half
+ * the authors would expect the other one, and the picture that lost would
+ * simply vanish with no explanation.
+ *
+ * Running off the edge is refused for the same reason it is not clamped — a
+ * picture silently cut short looks like a rendering bug, and only the author
+ * knows whether they meant three columns or four.
+ */
+function validateSpans(
+  pageId: string,
+  buttons: readonly ProfileDefinition['root']['pages'][number]['buttons'][number][],
+  keyCount: number,
+  cols: number,
+  layoutLabel: string,
+): void {
+  const claimed = new Map<number, string>();
+
+  for (const button of buttons) {
+    const spanCols = button.colSpan ?? 1;
+    const spanRows = button.rowSpan ?? 1;
+    if (spanCols === 1 && spanRows === 1) continue;
+
+    if (!Number.isInteger(spanCols) || !Number.isInteger(spanRows) || spanCols < 1 || spanRows < 1) {
+      throw new InvalidProfileError(`Button '${button.id}' must span at least one key`);
+    }
+
+    const left = button.key % cols;
+    const top = Math.floor(button.key / cols);
+    if (left + spanCols > cols || (top + spanRows) * cols > keyCount) {
+      throw new InvalidProfileError(
+        `Button '${button.id}' spans ${spanCols}x${spanRows} from key ${button.key}, ` +
+          `which runs past a ${layoutLabel} layout`,
+      );
+    }
+
+    for (let row = top; row < top + spanRows; row++) {
+      for (let col = left; col < left + spanCols; col++) {
+        const key = row * cols + col;
+        const other = claimed.get(key);
+        if (other) {
+          throw new InvalidProfileError(
+            `Buttons '${other}' and '${button.id}' both span key ${key} on page '${pageId}'`,
+          );
+        }
+        claimed.set(key, button.id);
+      }
+    }
   }
 }
 

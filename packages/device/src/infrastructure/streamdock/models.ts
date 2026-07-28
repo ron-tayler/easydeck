@@ -32,6 +32,14 @@ export const FIFINE_AMPLIGAME_D6: DeviceModel = {
     height: 112,
     rotationDegrees: 180,
     maxBytes: 10240,
+    /*
+     * An estimate, and the one number here not taken from a USB capture: the
+     * protocol says nothing about how far apart the displays physically are.
+     * Roughly an eighth of a key looks right against the panel; verify it by
+     * stretching a picture with straight lines across a row and checking that
+     * they stay straight through the seams, then adjust this single value.
+     */
+    gap: 14,
   },
   packetSize: 512,
   imageKeyIds: [11, 12, 13, 14, 15, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5],

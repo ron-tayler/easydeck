@@ -26,7 +26,14 @@ export {
   initialVariableValue,
 } from './domain/variables.js';
 export { referencedVariables, renderTemplate, hasPlaceholders } from './domain/template.js';
-export type { ButtonVisual, ButtonVisualTemplate, IconSpec, LabelSpec } from './domain/visual.js';
+export { CachingKeyRenderer } from './application/caching-renderer.js';
+export type {
+  ButtonVisual,
+  ButtonVisualTemplate,
+  BackdropSlice,
+  IconSpec,
+  LabelSpec,
+} from './domain/visual.js';
 export type {
   ActionDescriptor,
   ActionContext,

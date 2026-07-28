@@ -1,5 +1,10 @@
 import { createDeviceManager } from '@easydeck/device';
-import { ActionRegistry, DeckController, createActionRegistry } from '@easydeck/engine';
+import {
+  ActionRegistry,
+  CachingKeyRenderer,
+  DeckController,
+  createActionRegistry,
+} from '@easydeck/engine';
 import type { ProfileDefinition } from '@easydeck/engine';
 import { createKeyRenderer } from '@easydeck/renderer';
 
@@ -79,9 +84,15 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
       if (keyboard.reason) warnings.push(keyboard.reason);
     }
 
+    /*
+     * Wrapped in a cache, because the same visual is asked for again every
+     * time a page is revisited — and rendering one is a rasterize, a quality
+     * search and, for an animation, a full GIF decode with every frame
+     * re-encoded. Without it, switching scenes redoes all of that.
+     */
     const controller = new DeckController(
       toSurfacePort(surface),
-      toKeyRendererPort(renderer, surface.keyImage),
+      new CachingKeyRenderer(toKeyRendererPort(renderer, surface.keyImage)),
       actions,
     );
 

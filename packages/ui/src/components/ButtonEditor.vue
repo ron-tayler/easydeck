@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import type {
   ButtonDefinition,
   ButtonStateDefinition,
+  LibraryImage,
   PluginManifest,
   VariableDeclaration,
   VariableType,
@@ -11,6 +12,7 @@ import type {
 
 import { renderTemplate } from '@easydeck/engine/template';
 
+import IconPicker from './IconPicker.vue';
 import MacroEditor from './MacroEditor.vue';
 import VariablePicker from './VariablePicker.vue';
 
@@ -25,6 +27,8 @@ const props = defineProps<{
   buttons: readonly { id: string; name: string; states: readonly string[] }[];
   /** Declared variables, which is what a state can be bound to. */
   declarations: readonly VariableDeclaration[];
+  /** The user's icon folder, already read by the host. */
+  userIcons: readonly LibraryImage[];
 }>();
 
 const emit = defineEmits<{ save: [button: ButtonDefinition]; cancel: [] }>();
@@ -100,6 +104,14 @@ function moveState(from: number, to: number): void {
 
   draft.value = { ...draft.value, states };
   stateIndex.value = to;
+}
+
+const merged = computed(() => (draft.value.colSpan ?? 1) > 1 || (draft.value.rowSpan ?? 1) > 1);
+
+/** Stored only when it is a merge: a span of one is the absence of one. */
+function setSpan(field: 'colSpan' | 'rowSpan', raw: string): void {
+  const value = Math.max(1, Math.min(8, Math.round(Number(raw) || 1)));
+  draft.value = { ...draft.value, [field]: value > 1 ? value : undefined };
 }
 
 // --- binding --------------------------------------------------------------
@@ -230,6 +242,16 @@ const preview = computed(() => {
             class="preview"
             :style="{ background: preview.background }"
           >
+            <img
+              v-if="state.visual.icon"
+              class="preview-icon"
+              :src="state.visual.icon.source"
+              :style="{
+                objectFit: state.visual.icon.fit ?? 'contain',
+                height: `${(state.visual.icon.size ?? 1) * 100}%`,
+              }"
+              alt=""
+            />
             <span
               v-if="preview.label"
               :style="{
@@ -287,6 +309,44 @@ const preview = computed(() => {
               />
             </label>
           </div>
+
+          <!--
+            Merging, as in a spreadsheet: only the picture spreads. The keys
+            underneath keep their own buttons, so this sits with the appearance
+            settings rather than with behaviour.
+          -->
+          <div class="pair">
+            <label class="field">
+              <span>{{ t('editor.colSpan') }}</span>
+              <input
+                type="number"
+                min="1"
+                max="8"
+                :value="draft.colSpan ?? 1"
+                @input="setSpan('colSpan', ($event.target as HTMLInputElement).value)"
+              />
+            </label>
+
+            <label class="field">
+              <span>{{ t('editor.rowSpan') }}</span>
+              <input
+                type="number"
+                min="1"
+                max="8"
+                :value="draft.rowSpan ?? 1"
+                @input="setSpan('rowSpan', ($event.target as HTMLInputElement).value)"
+              />
+            </label>
+          </div>
+
+          <p v-if="merged" class="muted desc">{{ t('editor.spanHint') }}</p>
+
+          <IconPicker
+            :icon="state.visual.icon"
+            :color="state.visual.label?.color ?? '#ffffff'"
+            :user-icons="userIcons"
+            @update="patchVisual({ icon: $event })"
+          />
 
           <div class="pair">
             <label class="field">
@@ -510,7 +570,17 @@ h3 {
   margin-bottom: 4px;
 }
 
+.preview { position: relative; }
+
+.preview-icon {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: auto;
+}
+
 .preview span {
+  position: relative;
   flex: 1;
   display: flex;
   justify-content: center;

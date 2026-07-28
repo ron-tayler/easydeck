@@ -14,6 +14,10 @@
     "./template": {
       "types": "./dist/domain/template.d.ts",
       "import": "./dist/domain/template.js"
+    },
+    "./profile": {
+      "types": "./dist/domain/profile.d.ts",
+      "import": "./dist/domain/profile.js"
     }
   },
   "files": [

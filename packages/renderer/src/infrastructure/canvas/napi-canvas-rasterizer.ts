@@ -1,6 +1,11 @@
 import { createCanvas, loadImage, type SKRSContext2D } from '@napi-rs/canvas';
 
-import type { ButtonVisual, IconSpec, LabelSpec } from '../../domain/button-visual.js';
+import type {
+  BackdropSlice,
+  ButtonVisual,
+  IconSpec,
+  LabelSpec,
+} from '../../domain/button-visual.js';
 import { RenderError } from '../../domain/render-target.js';
 import type { RgbaBitmap } from '../../domain/render-target.js';
 import type { Rasterizer, RasterizeRequest } from '../../application/ports/rasterizer.js';
@@ -31,10 +36,17 @@ export class NapiCanvasRasterizer implements Rasterizer {
     ctx.fillRect(0, 0, w, h);
 
     const labelBox = visual.label ? this.measureLabelBox(visual, h, unit) : undefined;
+    if (visual.backdrop) await this.drawBackdrop(ctx, w, h, visual.backdrop, request.gap ?? 0);
     if (visual.icon) await this.drawIcon(ctx, w, h, visual.icon, labelBox);
     if (visual.label) this.drawLabel(ctx, w, h, visual, unit);
 
-    this.applyRoundedMask(ctx, w, h, (visual.cornerRadius ?? DEFAULT_CORNER_RADIUS) * unit);
+    this.applyRoundedMask(
+      ctx,
+      w,
+      h,
+      (visual.cornerRadius ?? DEFAULT_CORNER_RADIUS) * unit,
+      visual.backdrop,
+    );
 
     if (rotationDegrees === 0) return this.toBitmap(upright.getContext('2d'), w, h);
 
@@ -53,13 +65,38 @@ export class NapiCanvasRasterizer implements Rasterizer {
    * edge, which shows up on the device as visible stair-stepping. Masking
    * with `destination-in` against a filled path keeps the edge antialiased.
    */
-  private applyRoundedMask(ctx: SKRSContext2D, w: number, h: number, radius: number): void {
+  private applyRoundedMask(
+    ctx: SKRSContext2D,
+    w: number,
+    h: number,
+    radius: number,
+    backdrop?: BackdropSlice,
+  ): void {
     if (radius > 0) {
+      /*
+       * Only the region's outer corners are rounded. A key in the middle of a
+       * merged picture that rounded all four would bite a notch out of the
+       * image at every seam — the corners face the picture, not the panel.
+       */
+      const corners = backdrop
+        ? {
+            topLeft: backdrop.col === 0 && backdrop.row === 0,
+            topRight: backdrop.col === backdrop.cols - 1 && backdrop.row === 0,
+            bottomRight: backdrop.col === backdrop.cols - 1 && backdrop.row === backdrop.rows - 1,
+            bottomLeft: backdrop.col === 0 && backdrop.row === backdrop.rows - 1,
+          }
+        : { topLeft: true, topRight: true, bottomRight: true, bottomLeft: true };
+
       ctx.save();
       ctx.globalCompositeOperation = 'destination-in';
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.roundRect(0, 0, w, h, radius);
+      ctx.roundRect(0, 0, w, h, [
+        corners.topLeft ? radius : 0,
+        corners.topRight ? radius : 0,
+        corners.bottomRight ? radius : 0,
+        corners.bottomLeft ? radius : 0,
+      ]);
       ctx.fill();
       ctx.restore();
     }
@@ -78,6 +115,61 @@ export class NapiCanvasRasterizer implements Rasterizer {
     const fontSize = (label.fontSize ?? 22) * unit;
     const position = label.position ?? (visual.icon ? 'bottom' : 'center');
     return { position, height: Math.min(h, fontSize * 1.5) };
+  }
+
+  /**
+   * This key's part of a picture that covers several keys.
+   *
+   * The whole picture is laid out over the full region first, then the canvas
+   * is shifted so that only this key's cell lands on it. Doing the arithmetic
+   * on the region rather than cropping a pre-scaled tile is what keeps the
+   * seams aligned: every key derives the same layout from the same numbers and
+   * simply looks at a different part of it.
+   *
+   * Drawn edge to edge on purpose — a gap here would be a visible grid line
+   * through the middle of someone's picture.
+   */
+  private async drawBackdrop(
+    ctx: SKRSContext2D,
+    w: number,
+    h: number,
+    backdrop: BackdropSlice,
+    gap: number,
+  ): Promise<void> {
+    let image;
+    try {
+      image = await loadImage(backdrop.source as Parameters<typeof loadImage>[0]);
+    } catch (cause) {
+      throw new RenderError('Could not load the backdrop image', { cause });
+    }
+
+    /*
+     * The region is measured across the panel, gaps included, and each key
+     * then shows the part of the picture that lands on it. What falls between
+     * two displays is simply not drawn — it is behind the bezel. Laying the
+     * picture out over the visible strips alone would repeat a sliver of it at
+     * every seam and make straight lines step sideways.
+     */
+    const regionW = w * backdrop.cols + gap * (backdrop.cols - 1);
+    const regionH = h * backdrop.rows + gap * (backdrop.rows - 1);
+
+    // `cover` is the default here, unlike an icon: a picture spread over six
+    // keys is meant to fill them, and letterboxing it defeats the point.
+    const scale =
+      (backdrop.fit ?? 'cover') === 'contain'
+        ? Math.min(regionW / image.width, regionH / image.height)
+        : Math.max(regionW / image.width, regionH / image.height);
+
+    const dw = image.width * scale;
+    const dh = image.height * scale;
+
+    ctx.drawImage(
+      image,
+      (regionW - dw) / 2 - backdrop.col * (w + gap),
+      (regionH - dh) / 2 - backdrop.row * (h + gap),
+      dw,
+      dh,
+    );
   }
 
   private async drawIcon(

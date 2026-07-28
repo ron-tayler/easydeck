@@ -20,8 +20,10 @@ import {
   isTruthy,
 } from '../domain/variables.js';
 import type { VariableDeclaration, VariableValue } from '../domain/variables.js';
-import type { ButtonVisual } from '../domain/visual.js';
+import type { BackdropSlice, ButtonVisual } from '../domain/visual.js';
 import type { ActionRegistry } from './action-registry.js';
+import { frameAt, nextChangeMs, prepare } from './animator.js';
+import type { Animation } from './animator.js';
 import { systemClock } from './ports/clock-port.js';
 import type { ClockPort, TimerHandle } from './ports/clock-port.js';
 import type { KeyRendererPort } from './ports/renderer-port.js';
@@ -63,6 +65,14 @@ const DEFAULT_HISTORY_LIMIT = 32;
 const DIRTY = '\0';
 
 /**
+ * Floor on how often the animation loop may wake.
+ *
+ * The measured ceiling is 233 key images a second across the whole panel, so
+ * a key asking for more than this would only crowd out the others.
+ */
+const MIN_ANIMATION_TICK_MS = 15;
+
+/**
  * Runs a profile on a surface: presses in, actions and repaints out.
  *
  * Repainting works by re-resolving every button on the current page and
@@ -83,6 +93,9 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   private readonly stateOverrides = new Map<string, string>();
   /** Declared variables by name: the profile's, plus every plugin's. */
   private declarations = new Map<string, VariableDeclaration>();
+  /** Keys currently playing an animation, with their prepared frames. */
+  private readonly animations = new Map<number, Animation>();
+  private animationTimer?: TimerHandle;
   /** Serialized visual last written to each key, for change detection. */
   private readonly painted = new Map<number, string>();
   private readonly pressTimers = new Map<number, TimerHandle>();
@@ -146,6 +159,10 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     this.tree = new ProfileTree(profile);
     this.stateOverrides.clear();
     this.history.length = 0;
+    // Belongs with the rest of what a new profile invalidates: the repaint
+    // rebuilds them, and until it does these are frames of a page that is no
+    // longer loaded.
+    this.animations.clear();
     this.markAllDirty();
     this.location = this.initialLocation(profile, this.tree);
 
@@ -209,6 +226,12 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     for (const handle of this.pressTimers.values()) this.clock.clearTimeout(handle);
     this.pressTimers.clear();
     this.longPressed.clear();
+
+    // Animations stop with everything else: a timer still writing frames after
+    // the controller was told to stop would keep the device handle busy.
+    if (this.animationTimer) this.clock.clearTimeout(this.animationTimer);
+    this.animationTimer = undefined;
+    this.animations.clear();
 
     await this.paintChain.catch(() => undefined);
   }
@@ -291,14 +314,30 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     const page = this.currentPage;
     if (!page) return [];
 
-    return [...page.buttons]
-      .sort((a, b) => a.key - b.key)
-      .map((button) => ({
-        key: button.key,
-        buttonId: button.id,
-        stateId: this.resolveState(button).id,
-        visual: this.resolveVisual(button),
-      }));
+    /*
+     * Walks keys rather than buttons, because a merged picture reaches keys
+     * that hold no button of their own. Those are reported under the merged
+     * button's identity — it is the one that put something there.
+     */
+    const { rows, cols } = this.surface.layout;
+    const views: KeyView[] = [];
+
+    for (let key = 0; key < rows * cols; key++) {
+      const visual = this.visualForKey(key);
+      if (!visual) continue;
+
+      const owner = this.buttonAt(key) ?? this.spanCovering(key)?.parent;
+      if (!owner) continue;
+
+      views.push({
+        key,
+        buttonId: owner.id,
+        stateId: this.resolveState(owner).id,
+        visual,
+      });
+    }
+
+    return views;
   }
 
   /** Forces every key to be rewritten on the next pass. */
@@ -479,6 +518,71 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     return { ...visual, label: { ...visual.label, text: renderTemplate(visual.label.text, snapshot) } };
   }
 
+  /** The merged button whose picture covers this key, and where in it we are. */
+  private spanCovering(
+    key: number,
+  ): { parent: ButtonDefinition; col: number; row: number } | undefined {
+    const page = this.currentPage;
+    if (!page) return undefined;
+
+    const { cols: gridCols } = this.surface.layout;
+    const col = key % gridCols;
+    const row = Math.floor(key / gridCols);
+
+    for (const button of page.buttons) {
+      const cols = button.colSpan ?? 1;
+      const rows = button.rowSpan ?? 1;
+      if (cols === 1 && rows === 1) continue;
+
+      const left = button.key % gridCols;
+      const top = Math.floor(button.key / gridCols);
+      if (col < left || col >= left + cols) continue;
+      if (row < top || row >= top + rows) continue;
+
+      return { parent: button, col: col - left, row: row - top };
+    }
+
+    return undefined;
+  }
+
+  /**
+   * What a key shows once merges are taken into account.
+   *
+   * The merged button supplies the picture and the background for its whole
+   * region; each covered key keeps its own label on top. A covered key with no
+   * button of its own still shows its slice — otherwise a picture spread over
+   * six keys would only appear where someone happened to put buttons, which is
+   * precisely the arrangement you get when you want one big picture and one
+   * action.
+   */
+  private visualForKey(key: number): ButtonVisual | undefined {
+    const own = this.buttonAt(key);
+    const span = this.spanCovering(key);
+    if (!span) return own ? this.resolveVisual(own) : undefined;
+
+    const parent = this.resolveVisual(span.parent);
+    const label = own ? this.resolveVisual(own).label : undefined;
+
+    return {
+      // The merged button's fill wins: a picture split by fifteen different
+      // background colours underneath it would be a picture in name only.
+      ...(parent.background === undefined ? {} : { background: parent.background }),
+      ...(parent.icon
+        ? {
+            backdrop: {
+              source: parent.icon.source,
+              col: span.col,
+              row: span.row,
+              cols: span.parent.colSpan ?? 1,
+              rows: span.parent.rowSpan ?? 1,
+              ...(parent.icon.fit ? { fit: parent.icon.fit } : {}),
+            } satisfies BackdropSlice,
+          }
+        : {}),
+      ...(label ? { label } : {}),
+    };
+  }
+
   private handleKeyDown(key: number): void {
     const button = this.buttonAt(key);
     if (!button) return;
@@ -583,28 +687,166 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     const { rows, cols } = this.surface.layout;
     const written: number[] = [];
 
-    for (let key = 0; key < rows * cols; key++) {
-      const button = page.buttons.find((candidate) => candidate.key === key);
+    /*
+     * Every key of one merged region starts its animation at the same instant.
+     * Prepared independently they would each start whenever their turn came
+     * round, and the region would play out of step with itself — which on a
+     * six-key picture reads as a tear straight down the middle.
+     */
+    const regionStart = this.clock.now();
 
-      if (!button) {
+    for (let key = 0; key < rows * cols; key++) {
+      const visual = this.visualForKey(key);
+
+      if (!visual) {
         if (!this.painted.has(key)) continue;
+        this.animations.delete(key);
         await this.surface.clearKey(key);
         this.painted.delete(key);
         written.push(key);
         continue;
       }
-
-      const visual = this.resolveVisual(button);
       const signature = JSON.stringify(visual);
       if (this.painted.get(key) === signature) continue;
 
+      // A key that is changing to something else stops animating, whatever it
+      // was doing before.
+      this.animations.delete(key);
+
+      /*
+       * The still goes on first, always. Rendering a GIF's frames means
+       * decoding it and re-encoding every one of them, and waiting for that
+       * inside this loop held up every remaining key — one animated key made
+       * the whole scene appear late.
+       *
+       * Drawing the still costs nothing extra: an animated source rasterizes
+       * to its first frame, so the key shows the right picture immediately and
+       * simply starts moving a moment later.
+       */
       const image = await this.renderer.render(visual);
       await this.surface.setKeyImage(key, image);
+
       // Recorded only after a successful write, so a failed key is retried.
       this.painted.set(key, signature);
       written.push(key);
+
+      this.beginAnimation(key, visual, signature, visual.backdrop ? regionStart : this.clock.now());
     }
 
     if (written.length > 0) this.emit('painted', written);
+    this.driveAnimations();
+  }
+
+  // --- animation ------------------------------------------------------------
+
+  /**
+   * Asks for a visual's frames without holding up the paint that requested it.
+   *
+   * Deliberately not awaited. The frames are only needed to start moving, and
+   * the key already shows the right first frame — so the rest of the scene
+   * paints at once instead of queueing behind a decode.
+   *
+   * `startedAt` is passed in rather than read here: every key of one merged
+   * picture shares the paint's timestamp, so they stay in step even though
+   * their frames arrive at different moments. A key whose decode finished late
+   * simply joins at the frame the clock says, mid-cycle.
+   */
+  private beginAnimation(
+    key: number,
+    visual: ButtonVisual,
+    signature: string,
+    startedAt: number,
+  ): void {
+    if (!this.renderer.renderFrames) return;
+
+    void this.renderer
+      .renderFrames(visual)
+      .then((frames) => {
+        if (!frames || frames.length < 2 || !this.running) return;
+        // The key may have moved on while this was decoding; whatever is there
+        // now was decided more recently than this answer.
+        if (this.painted.get(key) !== signature) return;
+
+        this.animations.set(key, prepare(frames, startedAt));
+        this.driveAnimations();
+      })
+      .catch((error: unknown) => this.emit('error', error as Error));
+  }
+
+  /**
+   * Starts or stops the single timer that drives every animated key.
+   *
+   * One timer for all of them rather than one each: the surface serializes
+   * writes anyway, so independent timers would only compete for the same queue
+   * and make the ordering harder to reason about.
+   */
+  private driveAnimations(): void {
+    if (this.animations.size === 0) {
+      if (this.animationTimer) {
+        this.clock.clearTimeout(this.animationTimer);
+        this.animationTimer = undefined;
+      }
+      return;
+    }
+
+    if (this.animationTimer || !this.running) return;
+    this.scheduleAnimationTick(0);
+  }
+
+  /**
+   * Ticks run on the paint chain, not a chain of their own.
+   *
+   * Both write to the surface, and two chains can interleave: a tick already
+   * awaiting a write would resume *after* a repaint had replaced that key, put
+   * its stale frame back, and leave the key wrong for good — the repaint has
+   * already recorded the key as up to date, so nothing would ever correct it.
+   * One chain for everything that touches the panel is the only ordering that
+   * cannot produce that.
+   */
+  private scheduleAnimationTick(delayMs: number): void {
+    this.animationTimer = this.clock.setTimeout(() => {
+      this.animationTimer = undefined;
+      this.paintChain = this.paintChain.then(
+        () => this.runAnimationTick(),
+        () => this.runAnimationTick(),
+      );
+    }, delayMs);
+  }
+
+  private async runAnimationTick(): Promise<void> {
+    if (!this.running || this.animations.size === 0) return;
+
+    try {
+      const now = this.clock.now();
+
+      for (const [key, animation] of this.animations) {
+        const index = frameAt(animation, now);
+        if (index === animation.shown) continue;
+
+        await this.surface.setKeyImage(key, animation.frames[index]!.image);
+        animation.shown = index;
+      }
+    } catch (error) {
+      this.emit('error', error as Error);
+    }
+
+    if (!this.running || this.animations.size === 0) return;
+
+    /*
+     * Waking when the earliest key next wants a frame, rather than on a fixed
+     * interval. A GIF carries its own per-frame delays and the vendor software
+     * honours them — the capture shows keys running at 12.8 and 21 frames a
+     * second side by side, which is exactly what those files ask for.
+     *
+     * Never busier than the floor: writes take time, and a zero delay would
+     * spin the queue rather than paint anything sooner.
+     */
+    const after = this.clock.now();
+    let soonest = Number.POSITIVE_INFINITY;
+    for (const animation of this.animations.values()) {
+      soonest = Math.min(soonest, nextChangeMs(animation, after));
+    }
+
+    this.scheduleAnimationTick(Math.max(MIN_ANIMATION_TICK_MS, Math.round(soonest)));
   }
 }

@@ -41,6 +41,21 @@ export interface ButtonDefinition {
   readonly states: readonly ButtonStateDefinition[];
   readonly initialStateId?: string;
   /**
+   * How many keys this button's picture covers, like a merged spreadsheet cell.
+   *
+   * Only the *picture* merges: its image and background are stretched across
+   * the region, and the keys underneath keep their own buttons, actions and
+   * labels drawn on top. That is the difference that matters — a merge which
+   * swallowed the other buttons would leave one set of actions for the whole
+   * area, with no way back once you wanted six keys to do six things.
+   *
+   * Since a button's picture comes from its current state, changing state
+   * repaints the whole region — one animation across six keys can be swapped
+   * for another by a single variable.
+   */
+  readonly colSpan?: number;
+  readonly rowSpan?: number;
+  /**
    * Binds the current state to a variable.
    *
    * This is what makes a button reflect the world rather than its own press

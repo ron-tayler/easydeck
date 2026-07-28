@@ -26,7 +26,7 @@ export default {
     title: 'Panel',
     hint: 'Click a key to run it, exactly as pressing it on the device would.',
     pages: 'Pages',
-    editHint: 'Drag an action onto a key, drag keys to swap them. Select a key to copy, paste or delete it. Double-click runs it.',
+    stretch: 'Stretch the picture over neighbouring keys',
   },
   plugins: {
     title: 'Actions',
@@ -39,6 +39,9 @@ export default {
     activate: 'Activate',
     active: 'Active',
     none: 'No profiles yet',
+    label: 'Profile',
+    add: 'New profile',
+    newTitle: 'Profile name',
   },
   variables: {
     title: 'Variables',
@@ -63,7 +66,18 @@ export default {
   prompt: {
     confirm: 'OK',
     cancel: 'Cancel',
-  },  editor: {
+  },
+  confirm: {
+    delete: 'Delete',
+    dontAsk: 'Do not ask again',
+    button: { title: 'Delete this button?', message: 'The button and all its actions and states will be removed.' },
+    folder: {
+      title: 'Delete the folder “{name}”?',
+      message: 'Its pages, buttons and nested folders go with it.',
+    },
+    page: { title: 'Delete this page?', message: 'Every button on this page will be removed.' },
+  },
+  editor: {
     title: 'Button',
     appearance: 'Appearance',
     behaviour: 'Behaviour',
@@ -98,6 +112,21 @@ export default {
     noParams: 'No settings',
     templatesWork: 'Text fields accept variables, for example',
     pickVariable: 'Insert a variable',
+    colSpan: 'Columns',
+    rowSpan: 'Rows',
+    spanHint:
+      'The picture and fill stretch across the whole rectangle. Buttons underneath keep their actions and labels — their own picture and fill are ignored.',
+    icon: 'Picture',
+    iconClear: 'Remove',
+    iconSearch: 'Search icons',
+    iconMine: 'My library',
+    iconBuiltIn: 'Built in',
+    iconFile: 'Own picture…',
+    iconNone: 'Nothing found',
+    iconFit: 'Fit',
+    iconFits: { contain: 'Whole', cover: 'Cropped' },
+    iconSize: 'Size, %',
+    iconHeavy: 'This picture is large: the profile grows with it, and sending it to the deck may take noticeably longer.',
     optional: 'optional',
     choose: 'Choose…',
     thisButton: 'This button',
@@ -133,6 +162,13 @@ export default {
       title: 'Plugins',
       summary: '{count} actions available',
       openFolder: 'Open plugins folder',
+    },
+    icons: {
+      title: 'Icon library',
+      explanation:
+        'Drop pictures into this folder and they appear in the button editor beside the built-in set. A chosen picture is embedded into the profile, so the profile stays portable even if the folder is later cleared.',
+      formats: 'PNG, JPEG, GIF, WebP and BMP. Files over 2 MB are skipped.',
+      openFolder: 'Open icons folder',
     },
     core: {
       title: 'Core',

@@ -19,7 +19,7 @@ const emit = defineEmits<{ close: []; openFolder: [action: string] }>();
 const { t, locale } = useI18n();
 const { theme, setTheme } = useTheme();
 
-const SECTIONS = ['system', 'plugins', 'core', 'deck', 'about'] as const;
+const SECTIONS = ['system', 'plugins', 'icons', 'core', 'deck', 'about'] as const;
 type Section = (typeof SECTIONS)[number];
 const section = ref<Section>('system');
 
@@ -107,6 +107,16 @@ const actionCount = computed(() =>
 
           <button type="button" @click="emit('openFolder', 'easydeck.open-plugins-folder')">
             {{ t('settings.plugins.openFolder') }}
+          </button>
+        </section>
+
+        <section v-else-if="section === 'icons'">
+          <h2>{{ t('settings.icons.title') }}</h2>
+          <p class="muted">{{ t('settings.icons.explanation') }}</p>
+          <p class="muted small">{{ t('settings.icons.formats') }}</p>
+
+          <button type="button" @click="emit('openFolder', 'easydeck.open-icons-folder')">
+            {{ t('settings.icons.openFolder') }}
           </button>
         </section>
 

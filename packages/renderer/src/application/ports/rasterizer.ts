@@ -7,6 +7,8 @@ export interface RasterizeRequest {
   readonly height: number;
   /** Clockwise rotation baked into the output pixels. */
   readonly rotationDegrees: 0 | 90 | 180 | 270;
+  /** Space between neighbouring keys; see RenderTarget.gap. */
+  readonly gap?: number;
 }
 
 /** Outbound port: draws a ButtonVisual into raw RGBA pixels. */

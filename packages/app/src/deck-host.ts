@@ -18,6 +18,7 @@ import type {
   PluginManifest,
   ProfileDefinition,
   ProfileSummary,
+  LibraryImage,
   RunningApiServer,
   VariableValue,
 } from '@easydeck/core';
@@ -139,6 +140,10 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
 
   listProfiles(): Promise<ProfileSummary[]> {
     return this.require().listProfiles();
+  }
+
+  listIcons(): Promise<readonly LibraryImage[]> {
+    return this.require().listIcons();
   }
 
   getProfile(id: string): Promise<ProfileDefinition> {

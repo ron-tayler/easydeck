@@ -298,6 +298,34 @@ export function addActionToKey(
 }
 
 /** Swaps two keys. Nothing is destroyed, and dragging back undoes it. */
+/**
+ * Stretches a button's picture over a rectangle of keys, or un-merges it.
+ *
+ * A span of one is stored as nothing at all: the absence of a merge should
+ * look like the absence of a merge in the document, not like a merge of size
+ * one that happens to behave the same.
+ */
+export function setButtonSpan(
+  profile: ProfileDefinition,
+  pageId: string,
+  key: number,
+  colSpan: number,
+  rowSpan: number,
+): ProfileDefinition {
+  return updatePage(profile, pageId, (page) => ({
+    ...page,
+    buttons: page.buttons.map((button) =>
+      button.key === key
+        ? {
+            ...button,
+            colSpan: colSpan > 1 ? colSpan : undefined,
+            rowSpan: rowSpan > 1 ? rowSpan : undefined,
+          }
+        : button,
+    ),
+  }));
+}
+
 export function swapKeys(
   profile: ProfileDefinition,
   pageId: string,

@@ -6,13 +6,15 @@
  * the project: domain / application / infrastructure, dependencies inward.
  */
 
-export type { ButtonVisual, IconSpec, LabelSpec } from './domain/button-visual.js';
+export type { ButtonVisual, BackdropSlice, IconSpec, LabelSpec } from './domain/button-visual.js';
 export type { RenderTarget, RgbaBitmap } from './domain/render-target.js';
 export { RenderError } from './domain/render-target.js';
 
 export type { Rasterizer, RasterizeRequest } from './application/ports/rasterizer.js';
 export type { JpegEncoder, JpegEncodeOptions } from './application/ports/jpeg-encoder.js';
 export { KeyRenderer } from './application/key-renderer.js';
+export type { RenderedFrame } from './application/key-renderer.js';
+export type { AnimationDecoder, AnimationFrame } from './application/ports/animation-decoder.js';
 
 export { NapiCanvasRasterizer } from './infrastructure/canvas/napi-canvas-rasterizer.js';
 export { TurboJpegEncoder } from './infrastructure/jpeg/turbo-jpeg-encoder.js';
@@ -36,5 +38,6 @@ export async function createKeyRenderer(): Promise<KeyRenderer> {
     const { JsJpegEncoder } = await import('./infrastructure/jpeg/js-jpeg-encoder.js');
     encoder = new JsJpegEncoder();
   }
-  return new KeyRenderer(new NapiCanvasRasterizer(), encoder);
+  const { GifAnimationDecoder } = await import('./infrastructure/canvas/gif-decoder.js');
+  return new KeyRenderer(new NapiCanvasRasterizer(), encoder, new GifAnimationDecoder());
 }

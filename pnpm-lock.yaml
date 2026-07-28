@@ -113,6 +113,9 @@ importers:
       jpeg-js:
         specifier: ^0.4.4
         version: 0.4.4
+      omggif:
+        specifier: ^1.0.10
+        version: 1.0.10
     devDependencies:
       '@easydeck/device':
         specifier: workspace:*
@@ -120,6 +123,9 @@ importers:
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
+      '@types/omggif':
+        specifier: ^1.0.5
+        version: 1.0.5
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -763,6 +769,9 @@ packages:
 
   '@types/node@24.13.3':
     resolution: {integrity: sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q==}
+
+  '@types/omggif@1.0.5':
+    resolution: {integrity: sha512-gDQJflz1rOgEcUXkMAl80bDGN46f5mp8GbcM5dyvq+zsFV6YRBRtmNxlJJ5mjY77T7BRkRFzdIBVmK90QYhCxA==}
 
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
@@ -2225,6 +2234,8 @@ snapshots:
     dependencies:
       undici-types: 7.18.2
 
+  '@types/omggif@1.0.5': {}
+
   '@types/ws@8.18.1':
     dependencies:
       '@types/node': 24.13.3
@@ -2743,8 +2754,7 @@ snapshots:
       path-key: 2.0.1
     optional: true
 
-  omggif@1.0.10:
-    optional: true
+  omggif@1.0.10: {}
 
   once@1.4.0:
     dependencies:

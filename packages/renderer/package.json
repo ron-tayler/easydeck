@@ -27,11 +27,13 @@
     "@julusian/jpeg-turbo": "^3.0.1",
     "@napi-rs/canvas": "^1.0.2",
     "dejavu-fonts-ttf": "^2.37.3",
-    "jpeg-js": "^0.4.4"
+    "jpeg-js": "^0.4.4",
+    "omggif": "^1.0.10"
   },
   "devDependencies": {
     "@easydeck/device": "workspace:*",
     "@types/node": "^24.13.3",
+    "@types/omggif": "^1.0.5",
     "typescript": "~5.9.3"
   }
 }

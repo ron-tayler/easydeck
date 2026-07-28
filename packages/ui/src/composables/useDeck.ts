@@ -2,6 +2,7 @@ import { onScopeDispose, readonly, ref, shallowRef } from 'vue';
 import type {
   DeckState,
   KeyView,
+  LibraryImage,
   PluginManifest,
   ProfileDefinition,
   ProfileSummary,
@@ -176,6 +177,12 @@ export function useDeck() {
     goToPage: (pageId: string) => client.call('goToPage', { pageId }),
     goUp: () => client.call('goUp'),
     activateProfile: (id: string) => client.call('activateProfile', { id }),
+    /* Fetched on demand rather than kept in state: the folder is the user's,
+       it changes behind our back, and it only matters while a picker is open. */
+    listIcons: async (): Promise<readonly LibraryImage[]> => {
+      const result = await client.call<{ icons: LibraryImage[] }>('listIcons');
+      return result.icons;
+    },
     setBrightness: (percent: number) => client.call('setBrightness', { percent }),
     setVariable: (name: string, value: string | number | boolean) =>
       client.call('setVariable', { name, value }),

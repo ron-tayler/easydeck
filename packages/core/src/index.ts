@@ -21,6 +21,8 @@ export type {
   ActionDescriptor,
   ButtonEvent,
   ButtonVisual,
+  IconSpec,
+  LabelSpec,
   KeyView,
   VariableValue,
   VariableType,
@@ -64,7 +66,14 @@ export { ApiHandler } from './application/api-handler.js';
 export { DeckService } from './application/deck-service.js';
 export type { DeckServiceEvents, DeckServiceOptions } from './application/deck-service.js';
 
-export { configDir, profilesDir, pluginsDir, settingsFile } from './infrastructure/config-paths.js';
+export {
+  configDir,
+  profilesDir,
+  pluginsDir,
+  iconsDir,
+  settingsFile,
+} from './infrastructure/config-paths.js';
+export type { LibraryImage } from './infrastructure/icon-library.js';
 export { registerEasyDeckFolderActions } from './infrastructure/actions/easydeck-actions.js';
 export { migrateProfile } from './infrastructure/migrate-profile.js';
 export { FileProfileRepository, assertSafeProfileId } from './infrastructure/file-profile-repository.js';

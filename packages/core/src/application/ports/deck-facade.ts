@@ -1,6 +1,7 @@
 import type { KeyView, PluginManifest, ProfileDefinition, VariableValue } from '@easydeck/engine';
 
 import type { DeckState } from '../../domain/api-messages.js';
+import type { LibraryImage } from '../../infrastructure/icon-library.js';
 import type { DeckEvents } from './deck-events.js';
 import type { ProfileSummary } from './repositories.js';
 
@@ -22,6 +23,14 @@ export interface DeckFacade {
    * these, which is why a plugin describes its parameters as data.
    */
   plugins(): Promise<readonly PluginManifest[]>;
+
+  /**
+   * Pictures from the user's icon folder, for the configurator to offer.
+   *
+   * Served by the daemon because only it can read that folder — a browser
+   * talking over the API certainly cannot.
+   */
+  listIcons(): Promise<readonly LibraryImage[]>;
 
   listProfiles(): Promise<ProfileSummary[]>;
   getProfile(id: string): Promise<ProfileDefinition>;
