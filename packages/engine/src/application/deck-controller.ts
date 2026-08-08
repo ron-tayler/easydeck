@@ -11,6 +11,8 @@ import type {
   ProfileDefinition,
 } from '../domain/profile.js';
 import { ProfileTree } from '../domain/profile-tree.js';
+import { sceneKeys, sceneSignature } from '../domain/scene.js';
+import type { Scene, SceneLabel, SceneRegion } from '../domain/scene.js';
 import { renderTemplate } from '../domain/template.js';
 import { validateProfile } from '../domain/validate-profile.js';
 import {
@@ -22,12 +24,10 @@ import {
 import type { VariableDeclaration, VariableValue } from '../domain/variables.js';
 import type { BackdropSlice, ButtonVisual } from '../domain/visual.js';
 import type { ActionRegistry } from './action-registry.js';
-import { frameAt, nextChangeMs, prepare } from './animator.js';
-import type { Animation } from './animator.js';
+import { AssetIds } from './asset-ids.js';
 import { systemClock } from './ports/clock-port.js';
 import type { ClockPort, TimerHandle } from './ports/clock-port.js';
-import type { KeyRendererPort } from './ports/renderer-port.js';
-import type { SurfacePort } from './ports/surface-port.js';
+import type { PresenterPort } from './ports/presenter-port.js';
 
 /** What a single key shows right now, with everything already resolved. */
 export interface KeyView {
@@ -57,29 +57,18 @@ const DEFAULT_LONG_PRESS_MS = 500;
 const DEFAULT_HISTORY_LIMIT = 32;
 
 /**
- * Stands in for "this key holds something, but not what it should".
- *
- * Never equal to a serialized visual, which always starts with `{`, so a key
- * marked with it always repaints.
- */
-const DIRTY = '\0';
-
-/**
- * Floor on how often the animation loop may wake.
- *
- * The measured ceiling is 233 key images a second across the whole panel, so
- * a key asking for more than this would only crowd out the others.
- */
-const MIN_ANIMATION_TICK_MS = 15;
-
-/**
- * Runs a profile on a surface: presses in, actions and repaints out.
+ * Runs a profile on a panel: presses in, actions and scenes out.
  *
  * Repainting works by re-resolving every button on the current page and
- * comparing the result to what was last written to each key. That is cheaper
- * than it sounds for fifteen keys, and it removes a whole class of bugs that
- * a variable-to-button dependency map invites — a key can never be left
- * showing a stale value because some dependency was not recorded.
+ * describing the result as a scene. That is cheaper than it sounds for fifteen
+ * keys, and it removes a whole class of bugs that a variable-to-button
+ * dependency map invites — a key can never be left showing a stale value
+ * because some dependency was not recorded.
+ *
+ * What the controller deliberately does not do is decide what reaches the
+ * hardware. It says how the panel should look; slicing pictures, caching
+ * tiles, pacing animation against the bus and skipping writes belong to the
+ * presenter, which can see the whole panel at once and measure what it does.
  */
 export class DeckController extends EventEmitter<DeckControllerEvents> {
   readonly variables = new VariableStore();
@@ -93,11 +82,10 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   private readonly stateOverrides = new Map<string, string>();
   /** Declared variables by name: the profile's, plus every plugin's. */
   private declarations = new Map<string, VariableDeclaration>();
-  /** Keys currently playing an animation, with their prepared frames. */
-  private readonly animations = new Map<number, Animation>();
-  private animationTimer?: TimerHandle;
-  /** Serialized visual last written to each key, for change detection. */
-  private readonly painted = new Map<number, string>();
+  /** Short names for pictures, so no scene ever carries their bytes around. */
+  private readonly assets = new AssetIds();
+  /** Signature of the scene last presented, for change detection. */
+  private lastScene?: string;
   private readonly pressTimers = new Map<number, TimerHandle>();
   private readonly longPressed = new Set<number>();
 
@@ -112,8 +100,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   private readonly clock: ClockPort;
 
   constructor(
-    private readonly surface: SurfacePort,
-    private readonly renderer: KeyRendererPort,
+    private readonly surface: PresenterPort,
     private readonly actions: ActionRegistry,
     options: DeckControllerOptions = {},
   ) {
@@ -159,10 +146,10 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     this.tree = new ProfileTree(profile);
     this.stateOverrides.clear();
     this.history.length = 0;
-    // Belongs with the rest of what a new profile invalidates: the repaint
-    // rebuilds them, and until it does these are frames of a page that is no
-    // longer loaded.
-    this.animations.clear();
+    // Names are dropped with the profile that needed them: the map is keyed on
+    // the source strings themselves, and holding a replaced profile's data
+    // URLs would keep megabytes alive for pictures nothing refers to any more.
+    this.assets.clear();
     this.markAllDirty();
     this.location = this.initialLocation(profile, this.tree);
 
@@ -226,12 +213,6 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     for (const handle of this.pressTimers.values()) this.clock.clearTimeout(handle);
     this.pressTimers.clear();
     this.longPressed.clear();
-
-    // Animations stop with everything else: a timer still writing frames after
-    // the controller was told to stop would keep the device handle busy.
-    if (this.animationTimer) this.clock.clearTimeout(this.animationTimer);
-    this.animationTimer = undefined;
-    this.animations.clear();
 
     await this.paintChain.catch(() => undefined);
   }
@@ -347,17 +328,16 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   }
 
   /**
-   * Marks every painted key as needing a rewrite, without forgetting which
-   * keys hold an image.
+   * Forces the next pass to hand the scene over rather than recognise it as
+   * unchanged.
    *
-   * Emptying the map instead would look equivalent — everything repaints
-   * either way — but a key whose button has just been moved away or deleted
-   * has nothing to repaint, and clearing it is only possible while we still
-   * remember that something was there. Forgetting leaves the old picture on
-   * the device forever.
+   * Only the engine's own memory of what it last said is dropped. What is
+   * physically on the panel is the presenter's business, and it compares
+   * against the real thing — so a key that lost its picture is repainted even
+   * when the scene describing it never changed.
    */
   private markAllDirty(): void {
-    for (const key of this.painted.keys()) this.painted.set(key, DIRTY);
+    this.lastScene = undefined;
   }
 
   /**
@@ -680,173 +660,121 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     }
   }
 
+  /**
+   * Describes the current page and hands it over.
+   *
+   * The comparison that decides whether anything changed is made on the
+   * scene's signature, which names pictures rather than carrying them. The old
+   * pass serialized every visual in full, data URLs included — 31ms of blocked
+   * event loop on a panel-wide GIF, paid on every variable change, warm cache
+   * or not.
+   */
   private async paint(): Promise<void> {
+    const scene = this.buildScene();
+    if (!scene) return;
+
+    const signature = sceneSignature(scene);
+    if (signature === this.lastScene) return;
+    this.lastScene = signature;
+
+    await this.surface.present(scene);
+    this.emit('painted', sceneKeys(scene, this.surface.layout.cols));
+  }
+
+  /**
+   * The current page as regions.
+   *
+   * Merged pictures are claimed first, because they decide what the keys under
+   * them show. Nothing here defends against two of them overlapping or one
+   * running off the edge: `validateProfile` refuses both, so a profile that
+   * reached this point cannot describe either.
+   *
+   * A covered key keeps its own label and contributes it to the region — that
+   * is what lets one picture span six keys while each of them still says what
+   * it does.
+   */
+  private buildScene(): Scene | undefined {
     const page = this.currentPage;
-    if (!page) return;
+    if (!page) return undefined;
 
-    const { rows, cols } = this.surface.layout;
-    const written: number[] = [];
+    const regions: SceneRegion[] = [];
+    const claimed = new Set<number>();
 
-    /*
-     * Every key of one merged region starts its animation at the same instant.
-     * Prepared independently they would each start whenever their turn came
-     * round, and the region would play out of step with itself — which on a
-     * six-key picture reads as a tear straight down the middle.
-     */
-    const regionStart = this.clock.now();
+    for (const button of page.buttons) {
+      const cols = button.colSpan ?? 1;
+      const rows = button.rowSpan ?? 1;
+      if (cols === 1 && rows === 1) continue;
 
-    for (let key = 0; key < rows * cols; key++) {
-      const visual = this.visualForKey(key);
+      for (const key of this.keysOfRegion(button.key, cols, rows)) claimed.add(key);
+      regions.push(this.regionOf(button, cols, rows));
+    }
 
-      if (!visual) {
-        if (!this.painted.has(key)) continue;
-        this.animations.delete(key);
-        await this.surface.clearKey(key);
-        this.painted.delete(key);
-        written.push(key);
-        continue;
+    for (const button of page.buttons) {
+      if ((button.colSpan ?? 1) !== 1 || (button.rowSpan ?? 1) !== 1) continue;
+      if (claimed.has(button.key)) continue;
+
+      regions.push(this.regionOf(button, 1, 1));
+    }
+
+    return { regions };
+  }
+
+  private keysOfRegion(key: number, cols: number, rows: number): number[] {
+    const { cols: gridCols } = this.surface.layout;
+    const left = key % gridCols;
+    const top = Math.floor(key / gridCols);
+    const keys: number[] = [];
+
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) keys.push((top + row) * gridCols + left + col);
+    }
+
+    return keys;
+  }
+
+  private regionOf(button: ButtonDefinition, cols: number, rows: number): SceneRegion {
+    const { cols: gridCols } = this.surface.layout;
+    const visual = this.resolveVisual(button);
+    const left = button.key % gridCols;
+    const top = Math.floor(button.key / gridCols);
+
+    const labels: SceneLabel[] = [];
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const own = this.buttonAt((top + row) * gridCols + left + col);
+        const label = own ? this.resolveVisual(own).label : undefined;
+        if (!label) continue;
+
+        labels.push({
+          col,
+          row,
+          text: label.text,
+          ...(label.color === undefined ? {} : { color: label.color }),
+          ...(label.fontFamily === undefined ? {} : { fontFamily: label.fontFamily }),
+          ...(label.fontSize === undefined ? {} : { fontSize: label.fontSize }),
+          ...(label.position === undefined ? {} : { position: label.position }),
+        });
       }
-      const signature = JSON.stringify(visual);
-      if (this.painted.get(key) === signature) continue;
-
-      // A key that is changing to something else stops animating, whatever it
-      // was doing before.
-      this.animations.delete(key);
-
-      /*
-       * The still goes on first, always. Rendering a GIF's frames means
-       * decoding it and re-encoding every one of them, and waiting for that
-       * inside this loop held up every remaining key — one animated key made
-       * the whole scene appear late.
-       *
-       * Drawing the still costs nothing extra: an animated source rasterizes
-       * to its first frame, so the key shows the right picture immediately and
-       * simply starts moving a moment later.
-       */
-      const image = await this.renderer.render(visual);
-      await this.surface.setKeyImage(key, image);
-
-      // Recorded only after a successful write, so a failed key is retried.
-      this.painted.set(key, signature);
-      written.push(key);
-
-      this.beginAnimation(key, visual, signature, visual.backdrop ? regionStart : this.clock.now());
     }
 
-    if (written.length > 0) this.emit('painted', written);
-    this.driveAnimations();
-  }
-
-  // --- animation ------------------------------------------------------------
-
-  /**
-   * Asks for a visual's frames without holding up the paint that requested it.
-   *
-   * Deliberately not awaited. The frames are only needed to start moving, and
-   * the key already shows the right first frame — so the rest of the scene
-   * paints at once instead of queueing behind a decode.
-   *
-   * `startedAt` is passed in rather than read here: every key of one merged
-   * picture shares the paint's timestamp, so they stay in step even though
-   * their frames arrive at different moments. A key whose decode finished late
-   * simply joins at the frame the clock says, mid-cycle.
-   */
-  private beginAnimation(
-    key: number,
-    visual: ButtonVisual,
-    signature: string,
-    startedAt: number,
-  ): void {
-    if (!this.renderer.renderFrames) return;
-
-    void this.renderer
-      .renderFrames(visual)
-      .then((frames) => {
-        if (!frames || frames.length < 2 || !this.running) return;
-        // The key may have moved on while this was decoding; whatever is there
-        // now was decided more recently than this answer.
-        if (this.painted.get(key) !== signature) return;
-
-        this.animations.set(key, prepare(frames, startedAt));
-        this.driveAnimations();
-      })
-      .catch((error: unknown) => this.emit('error', error as Error));
-  }
-
-  /**
-   * Starts or stops the single timer that drives every animated key.
-   *
-   * One timer for all of them rather than one each: the surface serializes
-   * writes anyway, so independent timers would only compete for the same queue
-   * and make the ordering harder to reason about.
-   */
-  private driveAnimations(): void {
-    if (this.animations.size === 0) {
-      if (this.animationTimer) {
-        this.clock.clearTimeout(this.animationTimer);
-        this.animationTimer = undefined;
-      }
-      return;
-    }
-
-    if (this.animationTimer || !this.running) return;
-    this.scheduleAnimationTick(0);
-  }
-
-  /**
-   * Ticks run on the paint chain, not a chain of their own.
-   *
-   * Both write to the surface, and two chains can interleave: a tick already
-   * awaiting a write would resume *after* a repaint had replaced that key, put
-   * its stale frame back, and leave the key wrong for good — the repaint has
-   * already recorded the key as up to date, so nothing would ever correct it.
-   * One chain for everything that touches the panel is the only ordering that
-   * cannot produce that.
-   */
-  private scheduleAnimationTick(delayMs: number): void {
-    this.animationTimer = this.clock.setTimeout(() => {
-      this.animationTimer = undefined;
-      this.paintChain = this.paintChain.then(
-        () => this.runAnimationTick(),
-        () => this.runAnimationTick(),
-      );
-    }, delayMs);
-  }
-
-  private async runAnimationTick(): Promise<void> {
-    if (!this.running || this.animations.size === 0) return;
-
-    try {
-      const now = this.clock.now();
-
-      for (const [key, animation] of this.animations) {
-        const index = frameAt(animation, now);
-        if (index === animation.shown) continue;
-
-        await this.surface.setKeyImage(key, animation.frames[index]!.image);
-        animation.shown = index;
-      }
-    } catch (error) {
-      this.emit('error', error as Error);
-    }
-
-    if (!this.running || this.animations.size === 0) return;
-
-    /*
-     * Waking when the earliest key next wants a frame, rather than on a fixed
-     * interval. A GIF carries its own per-frame delays and the vendor software
-     * honours them — the capture shows keys running at 12.8 and 21 frames a
-     * second side by side, which is exactly what those files ask for.
-     *
-     * Never busier than the floor: writes take time, and a zero delay would
-     * spin the queue rather than paint anything sooner.
-     */
-    const after = this.clock.now();
-    let soonest = Number.POSITIVE_INFINITY;
-    for (const animation of this.animations.values()) {
-      soonest = Math.min(soonest, nextChangeMs(animation, after));
-    }
-
-    this.scheduleAnimationTick(Math.max(MIN_ANIMATION_TICK_MS, Math.round(soonest)));
+    return {
+      key: button.key,
+      cols,
+      rows,
+      // The merged button's fill wins for the whole region: a picture split by
+      // six different background colours underneath it would be a picture in
+      // name only.
+      ...(visual.background === undefined ? {} : { background: visual.background }),
+      ...(visual.cornerRadius === undefined ? {} : { cornerRadius: visual.cornerRadius }),
+      ...(visual.icon
+        ? {
+            image: {
+              asset: { id: this.assets.id(visual.icon.source), source: visual.icon.source },
+              ...(visual.icon.fit ? { fit: visual.icon.fit } : {}),
+            },
+          }
+        : {}),
+      ...(labels.length > 0 ? { labels } : {}),
+    };
   }
 }

@@ -108,21 +108,10 @@ async function chooseFile(event: Event): Promise<void> {
     <div v-if="icon" class="pair">
       <label class="field">
         <span>{{ t('editor.iconFit') }}</span>
-        <select :value="icon.fit ?? 'contain'" @change="patch({ fit: ($event.target as HTMLSelectElement).value as 'contain' | 'cover' })">
-          <option value="contain">{{ t('editor.iconFits.contain') }}</option>
+        <select :value="icon.fit ?? 'cover'" @change="patch({ fit: ($event.target as HTMLSelectElement).value as 'contain' | 'cover' })">
           <option value="cover">{{ t('editor.iconFits.cover') }}</option>
+          <option value="contain">{{ t('editor.iconFits.contain') }}</option>
         </select>
-      </label>
-
-      <label class="field">
-        <span>{{ t('editor.iconSize') }}</span>
-        <input
-          type="number"
-          min="10"
-          max="100"
-          :value="Math.round((icon.size ?? 1) * 100)"
-          @input="patch({ size: Number(($event.target as HTMLInputElement).value) / 100 })"
-        />
       </label>
     </div>
 

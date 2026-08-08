@@ -26,7 +26,6 @@ export {
   initialVariableValue,
 } from './domain/variables.js';
 export { referencedVariables, renderTemplate, hasPlaceholders } from './domain/template.js';
-export { CachingKeyRenderer } from './application/caching-renderer.js';
 export type {
   ButtonVisual,
   ButtonVisualTemplate,
@@ -59,8 +58,15 @@ export {
   ActionFailedError,
 } from './domain/errors.js';
 
-export type { SurfacePort } from './application/ports/surface-port.js';
-export type { KeyRendererPort } from './application/ports/renderer-port.js';
+export type { PresenterPort } from './application/ports/presenter-port.js';
+export type {
+  Scene,
+  SceneAsset,
+  SceneImage,
+  SceneLabel,
+  SceneRegion,
+} from './domain/scene.js';
+export { sceneKeys, sceneSignature } from './domain/scene.js';
 export type { ClockPort, TimerHandle } from './application/ports/clock-port.js';
 export { systemClock } from './application/ports/clock-port.js';
 export { ActionRegistry } from './application/action-registry.js';

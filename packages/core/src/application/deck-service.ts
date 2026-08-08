@@ -28,6 +28,14 @@ export type DeckServiceEvents = DeckEvents;
 export interface DeckServiceOptions {
   readonly surface: Surface;
   readonly controller: DeckController;
+  /**
+   * The panel's in-memory model, when the deck is driving real hardware.
+   *
+   * Optional so a headless test can build a service without one; a running
+   * deck always has it, and it owns timers and decoders that have to be
+   * released with everything else.
+   */
+  readonly compositor?: { stop(): Promise<void> };
   readonly actions: ActionRegistry;
   readonly profiles: ProfileRepository;
   readonly settings: SettingsRepository;
@@ -226,6 +234,9 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     this.watcher?.close();
 
     await this.options.controller.stop();
+    // Before the surface closes: the compositor owns animation timers and open
+    // decoders, and one still writing frames would find the handle gone.
+    await this.options.compositor?.stop();
     await this.options.surface.clearAllKeys().catch(() => undefined);
     await this.options.surface.close();
   }

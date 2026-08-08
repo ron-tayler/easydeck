@@ -153,7 +153,7 @@ function onDrop(event: DragEvent): void {
       v-if="icon"
       class="icon"
       :src="icon.source"
-      :style="{ objectFit: icon.fit ?? 'contain', height: `${(icon.size ?? 1) * 100}%` }"
+      :style="{ objectFit: icon.fit ?? 'cover' }"
       alt=""
     />
     <span v-if="label" class="label" :style="{ color: labelColor, justifyContent: justify, fontSize }">

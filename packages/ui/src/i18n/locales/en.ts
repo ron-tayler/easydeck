@@ -125,7 +125,6 @@ export default {
     iconNone: 'Nothing found',
     iconFit: 'Fit',
     iconFits: { contain: 'Whole', cover: 'Cropped' },
-    iconSize: 'Size, %',
     iconHeavy: 'This picture is large: the profile grows with it, and sending it to the deck may take noticeably longer.',
     optional: 'optional',
     choose: 'Choose…',

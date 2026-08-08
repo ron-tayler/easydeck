@@ -1,0 +1,31 @@
+{
+  "name": "@easydeck/compositor",
+  "version": "0.1.0",
+  "description": "Compositor zone: the panel as it should look, held in memory. Takes a declarative scene, composes each region once, slices it into key tiles and drives the surface",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./scene": {
+      "types": "./dist/domain/scene.d.ts",
+      "import": "./dist/domain/scene.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node --test \"dist/**/*.test.js\""
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "~5.9.3"
+  }
+}

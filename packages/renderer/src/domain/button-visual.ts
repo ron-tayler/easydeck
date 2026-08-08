@@ -29,11 +29,14 @@ export interface BackdropSlice {
 export interface IconSpec {
   /** Encoded image (PNG/JPEG/WebP/AVIF) or a filesystem path to one. */
   readonly source: Uint8Array | string;
-  /** How to fit the icon into its box. Defaults to 'contain'. */
+  /**
+   * How to fit the picture into the key. Defaults to 'cover'.
+   *
+   * The picture always fills the key edge to edge; there is no inset mode and
+   * no size fraction. A key showing a picture shows it whole, and the label
+   * goes on top of it.
+   */
   readonly fit?: 'contain' | 'cover';
-  /** 0..1 fraction of the key height the icon may occupy. Defaults to 1,
-   * or 0.62 when a label is present. */
-  readonly size?: number;
 }
 
 export interface LabelSpec {
@@ -45,7 +48,6 @@ export interface LabelSpec {
   /** Starting size in pixels at 100x100 scale; shrinks automatically until
    * the text fits. Defaults to 22. */
   readonly fontSize?: number;
-  /** Vertical placement. Defaults to 'bottom' when an icon is present,
-   * 'center' otherwise. */
+  /** Vertical placement over the picture. Defaults to 'bottom'. */
   readonly position?: 'top' | 'center' | 'bottom';
 }

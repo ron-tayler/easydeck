@@ -7,20 +7,12 @@ import type { ButtonDefinition, ProfileDefinition } from '../domain/profile.js';
 import { validateProfile } from '../domain/validate-profile.js';
 import { ActionRegistry } from './action-registry.js';
 import { DeckController } from './deck-controller.js';
-import type { KeyRendererPort } from './ports/renderer-port.js';
-import type { SurfacePort } from './ports/surface-port.js';
+import { silentPresenter } from './test-doubles.js';
+
+const presenter = silentPresenter(3, 5);
 
 const GIF = 'data:image/gif;base64,AAAA';
 
-const surface: SurfacePort = {
-  layout: { rows: 3, cols: 5 },
-  onKeyDown: () => () => {},
-  onKeyUp: () => () => {},
-  setKeyImage: async () => {},
-  clearKey: async () => {},
-};
-
-const renderer: KeyRendererPort = { render: async () => new Uint8Array() };
 
 /** A plain button: its own label, its own picture, one key. */
 function plain(key: number, label: string, extras: Partial<ButtonDefinition> = {}): ButtonDefinition {
@@ -45,7 +37,7 @@ function profileWith(buttons: readonly ButtonDefinition[]): ProfileDefinition {
 }
 
 function controllerFor(buttons: readonly ButtonDefinition[]): DeckController {
-  const controller = new DeckController(surface, renderer, new ActionRegistry());
+  const controller = new DeckController(presenter, new ActionRegistry());
   controller.load(profileWith(buttons));
   return controller;
 }

@@ -13,8 +13,20 @@ export { RenderError } from './domain/render-target.js';
 export type { Rasterizer, RasterizeRequest } from './application/ports/rasterizer.js';
 export type { JpegEncoder, JpegEncodeOptions } from './application/ports/jpeg-encoder.js';
 export { KeyRenderer } from './application/key-renderer.js';
-export type { RenderedFrame } from './application/key-renderer.js';
-export type { AnimationDecoder, AnimationFrame } from './application/ports/animation-decoder.js';
+
+export type {
+  ComposedRegion,
+  PanelComposer,
+  RegionRequest,
+  RegionSource,
+  TileCorners,
+  TileRequest,
+} from './application/panel-composer.js';
+export { TileEncoder } from './application/tile-encoder.js';
+export type { EncodedTile, EncodeTileRequest } from './application/tile-encoder.js';
+export { CanvasPanelComposer } from './infrastructure/canvas/canvas-panel-composer.js';
+export { isGif, openGif } from './infrastructure/canvas/gif-sequence.js';
+export type { GifSequence } from './infrastructure/canvas/gif-sequence.js';
 
 export { NapiCanvasRasterizer } from './infrastructure/canvas/napi-canvas-rasterizer.js';
 export { TurboJpegEncoder } from './infrastructure/jpeg/turbo-jpeg-encoder.js';
@@ -26,18 +38,27 @@ import type { JpegEncoder } from './application/ports/jpeg-encoder.js';
 import { NapiCanvasRasterizer } from './infrastructure/canvas/napi-canvas-rasterizer.js';
 
 /**
- * Convenience composition root: skia canvas + libjpeg-turbo, falling back to
- * the pure-JS encoder if the native prebuild fails to load on this platform.
+ * libjpeg-turbo, falling back to the pure-JS encoder if the native prebuild
+ * fails to load on this platform.
  */
-export async function createKeyRenderer(): Promise<KeyRenderer> {
-  let encoder: JpegEncoder;
+export async function createJpegEncoder(): Promise<JpegEncoder> {
   try {
     const { TurboJpegEncoder } = await import('./infrastructure/jpeg/turbo-jpeg-encoder.js');
-    encoder = new TurboJpegEncoder();
+    return new TurboJpegEncoder();
   } catch {
     const { JsJpegEncoder } = await import('./infrastructure/jpeg/js-jpeg-encoder.js');
-    encoder = new JsJpegEncoder();
+    return new JsJpegEncoder();
   }
-  const { GifAnimationDecoder } = await import('./infrastructure/canvas/gif-decoder.js');
-  return new KeyRenderer(new NapiCanvasRasterizer(), encoder, new GifAnimationDecoder());
+}
+
+/**
+ * Convenience composition root for rendering a single visual: skia canvas plus
+ * whichever JPEG encoder this platform has.
+ *
+ * The deck itself no longer goes through here — it composes whole regions
+ * through `CanvasPanelComposer` — but rendering one key on its own is still
+ * what previews and the examples want.
+ */
+export async function createKeyRenderer(): Promise<KeyRenderer> {
+  return new KeyRenderer(new NapiCanvasRasterizer(), await createJpegEncoder());
 }

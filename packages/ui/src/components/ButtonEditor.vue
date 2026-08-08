@@ -247,8 +247,7 @@ const preview = computed(() => {
               class="preview-icon"
               :src="state.visual.icon.source"
               :style="{
-                objectFit: state.visual.icon.fit ?? 'contain',
-                height: `${(state.visual.icon.size ?? 1) * 100}%`,
+                objectFit: state.visual.icon.fit ?? 'cover',
               }"
               alt=""
             />

@@ -7,18 +7,10 @@ import type { ButtonStateDefinition, ProfileDefinition } from '../domain/profile
 import type { VariableDeclaration } from '../domain/variables.js';
 import { ActionRegistry } from './action-registry.js';
 import { DeckController } from './deck-controller.js';
-import type { KeyRendererPort } from './ports/renderer-port.js';
-import type { SurfacePort } from './ports/surface-port.js';
+import { silentPresenter } from './test-doubles.js';
 
-const surface: SurfacePort = {
-  layout: { rows: 1, cols: 1 },
-  onKeyDown: () => () => {},
-  onKeyUp: () => () => {},
-  setKeyImage: async () => {},
-  clearKey: async () => {},
-};
+const presenter = silentPresenter(1, 1);
 
-const renderer: KeyRendererPort = { render: async () => new Uint8Array() };
 
 function state(id: string, when?: unknown): ButtonStateDefinition {
   return {
@@ -51,7 +43,7 @@ function controllerFor(
   states: readonly ButtonStateDefinition[],
   registry = new ActionRegistry(),
 ): DeckController {
-  const controller = new DeckController(surface, renderer, registry);
+  const controller = new DeckController(presenter, registry);
   controller.load(profileWith(variables, states));
   return controller;
 }

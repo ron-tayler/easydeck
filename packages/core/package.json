@@ -24,6 +24,7 @@
     "api-client": "tsc -p tsconfig.json && node dist/examples/api-client.js"
   },
   "dependencies": {
+    "@easydeck/compositor": "workspace:*",
     "@easydeck/device": "workspace:*",
     "@easydeck/engine": "workspace:*",
     "@easydeck/renderer": "workspace:*",

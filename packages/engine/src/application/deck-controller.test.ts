@@ -3,59 +3,11 @@ import { describe, it } from 'node:test';
 
 import { PROFILE_FORMAT_VERSION } from '../domain/profile.js';
 import type { ProfileDefinition } from '../domain/profile.js';
-import type { ButtonVisual } from '../domain/visual.js';
 import { ActionRegistry } from './action-registry.js';
 import { registerBuiltinActions } from './builtin-actions.js';
 import { DeckController } from './deck-controller.js';
 import type { ClockPort, TimerHandle } from './ports/clock-port.js';
-import type { KeyRendererPort } from './ports/renderer-port.js';
-import type { SurfacePort } from './ports/surface-port.js';
-
-class FakeSurface implements SurfacePort {
-  readonly layout = { rows: 1, cols: 3 };
-  readonly writes: Array<{ key: number; text: string }> = [];
-  readonly cleared: number[] = [];
-
-  private downListeners = new Set<(key: number) => void>();
-  private upListeners = new Set<(key: number) => void>();
-
-  onKeyDown(listener: (key: number) => void): () => void {
-    this.downListeners.add(listener);
-    return () => this.downListeners.delete(listener);
-  }
-
-  onKeyUp(listener: (key: number) => void): () => void {
-    this.upListeners.add(listener);
-    return () => this.upListeners.delete(listener);
-  }
-
-  async setKeyImage(key: number, image: Uint8Array): Promise<void> {
-    this.writes.push({ key, text: Buffer.from(image).toString('utf8') });
-  }
-
-  async clearKey(key: number): Promise<void> {
-    this.cleared.push(key);
-  }
-
-  press(key: number): void {
-    for (const listener of this.downListeners) listener(key);
-  }
-
-  release(key: number): void {
-    for (const listener of this.upListeners) listener(key);
-  }
-
-  lastText(key: number): string | undefined {
-    return [...this.writes].reverse().find((w) => w.key === key)?.text;
-  }
-}
-
-/** Encodes the visual as readable text, so assertions stay legible. */
-const fakeRenderer: KeyRendererPort = {
-  async render(visual: ButtonVisual): Promise<Uint8Array> {
-    return Buffer.from(`${visual.background ?? '-'}|${visual.label?.text ?? '-'}`, 'utf8');
-  },
-};
+import { FakePresenter } from './test-doubles.js';
 
 class ManualClock implements ClockPort {
   private pending = new Map<number, () => void>();
@@ -206,10 +158,10 @@ const testProfile: ProfileDefinition = {
 };
 
 async function setup(profile = testProfile) {
-  const surface = new FakeSurface();
+  const surface = new FakePresenter();
   const clock = new ManualClock();
   const registry = registerBuiltinActions(new ActionRegistry());
-  const controller = new DeckController(surface, fakeRenderer, registry, {
+  const controller = new DeckController(surface, registry, {
     clock,
     longPressMs: 400,
   });
@@ -231,8 +183,8 @@ describe('DeckController', () => {
   });
 
   it('refuses a profile authored for a different layout', async () => {
-    const surface = new FakeSurface();
-    const controller = new DeckController(surface, fakeRenderer, new ActionRegistry());
+    const surface = new FakePresenter();
+    const controller = new DeckController(surface, new ActionRegistry());
 
     assert.throws(
       () => controller.load({ ...testProfile, layout: { rows: 3, cols: 5 } }),
@@ -379,12 +331,12 @@ describe('DeckController', () => {
   });
 
   it('keeps running when an action fails, and reports it', async () => {
-    const surface = new FakeSurface();
+    const surface = new FakePresenter();
     const registry = new ActionRegistry();
     registry.register('boom', () => {
       throw new Error('nope');
     });
-    const controller = new DeckController(surface, fakeRenderer, registry);
+    const controller = new DeckController(surface, registry);
     controller.load({
       ...testProfile,
       root: {

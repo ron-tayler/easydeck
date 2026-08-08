@@ -83,8 +83,13 @@ export { registerDeviceActions } from './infrastructure/actions/device-actions.j
 export type { BrightnessControl } from './infrastructure/actions/device-actions.js';
 export { registerKeyboardActions } from './infrastructure/actions/keyboard-actions.js';
 export type { KeyboardActionsResult } from './infrastructure/actions/keyboard-actions.js';
-export { toSurfacePort } from './infrastructure/surface-adapter.js';
-export { toKeyRendererPort } from './infrastructure/renderer-adapter.js';
+export { toComposerPort } from './infrastructure/composer-adapter.js';
+export {
+  toEncoderPort,
+  toPanelFormat,
+  toPanelPort,
+  toPresenterPort,
+} from './infrastructure/panel-adapter.js';
 export { startApiServer } from './infrastructure/api/websocket-server.js';
 export type { ApiServerOptions, RunningApiServer } from './infrastructure/api/websocket-server.js';
 export { loadOrCreateToken, tokenMatches, originAllowed } from './infrastructure/api/auth-token.js';

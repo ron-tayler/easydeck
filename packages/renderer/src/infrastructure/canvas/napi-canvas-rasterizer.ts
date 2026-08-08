@@ -35,9 +35,8 @@ export class NapiCanvasRasterizer implements Rasterizer {
     ctx.fillStyle = visual.background ?? DEFAULT_BACKGROUND;
     ctx.fillRect(0, 0, w, h);
 
-    const labelBox = visual.label ? this.measureLabelBox(visual, h, unit) : undefined;
     if (visual.backdrop) await this.drawBackdrop(ctx, w, h, visual.backdrop, request.gap ?? 0);
-    if (visual.icon) await this.drawIcon(ctx, w, h, visual.icon, labelBox);
+    if (visual.icon) await this.drawIcon(ctx, w, h, visual.icon);
     if (visual.label) this.drawLabel(ctx, w, h, visual, unit);
 
     this.applyRoundedMask(
@@ -109,14 +108,6 @@ export class NapiCanvasRasterizer implements Rasterizer {
     ctx.restore();
   }
 
-  /** Height (in px) the label strip occupies at the top or bottom edge. */
-  private measureLabelBox(visual: ButtonVisual, h: number, unit: number): { position: 'top' | 'center' | 'bottom'; height: number } {
-    const label = visual.label!;
-    const fontSize = (label.fontSize ?? 22) * unit;
-    const position = label.position ?? (visual.icon ? 'bottom' : 'center');
-    return { position, height: Math.min(h, fontSize * 1.5) };
-  }
-
   /**
    * This key's part of a picture that covers several keys.
    *
@@ -172,13 +163,15 @@ export class NapiCanvasRasterizer implements Rasterizer {
     );
   }
 
-  private async drawIcon(
-    ctx: SKRSContext2D,
-    w: number,
-    h: number,
-    icon: IconSpec,
-    labelBox: { position: 'top' | 'center' | 'bottom'; height: number } | undefined,
-  ): Promise<void> {
+  /**
+   * The picture, over the whole key.
+   *
+   * No strip is reserved for the label and no size fraction is applied: a key
+   * showing a picture shows it edge to edge, and the text goes on top. That
+   * makes this preview agree with what the panel does, which is the only
+   * reason to have a preview at all.
+   */
+  private async drawIcon(ctx: SKRSContext2D, w: number, h: number, icon: IconSpec): Promise<void> {
     let image;
     try {
       image = await loadImage(icon.source as Parameters<typeof loadImage>[0]);
@@ -186,22 +179,14 @@ export class NapiCanvasRasterizer implements Rasterizer {
       throw new RenderError('Could not load icon image', { cause });
     }
 
-    // Reserve the label strip so icon and text never overlap.
-    const boxTop = labelBox?.position === 'top' ? labelBox.height : 0;
-    const boxBottom = labelBox?.position === 'bottom' ? labelBox.height : 0;
-    const boxH = (h - boxTop - boxBottom) * (icon.size ?? 1);
-    const boxW = w;
-
     const scale =
-      (icon.fit ?? 'contain') === 'cover'
-        ? Math.max(boxW / image.width, boxH / image.height)
-        : Math.min(boxW / image.width, boxH / image.height);
+      (icon.fit ?? 'cover') === 'contain'
+        ? Math.min(w / image.width, h / image.height)
+        : Math.max(w / image.width, h / image.height);
     const dw = image.width * scale;
     const dh = image.height * scale;
-    const dx = (w - dw) / 2;
-    const dy = boxTop + (h - boxTop - boxBottom - dh) / 2;
 
-    ctx.drawImage(image, dx, dy, dw, dh);
+    ctx.drawImage(image, (w - dw) / 2, (h - dh) / 2, dw, dh);
   }
 
   private drawLabel(ctx: SKRSContext2D, w: number, h: number, visual: ButtonVisual, unit: number): void {
@@ -219,7 +204,7 @@ export class NapiCanvasRasterizer implements Rasterizer {
 
     // Keep a half-line clear of each edge so descenders are not clipped
     // (textBaseline is 'middle', so y is the visual centre of the line).
-    const position = label.position ?? (visual.icon ? 'bottom' : 'center');
+    const position = label.position ?? 'bottom';
     const edgePadding = fontSize * 0.62 + 2 * unit;
     const y = position === 'top' ? edgePadding : position === 'bottom' ? h - edgePadding : h / 2;
 

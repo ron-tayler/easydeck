@@ -15,8 +15,11 @@
 export interface IconSpec {
   /** Path or data URL. Resolved to bytes by whoever rasterizes the visual. */
   readonly source: string;
+  /**
+   * Defaults to 'cover'. The picture always fills the key edge to edge — a
+   * single key included — and the label is drawn over it.
+   */
   readonly fit?: 'contain' | 'cover';
-  readonly size?: number;
 }
 
 export interface LabelSpec {

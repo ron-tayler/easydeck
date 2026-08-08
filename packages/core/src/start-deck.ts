@@ -1,12 +1,8 @@
+import { PanelCompositor } from '@easydeck/compositor';
 import { createDeviceManager } from '@easydeck/device';
-import {
-  ActionRegistry,
-  CachingKeyRenderer,
-  DeckController,
-  createActionRegistry,
-} from '@easydeck/engine';
+import { ActionRegistry, DeckController, createActionRegistry } from '@easydeck/engine';
 import type { ProfileDefinition } from '@easydeck/engine';
-import { createKeyRenderer } from '@easydeck/renderer';
+import { CanvasPanelComposer, TileEncoder, createJpegEncoder } from '@easydeck/renderer';
 
 import { DeckService } from './application/deck-service.js';
 import type { ProfileRepository, SettingsRepository } from './application/ports/repositories.js';
@@ -19,8 +15,13 @@ import { registerKeyboardActions } from './infrastructure/actions/keyboard-actio
 import { registerSystemActions } from './infrastructure/actions/system-actions.js';
 import { FileProfileRepository } from './infrastructure/file-profile-repository.js';
 import { FileSettingsRepository } from './infrastructure/file-settings-repository.js';
-import { toKeyRendererPort } from './infrastructure/renderer-adapter.js';
-import { toSurfacePort } from './infrastructure/surface-adapter.js';
+import { toComposerPort } from './infrastructure/composer-adapter.js';
+import {
+  toEncoderPort,
+  toPanelFormat,
+  toPanelPort,
+  toPresenterPort,
+} from './infrastructure/panel-adapter.js';
 
 export interface StartDeckOptions {
   /** Profile to run. Omit to take it from storage. */
@@ -55,7 +56,22 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
   });
 
   try {
-    const renderer = await createKeyRenderer();
+    const format = toPanelFormat(surface);
+    const encoder = new TileEncoder(await createJpegEncoder());
+
+    /*
+     * The panel, simulated in memory. Everything about pictures happens on
+     * this side of the seam: a region is composed once and cut into tiles
+     * rather than laid out again for every key, frames are prepared in the
+     * background and cancelled when the scene moves on, and playback is paced
+     * against what the bus actually carries instead of what the GIF asks for.
+     */
+    const compositor = new PanelCompositor(
+      toPanelPort(surface),
+      toComposerPort(new CanvasPanelComposer(), format),
+      toEncoderPort(encoder),
+      format,
+    );
 
     const initialBrightness = options.brightness ?? settings.brightness;
 
@@ -84,17 +100,8 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
       if (keyboard.reason) warnings.push(keyboard.reason);
     }
 
-    /*
-     * Wrapped in a cache, because the same visual is asked for again every
-     * time a page is revisited — and rendering one is a rasterize, a quality
-     * search and, for an animation, a full GIF decode with every frame
-     * re-encoded. Without it, switching scenes redoes all of that.
-     */
-    const controller = new DeckController(
-      toSurfacePort(surface),
-      new CachingKeyRenderer(toKeyRendererPort(renderer, surface.keyImage)),
-      actions,
-    );
+    const controller = new DeckController(toPresenterPort(surface, compositor), actions);
+    compositor.on('error', (error) => controller.emit('error', error));
 
     controller.load(profile);
     await controller.start();
@@ -107,6 +114,7 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
     service = new DeckService({
       surface,
       controller,
+      compositor,
       actions,
       profiles,
       settings: settingsRepository,
