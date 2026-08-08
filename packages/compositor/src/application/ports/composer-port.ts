@@ -87,4 +87,20 @@ export interface ComposerPort {
   open(request: OpenRequest): Promise<FrameSource>;
   /** Cuts one key's share out of a composed region and draws its label on top. */
   cutTile(region: ComposedRegion, request: CutTileRequest): Promise<TileBitmap>;
+  /**
+   * A finished tile drawn smaller, centred on black.
+   *
+   * Takes the encoded tile rather than the region behind it, because the
+   * picture that produced it may be an animation whose decoder was released
+   * long ago — and a key must answer a finger at once, not after a GIF has
+   * been replayed to the frame currently on it.
+   */
+  shrinkTile(tile: Uint8Array, request: ShrinkTileRequest): Promise<TileBitmap>;
+}
+
+export interface ShrinkTileRequest {
+  readonly width: number;
+  readonly height: number;
+  /** 0..1 of the original size. */
+  readonly scale: number;
 }

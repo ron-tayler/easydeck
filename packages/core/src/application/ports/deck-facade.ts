@@ -52,6 +52,8 @@ export interface DeckFacade {
   simulateKey(key: number): void;
   /** Runs a key's long-press actions, without waiting out the hold. */
   simulateLongPress(key: number): void;
+  /** Runs a key's double-press actions, without waiting out the window. */
+  simulateDoublePress(key: number): void;
 }
 
 /**

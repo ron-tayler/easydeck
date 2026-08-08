@@ -1,7 +1,8 @@
 import type { EncoderPort, PanelFormat, PanelPort } from '@easydeck/compositor';
 import type { KeyImageFormat, Surface } from '@easydeck/device';
 import type { PanelCompositor } from '@easydeck/compositor';
-import type { PresenterPort, Scene } from '@easydeck/engine';
+import { GestureRecognizer } from '@easydeck/engine';
+import type { ButtonEvent, PresenterPort, Scene } from '@easydeck/engine';
 import type { TileEncoder } from '@easydeck/renderer';
 
 /**
@@ -46,27 +47,46 @@ export function toEncoderPort(encoder: TileEncoder): EncoderPort {
 }
 
 /**
- * The engine's view of the panel: presses in, scenes out.
+ * The engine's view of the panel: gestures in, scenes out.
  *
- * The engine's `Scene` and the compositor's are separate declarations —
- * neither zone depends on the other — so this call is where they are checked
+ * A physical panel can only report that a key went down and came up, so the
+ * recogniser lives here — on the surface's side of the seam, where it belongs.
+ * A deck that works gestures out for itself, such as a touchscreen across the
+ * network, implements this port without one.
+ *
+ * The engine's `Scene` and the compositor's are separate declarations — neither
+ * zone depends on the other — so this call is also where they are checked
  * against each other.
  */
 export function toPresenterPort(surface: Surface, compositor: PanelCompositor): PresenterPort {
+  const listeners = new Set<(key: number, gesture: ButtonEvent) => void>();
+  const recognizer = new GestureRecognizer((key, gesture) => {
+    for (const listener of listeners) listener(key, gesture);
+  });
+
+  surface.on('keyDown', (event) => {
+    recognizer.down(event.key);
+    // Contact, not gesture: the key acknowledges the finger before anyone
+    // knows whether this will turn out to be a tap, a hold or half a pair.
+    void compositor.setPressed(event.key, true);
+  });
+  surface.on('keyUp', (event) => {
+    recognizer.up(event.key);
+    void compositor.setPressed(event.key, false);
+  });
+  // A panel that went away mid-press would otherwise come back holding a
+  // gesture nobody is making any more.
+  surface.on('disconnected', () => recognizer.reset());
+
   return {
     layout: surface.layout,
 
-    onKeyDown(listener) {
-      const wrapped = (event: { key: number }) => listener(event.key);
-      surface.on('keyDown', wrapped);
-      return () => surface.off('keyDown', wrapped);
+    onGesture(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
     },
 
-    onKeyUp(listener) {
-      const wrapped = (event: { key: number }) => listener(event.key);
-      surface.on('keyUp', wrapped);
-      return () => surface.off('keyUp', wrapped);
-    },
+    setDoublePressKeys: (keys) => recognizer.setDoublePressKeys(keys),
 
     present: (scene: Scene) => compositor.present(scene),
   };

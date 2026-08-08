@@ -19,6 +19,7 @@ export type {
   PanelComposer,
   RegionRequest,
   RegionSource,
+  ShrinkTileRequest,
   TileCorners,
   TileRequest,
 } from './application/panel-composer.js';

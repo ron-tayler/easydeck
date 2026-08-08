@@ -226,6 +226,10 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     this.options.controller.simulateLongPress(key);
   }
 
+  simulateDoublePress(key: number): void {
+    this.options.controller.simulateDoublePress(key);
+  }
+
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;

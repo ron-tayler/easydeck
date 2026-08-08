@@ -126,7 +126,17 @@ function onMenu(payload: { key: number; x: number; y: number }): void {
 
 const menuItems = computed<MenuItem[]>(() => {
   const key = menu.value?.key;
-  const occupied = key !== undefined && deck.keys.value.some((view) => view.key === key);
+
+  /*
+   * Whether this key has a button of its own — not whether something is drawn
+   * on it. A picture stretched across a region shows on every key it covers,
+   * but belongs to the button at the region's top-left corner; the keys
+   * underneath are free to hold their own buttons, or none at all.
+   *
+   * Asking the wrong question here offered "settings" for a covered key and
+   * then had nothing to open, so the menu closed and nothing happened.
+   */
+  const occupied = key !== undefined && findButton(key) !== undefined;
 
   return [
     occupied
@@ -134,6 +144,7 @@ const menuItems = computed<MenuItem[]>(() => {
       : { id: 'create', label: t('menu.create') },
     { id: 'press', label: t('menu.press'), disabled: !occupied, separated: true },
     { id: 'longPress', label: t('menu.longPress'), disabled: !occupied },
+    { id: 'doublePress', label: t('menu.doublePress'), disabled: !occupied },
     { id: 'copy', label: t('menu.copy'), disabled: !occupied, separated: true },
     { id: 'paste', label: t('menu.paste') },
     { id: 'delete', label: t('menu.delete'), disabled: !occupied, danger: true, separated: true },
@@ -164,6 +175,9 @@ async function onMenuChoose(id: string): Promise<void> {
       return;
     case 'longPress':
       await deck.holdKey(key);
+      return;
+    case 'doublePress':
+      await deck.doubleKey(key);
       return;
     case 'copy':
       await copyKey(key);

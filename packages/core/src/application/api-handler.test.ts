@@ -135,6 +135,10 @@ class FakeDeck implements DeckFacade {
   simulateLongPress(key: number): void {
     this.calls.push(`simulateLongPress:${key}`);
   }
+
+  simulateDoublePress(key: number): void {
+    this.calls.push(`simulateDoublePress:${key}`);
+  }
 }
 
 const request = (method: string, params?: Record<string, unknown>) => ({

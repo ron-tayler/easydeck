@@ -13,19 +13,31 @@ export interface ActionDescriptor {
 }
 
 /**
- * Button events an action can be bound to.
+ * Gestures an action can be bound to.
  *
- * Prefer `up` for ordinary actions. Binding to `down` means a long press runs
- * both the ordinary action and the long-press one, since the key must be
- * pressed before it can be held. `up` is skipped entirely once `longPress`
- * has fired, so the two never both run.
+ * Three gestures, and no way to bind the raw press and release separately.
+ * That is the point: `down` and `up` looked more expressive, but a gesture
+ * cannot be recognised from the moment a key goes down. Holding and
+ * double-pressing both begin with a press that looks exactly like an ordinary
+ * one, so anything bound to `down` fired before the deck could know which
+ * gesture it was watching, and every combination ran two actions.
  *
- * `down` is still right for anything that should feel instant, or that pairs
- * with `up` to bracket something — push-to-talk being the obvious case.
+ * - `press` — a tap. Runs on release, not on contact, because until the key
+ *   comes back up it might still turn into a hold or the first half of a
+ *   double press.
+ * - `longPress` — the key held down. Runs while it is still held, and the
+ *   release that follows does nothing.
+ * - `doublePress` — two taps in quick succession, running on the second
+ *   release.
+ *
+ * The cost is one deliberate delay: a button that binds `doublePress` cannot
+ * run its `press` until the window for a second tap has closed. A button that
+ * does not bind it runs `press` the instant the key is released, so nobody
+ * pays for a feature they did not ask for.
  */
-export type ButtonEvent = 'down' | 'up' | 'longPress';
+export type ButtonEvent = 'press' | 'longPress' | 'doublePress';
 
-export const BUTTON_EVENTS: readonly ButtonEvent[] = ['down', 'up', 'longPress'];
+export const BUTTON_EVENTS: readonly ButtonEvent[] = ['press', 'longPress', 'doublePress'];
 
 /**
  * What a handler is allowed to do to the deck while running.

@@ -80,4 +80,21 @@ export interface RegionSource {
 export interface PanelComposer {
   open(request: RegionRequest): Promise<RegionSource>;
   cutTile(region: ComposedRegion, request: TileRequest): RgbaBitmap;
+  /**
+   * A finished tile drawn smaller, centred on black — the deck's answer to a
+   * finger on a key.
+   *
+   * Takes the encoded tile rather than recomposing the region behind it. The
+   * picture that produced it may be a hundred-frame animation whose decoder
+   * has long since been released, and reopening one to shrink a single key
+   * would make the panel answer a press in tenths of a second.
+   */
+  shrinkTile(tile: Uint8Array, request: ShrinkTileRequest): Promise<RgbaBitmap>;
+}
+
+export interface ShrinkTileRequest {
+  readonly width: number;
+  readonly height: number;
+  /** 0..1 of the original size. */
+  readonly scale: number;
 }

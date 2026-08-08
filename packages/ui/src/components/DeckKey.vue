@@ -219,9 +219,14 @@ function onDrop(event: DragEvent): void {
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 
-/* Mirrors the device: a key held down reads instantly, without a legend. */
+/*
+ * Mirrors the device, and by the same amount: the panel redraws a held key at
+ * four fifths of its size, so the preview shrinks by exactly as much. A
+ * preview that acknowledged a press differently would be lying about the one
+ * thing it exists to show.
+ */
 .key.pressed {
-  transform: scale(0.94);
+  transform: scale(0.8);
   box-shadow: 0 0 0 2px var(--accent), 0 0 18px rgb(56 139 253 / 45%);
 }
 

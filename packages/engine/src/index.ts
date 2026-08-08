@@ -59,6 +59,8 @@ export {
 } from './domain/errors.js';
 
 export type { PresenterPort } from './application/ports/presenter-port.js';
+export { GestureRecognizer } from './application/gesture-recognizer.js';
+export type { GestureRecognizerOptions } from './application/gesture-recognizer.js';
 export type {
   Scene,
   SceneAsset,

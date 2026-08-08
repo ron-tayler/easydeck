@@ -35,6 +35,14 @@ export interface PanelCompositorEvents {
 /** Floor on how often the animation loop may wake, whatever the bus allows. */
 const MIN_TICK_MS = 15;
 const DEFAULT_ANIMATION_CACHE_BYTES = 64 * 1024 * 1024;
+/**
+ * How much of itself a key shows while it is held down.
+ *
+ * The deck has no travel and no click, so the only way it can acknowledge a
+ * finger is to change what it shows. A fifth smaller reads clearly at arm's
+ * length without looking like the picture changed.
+ */
+const PRESSED_SCALE = 0.8;
 
 /** A region on the panel, with its frames and where it is in them. */
 interface Playing {
@@ -61,6 +69,8 @@ export class PanelCompositor extends EventEmitter<PanelCompositorEvents> {
   private readonly jobs = new Map<string, { cancelled: boolean }>();
   /** Sources held open while their remaining frames are prepared. */
   private readonly sources = new Map<string, FrameSource>();
+  /** Keys currently held down, and what they would show if they were not. */
+  private readonly pressed = new Map<number, Uint8Array>();
 
   private readonly budget: WriteBudget;
   private readonly clock: ClockPort;
@@ -148,6 +158,54 @@ export class PanelCompositor extends EventEmitter<PanelCompositorEvents> {
   }
 
   /**
+   * Shows a key as held down, or lets it go.
+   *
+   * Driven by contact and release rather than by gestures: this is what the
+   * finger is doing right now, not what it will turn out to have meant. A key
+   * that is animating stops while it is held — its frames keep arriving and
+   * the newest is remembered, so letting go shows the animation where it got
+   * to rather than where it was pressed.
+   */
+  async setPressed(key: number, pressed: boolean): Promise<void> {
+    if (pressed === this.pressed.has(key)) return;
+
+    if (!pressed) {
+      const resting = this.pressed.get(key);
+      this.pressed.delete(key);
+      if (resting) await this.enqueue(() => this.writeTile(key, resting));
+      return;
+    }
+
+    const held = this.state.get(key);
+    if (!held) return;
+
+    this.pressed.set(key, held.bytes);
+    await this.enqueue(async () => {
+      try {
+        const bitmap = await this.composer.shrinkTile(held.bytes, {
+          width: this.format.tileWidth,
+          height: this.format.tileHeight,
+          scale: PRESSED_SCALE,
+        });
+        const encoded = await this.encoder.encode(bitmap, { maxBytes: this.format.maxTileBytes });
+        await this.writeTile(key, encoded.bytes);
+      } catch (error) {
+        // Feedback is a courtesy: failing to shrink a key must not disturb
+        // what it shows, and certainly must not take the panel down.
+        this.emit('error', error as Error);
+      }
+    });
+  }
+
+  /** Puts bytes on a key without disturbing what the scene thinks is there. */
+  private async writeTile(key: number, bytes: Uint8Array): Promise<void> {
+    const held = this.state.get(key);
+    await this.panel.writeKey(key, bytes);
+    if (held) this.state.set(key, { ...held, bytes });
+    this.emit('painted', [key]);
+  }
+
+  /**
    * Stops animating, releases every open source and waits for the panel to go
    * quiet. Caches are kept.
    *
@@ -162,6 +220,7 @@ export class PanelCompositor extends EventEmitter<PanelCompositorEvents> {
     this.timer = undefined;
 
     this.playing.clear();
+    this.pressed.clear();
     for (const job of this.jobs.values()) job.cancelled = true;
     this.jobs.clear();
     this.closeSources();
@@ -363,6 +422,19 @@ export class PanelCompositor extends EventEmitter<PanelCompositorEvents> {
       const tileKey = animation.tileKeys[cell]!;
 
       if (this.state.holds(key, tileKey, index)) continue;
+
+      /*
+       * Held down: the key is showing the pressed picture, and overwriting it
+       * with an animation frame would cancel the only feedback the deck has.
+       * The frame is remembered instead, so releasing shows where the
+       * animation actually got to.
+       */
+      if (this.pressed.has(key)) {
+        this.pressed.set(key, bytes);
+        const held = this.state.get(key);
+        if (held) this.state.set(key, { ...held, tileKey, frameIndex: index });
+        continue;
+      }
 
       /*
        * Byte-identical to what is already there. Comparing a few kilobytes

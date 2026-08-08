@@ -1,3 +1,4 @@
+import type { ButtonEvent } from '../domain/action.js';
 import type { Scene, SceneRegion } from '../domain/scene.js';
 import type { PresenterPort } from './ports/presenter-port.js';
 
@@ -20,19 +21,19 @@ export class FakePresenter implements PresenterPort {
 
   /** What each key shows, in the readable form assertions are written in. */
   private readonly shown = new Map<number, string>();
-  private readonly downListeners = new Set<(key: number) => void>();
-  private readonly upListeners = new Set<(key: number) => void>();
+  private readonly listeners = new Set<(key: number, gesture: ButtonEvent) => void>();
+  /** What the controller last said needs a double-press window. */
+  doublePressKeys: readonly number[] = [];
 
   constructor(readonly layout: { rows: number; cols: number } = { rows: 1, cols: 3 }) {}
 
-  onKeyDown(listener: (key: number) => void): () => void {
-    this.downListeners.add(listener);
-    return () => this.downListeners.delete(listener);
+  onGesture(listener: (key: number, gesture: ButtonEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
-  onKeyUp(listener: (key: number) => void): () => void {
-    this.upListeners.add(listener);
-    return () => this.upListeners.delete(listener);
+  setDoublePressKeys(keys: readonly number[]): void {
+    this.doublePressKeys = keys;
   }
 
   async present(scene: Scene): Promise<void> {
@@ -56,12 +57,9 @@ export class FakePresenter implements PresenterPort {
     for (const [key, text] of next) this.shown.set(key, text);
   }
 
-  press(key: number): void {
-    for (const listener of this.downListeners) listener(key);
-  }
-
-  release(key: number): void {
-    for (const listener of this.upListeners) listener(key);
+  /** Reports a finished gesture, the way a real surface does. */
+  gesture(key: number, gesture: ButtonEvent = 'press'): void {
+    for (const listener of this.listeners) listener(key, gesture);
   }
 
   lastText(key: number): string | undefined {
@@ -103,8 +101,7 @@ export class FakePresenter implements PresenterPort {
 export function silentPresenter(rows: number, cols: number): PresenterPort {
   return {
     layout: { rows, cols },
-    onKeyDown: () => () => {},
-    onKeyUp: () => () => {},
+    onGesture: () => () => {},
     present: async () => {},
   };
 }

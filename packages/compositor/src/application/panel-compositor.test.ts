@@ -11,6 +11,7 @@ import type {
   CutTileRequest,
   FrameSource,
   OpenRequest,
+  ShrinkTileRequest,
   TileBitmap,
 } from './ports/composer-port.js';
 import type { EncoderPort } from './ports/encoder-port.js';
@@ -25,6 +26,9 @@ const FORMAT: PanelFormat = {
   rotationDegrees: 180,
   maxTileBytes: 10240,
 };
+
+/** Fourth byte of a tile: 1 when a label was drawn, 9 when it was shrunk. */
+const PRESSED_MARK = 9;
 
 const GIF = { id: 'sha1-gif', source: 'cat.gif' };
 const STILL = { id: 'sha1-png', source: 'cat.png' };
@@ -107,6 +111,15 @@ class FakeComposer implements ComposerPort {
       close: () => {
         this.closes++;
       },
+    };
+  }
+
+  /** Marks the tile as shrunk, so a pressed key is recognisable in a write. */
+  async shrinkTile(tile: Uint8Array, request: ShrinkTileRequest): Promise<TileBitmap> {
+    return {
+      width: request.width,
+      height: request.height,
+      data: Uint8Array.from([...tile.slice(0, 3), PRESSED_MARK]),
     };
   }
 
@@ -330,6 +343,68 @@ test('stopping releases every open source', async () => {
   assert.ok(composer.closes >= 1);
 });
 
+test('a held key shrinks, and grows back when released', async () => {
+  // The deck has no travel and no click: changing what the key shows is the
+  // only acknowledgement it can give a finger.
+  const { panel, compositor } = build();
+
+  await compositor.present({ regions: [{ key: 0, cols: 1, rows: 1, image: { asset: STILL } }] });
+  const resting = panel.writes.at(-1)!.bytes;
+
+  await compositor.setPressed(0, true);
+  assert.equal(panel.writes.at(-1)!.bytes.at(-1), PRESSED_MARK, 'the key did not shrink');
+
+  await compositor.setPressed(0, false);
+  assert.deepEqual(panel.writes.at(-1)!.bytes, resting, 'the key did not come back');
+});
+
+test('pressing a key twice writes it once', async () => {
+  const { panel, compositor } = build();
+  await compositor.present({ regions: [{ key: 0, cols: 1, rows: 1, image: { asset: STILL } }] });
+
+  await compositor.setPressed(0, true);
+  const after = panel.writes.length;
+  await compositor.setPressed(0, true);
+
+  assert.equal(panel.writes.length, after);
+});
+
+test('an animation does not overwrite the key being held', async () => {
+  const { panel, clock, compositor } = build(4, 100);
+  await compositor.present(STRETCHED);
+  await flush();
+
+  await compositor.setPressed(0, true);
+  const afterPress = panel.writes.length;
+
+  await clock.advance(300);
+
+  const wrote = panel.writes.slice(afterPress).filter((write) => write.key === 0);
+  assert.deepEqual(wrote, [], 'frames landed on a key that was being held');
+});
+
+test('releasing shows where the animation got to, not where it was pressed', async () => {
+  const { panel, clock, compositor } = build(4, 100);
+  await compositor.present(STRETCHED);
+  await flush();
+
+  await compositor.setPressed(0, true);
+  await clock.advance(200);
+  await compositor.setPressed(0, false);
+
+  const last = panel.writes.at(-1)!;
+  assert.equal(last.key, 0);
+  assert.notEqual(last.bytes[0], 0, 'came back showing the frame it was pressed on');
+});
+
+test('a key with nothing on it cannot be pressed into anything', async () => {
+  const { panel, compositor } = build();
+
+  await compositor.setPressed(3, true);
+
+  assert.deepEqual(panel.writes, []);
+});
+
 test('a failing picture does not take the panel down', async () => {
   const panel = new FakePanel();
   const failing: ComposerPort = {
@@ -337,6 +412,9 @@ test('a failing picture does not take the panel down', async () => {
       throw new Error('no such picture');
     },
     cutTile: async () => {
+      throw new Error('unreachable');
+    },
+    shrinkTile: async () => {
       throw new Error('unreachable');
     },
   };

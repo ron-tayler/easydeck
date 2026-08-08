@@ -266,7 +266,7 @@ export function addActionToKey(
           {
             id: 'default',
             visual: { background: '#2a2f38', label: { text: label, fontSize: 14 } },
-            actions: { up: [action] },
+            actions: { press: [action] },
           },
         ],
       };
@@ -287,7 +287,7 @@ export function addActionToKey(
           states: [
             {
               ...state,
-              actions: { ...state.actions, up: [...(state.actions?.up ?? []), action] },
+              actions: { ...state.actions, press: [...(state.actions?.press ?? []), action] },
             },
             ...rest,
           ],

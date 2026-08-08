@@ -166,6 +166,7 @@ export function useDeck() {
     refresh: refreshAll,
     pressKey: (key: number) => client.call('simulateKey', { key }),
     holdKey: (key: number) => client.call('simulateLongPress', { key }),
+    doubleKey: (key: number) => client.call('simulateDoublePress', { key }),
     saveProfile: async (profile: ProfileDefinition) => {
       await client.call('saveProfile', { profile });
       // The save triggers a reload on the host, which announces new state;

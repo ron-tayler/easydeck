@@ -1,25 +1,40 @@
+import type { ButtonEvent } from '../../domain/action.js';
 import type { Scene } from '../../domain/scene.js';
 
 /**
- * Outbound port: the panel, as the engine needs it.
+ * Outbound port: a deck, as the engine needs it.
  *
- * Narrower than it looks. The engine says what the panel should show and
- * hears about presses; it never learns which key gets which slice of a
- * picture, what is worth re-encoding, or how fast an animation may run before
- * the bus gives out. All of that belongs to whoever implements this.
+ * Narrower than it looks. The engine says what the panel should show and hears
+ * which gestures happened on it; it never learns which key gets which slice of
+ * a picture, what is worth re-encoding, how fast an animation may run — nor
+ * even whether a press was long or short. All of that belongs to whoever
+ * implements this.
  *
- * The previous shape of this port — `setKeyImage(key, bytes)` — is what made
- * those decisions the engine's problem, and it had no way to make them well:
- * it could see one key at a time.
+ * Gestures rather than contact and release, because recognising them is a
+ * property of the surface. A physical panel can only report that a key went
+ * down, so its adapter runs a `GestureRecognizer` over the reports. A
+ * touchscreen across the network recognises locally and sends the finished
+ * gesture, which is what stops a slow link from turning a double tap into two
+ * singles.
  */
 export interface PresenterPort {
   readonly layout: { readonly rows: number; readonly cols: number };
 
-  /** Registers a key press listener. Returns an unsubscribe function. */
-  onKeyDown(listener: (key: number) => void): () => void;
-  /** Registers a key release listener. Returns an unsubscribe function. */
-  onKeyUp(listener: (key: number) => void): () => void;
+  /** Registers a gesture listener. Returns an unsubscribe function. */
+  onGesture(listener: (key: number, gesture: ButtonEvent) => void): () => void;
 
-  /** Resolves once the scene is visibly on the panel. */
+  /** Resolves once the scene is visibly on the deck. */
   present(scene: Scene): Promise<void>;
+
+  /**
+   * Which keys currently bind a double press.
+   *
+   * Only the profile knows this, and a recogniser needs it: waiting on every
+   * key would make the whole deck feel late for a feature most buttons never
+   * use, and waiting on none would make a second tap impossible to see.
+   *
+   * Optional, so a surface that does not recognise anything — a test double, a
+   * mirror — simply leaves it out.
+   */
+  setDoublePressKeys?(keys: readonly number[]): void;
 }

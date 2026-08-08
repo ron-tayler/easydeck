@@ -53,7 +53,7 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
                 {
                   id: 'default',
                   visual: { background: '#1f4e79', label: { text: 'Браузер', fontSize: 16 } },
-                  actions: { up: [{ type: 'system.open', params: { target: 'https://github.com' } }] },
+                  actions: { press: [{ type: 'system.open', params: { target: 'https://github.com' } }] },
                 },
               ],
             },
@@ -65,7 +65,7 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
                   id: 'default',
                   visual: { background: '#4a4a2d', label: { text: editor.label, fontSize: 16 } },
                   actions: {
-                    up: [{ type: 'system.run-program', params: { command: editor.command } }],
+                    press: [{ type: 'system.run-program', params: { command: editor.command } }],
                   },
                 },
               ],
@@ -79,7 +79,7 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
                 {
                   id: 'default',
                   visual: { background: '#3d3d5c', label: { text: 'Профили', fontSize: 15 } },
-                  actions: { up: [{ type: 'system.open', params: { target: configDirectory } }] },
+                  actions: { press: [{ type: 'system.open', params: { target: configDirectory } }] },
                 },
               ],
             },
@@ -94,7 +94,7 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
                     label: { text: '{{clicks}}', fontSize: 40, color: '#ffd166' },
                   },
                   actions: {
-                    up: [{ type: 'easydeck.increment-variable', params: { name: 'clicks' } }],
+                    press: [{ type: 'easydeck.increment-variable', params: { name: 'clicks' } }],
                     longPress: [
                       { type: 'easydeck.set-variable', params: { name: 'clicks', value: 0 } },
                     ],
@@ -111,7 +111,7 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
                   id: 'normal',
                   visual: { background: '#2f4f4f', label: { text: 'Ярче', fontSize: 16 } },
                   actions: {
-                    up: [
+                    press: [
                       { type: 'deck.set-brightness', params: { percent: 100 } },
                       { type: 'easydeck.set-variable', params: { name: 'bright', value: 'high' } },
                     ],
@@ -121,7 +121,7 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
                   id: 'high',
                   visual: { background: '#5f7f7f', label: { text: 'Тусклее', fontSize: 15 } },
                   actions: {
-                    up: [
+                    press: [
                       { type: 'deck.set-brightness', params: { percent: 40 } },
                       { type: 'easydeck.set-variable', params: { name: 'bright', value: 'normal' } },
                     ],
@@ -141,7 +141,7 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
                     background: '#2a2f38',
                     label: { text: 'Стр. 2 >', fontSize: 14, color: '#9ad1ff' },
                   },
-                  actions: { up: [{ type: 'easydeck.go-to-page', params: { pageId: 'main-2' } }] },
+                  actions: { press: [{ type: 'easydeck.go-to-page', params: { pageId: 'main-2' } }] },
                 },
               ],
             },
@@ -156,7 +156,7 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
                     background: '#3a3d40',
                     label: { text: 'Инструменты', fontSize: 13, color: '#9ad1ff' },
                   },
-                  actions: { up: [{ type: 'easydeck.open-folder', params: { folderId: 'tools' } }] },
+                  actions: { press: [{ type: 'easydeck.open-folder', params: { folderId: 'tools' } }] },
                 },
               ],
             },
@@ -189,7 +189,7 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
                     background: '#2a2f38',
                     label: { text: '< Стр. 1', fontSize: 14, color: '#9ad1ff' },
                   },
-                  actions: { up: [{ type: 'easydeck.go-to-page', params: { pageId: 'main' } }] },
+                  actions: { press: [{ type: 'easydeck.go-to-page', params: { pageId: 'main' } }] },
                 },
               ],
             },
@@ -211,7 +211,7 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
                     {
                       id: 'default',
                       visual: { background: '#26262b', label: { text: 'Сон', fontSize: 16 } },
-                      actions: { up: [{ type: 'deck.sleep-panel' }] },
+                      actions: { press: [{ type: 'deck.sleep-panel' }] },
                     },
                   ],
                 },
@@ -225,7 +225,7 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
                         background: '#3a3d40',
                         label: { text: '< Наверх', fontSize: 14, color: '#9ad1ff' },
                       },
-                      actions: { up: [{ type: 'easydeck.go-up' }] },
+                      actions: { press: [{ type: 'easydeck.go-up' }] },
                     },
                   ],
                 },

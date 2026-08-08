@@ -102,13 +102,68 @@ describe('FileProfileRepository', () => {
     // Renaming the actions matters as much as reshaping the tree: a profile
     // that loads but fails on the first press is worse than one that refuses.
     assert.deepEqual(
-      loaded.root.pages[0]!.buttons[0]!.states[0]!.actions?.up?.map((action) => action.type),
+      loaded.root.pages[0]!.buttons[0]!.states[0]!.actions?.press?.map((action) => action.type),
       ['system.open', 'easydeck.increment-variable'],
     );
     assert.equal(
-      loaded.root.pages[0]!.buttons[0]!.states[0]!.actions?.up?.[0]!.params?.['target'],
+      loaded.root.pages[0]!.buttons[0]!.states[0]!.actions?.press?.[0]!.params?.['target'],
       'https://example.com',
     );
+
+    await rm(isolated, { recursive: true, force: true });
+  });
+
+  it('merges version 3 press and release bindings into one gesture', async () => {
+    // Version 4 binds gestures rather than the raw press and release. Both old
+    // triggers become `press`, in the order the device would have run them —
+    // dropping either would silently disarm half of somebody's button.
+    const isolated = await mkdtemp(join(tmpdir(), 'easydeck-v3-'));
+    const store = new FileProfileRepository(isolated);
+
+    const legacy = {
+      formatVersion: 3,
+      id: 'v3',
+      name: 'V3',
+      layout: { rows: 1, cols: 1 },
+      root: {
+        id: 'root',
+        name: 'Root',
+        pages: [
+          {
+            id: 'main',
+            buttons: [
+              {
+                id: 'b',
+                key: 0,
+                states: [
+                  {
+                    id: 'default',
+                    visual: {},
+                    actions: {
+                      down: [{ type: 'easydeck.set-variable', params: { name: 'talking', value: true } }],
+                      up: [{ type: 'easydeck.set-variable', params: { name: 'talking', value: false } }],
+                      longPress: [{ type: 'easydeck.go-home' }],
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    await writeFile(join(isolated, 'v3.json'), JSON.stringify(legacy), 'utf8');
+
+    const loaded = await store.load('v3');
+    const actions = loaded.root.pages[0]!.buttons[0]!.states[0]!.actions;
+
+    assert.equal(loaded.formatVersion, PROFILE_FORMAT_VERSION);
+    assert.deepEqual(
+      actions?.press?.map((action) => action.params?.['value']),
+      [true, false],
+      'the old down actions must still run before the old up ones',
+    );
+    assert.deepEqual(actions?.longPress?.map((action) => action.type), ['easydeck.go-home']);
 
     await rm(isolated, { recursive: true, force: true });
   });

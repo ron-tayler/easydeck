@@ -48,6 +48,7 @@ export type {
   CutTileRequest,
   FrameSource,
   OpenRequest,
+  ShrinkTileRequest,
   TileBitmap,
   TileCorners,
   TileLabel,

@@ -22,7 +22,62 @@ export function migrateProfile(raw: unknown): ProfileDefinition {
   // Each step upgrades by one, so a version 1 file walks the same path a
   // version 2 file takes — there is only ever one migration to reason about.
   const v2 = version < 2 ? migrateV1ToV2(document) : (document as unknown as ProfileDefinition);
-  return migrateV2ToV3(v2 as unknown as Record<string, unknown>);
+  const v3 =
+    version < 3 ? migrateV2ToV3(v2 as unknown as Record<string, unknown>) : (v2 as ProfileDefinition);
+  return migrateV3ToV4(v3);
+}
+
+/**
+ * Version 3 bound actions to the raw press and release; version 4 binds them
+ * to gestures.
+ *
+ * Both of the old triggers become `press`, in the order the device would have
+ * run them — a button with something on each ran its `down` actions first.
+ * Merging rather than dropping one is the only choice that keeps a
+ * push-to-talk button doing something, even though what it does changes:
+ * bracketing a hold is not expressible any more, and pretending otherwise
+ * would be worse than a button that talks when tapped.
+ */
+function migrateV3ToV4(profile: ProfileDefinition): ProfileDefinition {
+  const migrateActions = (actions: Record<string, unknown> | undefined): Record<string, unknown> | undefined => {
+    if (!actions) return actions;
+
+    const { down, up, ...rest } = actions as Record<string, readonly unknown[] | undefined>;
+    if (down === undefined && up === undefined) return actions;
+
+    const press = [...(down ?? []), ...(up ?? []), ...((rest['press'] as readonly unknown[]) ?? [])];
+    return { ...rest, ...(press.length > 0 ? { press } : {}) };
+  };
+
+  const migrateFolder = <T extends { pages?: readonly unknown[]; folders?: readonly unknown[] }>(
+    folder: T,
+  ): T => ({
+    ...folder,
+    pages: (folder.pages ?? []).map((page) => {
+      const typed = page as { buttons?: readonly unknown[] };
+      return {
+        ...typed,
+        buttons: (typed.buttons ?? []).map((button) => {
+          const withStates = button as { states?: readonly unknown[] };
+          return {
+            ...withStates,
+            states: (withStates.states ?? []).map((state) => {
+              const typedState = state as { actions?: Record<string, unknown> };
+              const actions = migrateActions(typedState.actions);
+              return actions === undefined ? state : { ...typedState, actions };
+            }),
+          };
+        }),
+      };
+    }),
+    folders: (folder.folders ?? []).map((child) => migrateFolder(child as T)),
+  });
+
+  return {
+    ...profile,
+    root: migrateFolder(profile.root as never) as ProfileDefinition['root'],
+    formatVersion: PROFILE_FORMAT_VERSION,
+  };
 }
 
 /**

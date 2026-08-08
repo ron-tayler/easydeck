@@ -202,6 +202,10 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     this.require().simulateLongPress(key);
   }
 
+  simulateDoublePress(key: number): void {
+    this.require().simulateDoublePress(key);
+  }
+
   private require(): DeckService {
     if (!this.deck) {
       throw new Error(this.locked ? 'The deck is paused while the screen is locked' : 'The deck is not running');

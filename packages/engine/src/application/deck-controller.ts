@@ -38,8 +38,6 @@ export interface KeyView {
 }
 
 export interface DeckControllerOptions {
-  /** How long a key must be held before `longPress` fires. */
-  readonly longPressMs?: number;
   readonly clock?: ClockPort;
   /** How many locations `goBack` can retrace. */
   readonly historyLimit?: number;
@@ -53,7 +51,6 @@ export interface DeckControllerEvents {
   painted: [keys: number[]];
 }
 
-const DEFAULT_LONG_PRESS_MS = 500;
 const DEFAULT_HISTORY_LIMIT = 32;
 
 /**
@@ -86,8 +83,6 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   private readonly assets = new AssetIds();
   /** Signature of the scene last presented, for change detection. */
   private lastScene?: string;
-  private readonly pressTimers = new Map<number, TimerHandle>();
-  private readonly longPressed = new Set<number>();
 
   private readonly unsubscribe: Array<() => void> = [];
   private running = false;
@@ -95,7 +90,6 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   private paintChain: Promise<unknown> = Promise.resolve();
   private paintQueued = false;
 
-  private readonly longPressMs: number;
   private readonly historyLimit: number;
   private readonly clock: ClockPort;
 
@@ -105,7 +99,6 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     options: DeckControllerOptions = {},
   ) {
     super();
-    this.longPressMs = options.longPressMs ?? DEFAULT_LONG_PRESS_MS;
     this.historyLimit = options.historyLimit ?? DEFAULT_HISTORY_LIMIT;
     this.clock = options.clock ?? systemClock;
   }
@@ -196,8 +189,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     this.running = true;
 
     this.unsubscribe.push(
-      this.surface.onKeyDown((key) => this.handleKeyDown(key)),
-      this.surface.onKeyUp((key) => this.handleKeyUp(key)),
+      this.surface.onGesture((key, gesture) => this.handleGesture(key, gesture)),
       // Any variable change may alter a label or a bound state.
       this.variables.onChange(() => this.requestPaint()),
     );
@@ -210,9 +202,6 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     this.running = false;
 
     for (const off of this.unsubscribe.splice(0)) off();
-    for (const handle of this.pressTimers.values()) this.clock.clearTimeout(handle);
-    this.pressTimers.clear();
-    this.longPressed.clear();
 
     await this.paintChain.catch(() => undefined);
   }
@@ -341,27 +330,28 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   }
 
   /**
-   * Runs a key's bindings as if the hardware had reported a press and
-   * release. Lets a configurator try a button without reaching for the deck,
-   * and lets tests exercise a profile with no surface at all.
+   * Runs a gesture's bindings without anyone touching the deck.
+   *
+   * The gesture is named rather than acted out. Feeding synthetic presses
+   * through the recogniser would make a configurator's "try this button" wait
+   * out the double-press window before anything happened, and would leave the
+   * key mid-gesture if the caller stopped there.
    */
   simulatePress(key: number): void {
-    this.handleKeyDown(key);
-    this.handleKeyUp(key);
+    this.simulate(key, 'press');
   }
 
-  /**
-   * Runs a key's long-press bindings without waiting out the hold.
-   *
-   * Faithful to what the hardware produces: `down` fires, then `longPress`,
-   * and no `up` at all — a real long press swallows its release, and a
-   * simulation that emitted one would run actions the device never would.
-   */
   simulateLongPress(key: number): void {
-    const button = this.buttonAt(key);
-    if (!button) return;
+    this.simulate(key, 'longPress');
+  }
 
-    void this.dispatch(button, 'down').then(() => this.dispatch(button, 'longPress'));
+  simulateDoublePress(key: number): void {
+    this.simulate(key, 'doublePress');
+  }
+
+  private simulate(key: number, event: ButtonEvent): void {
+    const button = this.buttonAt(key);
+    if (button) void this.dispatch(button, event);
   }
 
   // --- internals ---------------------------------------------------------
@@ -563,43 +553,31 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     };
   }
 
-  private handleKeyDown(key: number): void {
+  /**
+   * A gesture happened on a key: run whatever that key binds to it.
+   *
+   * Which gesture it was has already been decided by the surface, so there is
+   * nothing to time or disambiguate here.
+   */
+  private handleGesture(key: number, gesture: ButtonEvent): void {
     const button = this.buttonAt(key);
-    if (!button) return;
-
-    // A repeated press without a release means the release report was lost.
-    // Drop the orphaned timer, or it would later fire a phantom long press.
-    this.cancelPressTimer(key);
-
-    this.longPressed.delete(key);
-    const timer = this.clock.setTimeout(() => {
-      this.pressTimers.delete(key);
-      this.longPressed.add(key);
-      void this.dispatch(button, 'longPress');
-    }, this.longPressMs);
-    this.pressTimers.set(key, timer);
-
-    void this.dispatch(button, 'down');
+    if (button) void this.dispatch(button, gesture);
   }
 
-  private handleKeyUp(key: number): void {
-    this.cancelPressTimer(key);
-    const afterLongPress = this.longPressed.delete(key);
+  /**
+   * Keys whose current state binds a double press.
+   *
+   * Recomputed with the scene, because it changes with it: a button that
+   * switches state can gain or lose the binding, and a recogniser holding a
+   * stale answer would either delay a key for nothing or miss a second tap.
+   */
+  private doublePressKeys(): number[] {
+    const page = this.currentPage;
+    if (!page) return [];
 
-    // A long press swallows the release. Without this, holding a key would
-    // run both its long-press action and its ordinary one — which is exactly
-    // wrong when the two undo each other, as in hold-to-reset-a-counter.
-    if (afterLongPress) return;
-
-    const button = this.buttonAt(key);
-    if (button) void this.dispatch(button, 'up');
-  }
-
-  private cancelPressTimer(key: number): void {
-    const timer = this.pressTimers.get(key);
-    if (timer === undefined) return;
-    this.clock.clearTimeout(timer);
-    this.pressTimers.delete(key);
+    return page.buttons
+      .filter((button) => (this.resolveState(button).actions?.doublePress?.length ?? 0) > 0)
+      .map((button) => button.key);
   }
 
   private async dispatch(button: ButtonDefinition, event: ButtonEvent): Promise<void> {
@@ -677,6 +655,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     if (signature === this.lastScene) return;
     this.lastScene = signature;
 
+    this.surface.setDoublePressKeys?.(this.doublePressKeys());
     await this.surface.present(scene);
     this.emit('painted', sceneKeys(scene, this.surface.layout.cols));
   }

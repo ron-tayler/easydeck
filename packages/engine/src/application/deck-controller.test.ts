@@ -70,14 +70,14 @@ const testProfile: ProfileDefinition = {
                 id: 'on',
                 visual: { background: '#0f0', label: { text: 'Мик вкл' } },
                 actions: {
-                  down: [{ type: 'easydeck.set-variable', params: { name: 'micOn', value: 'off' } }],
+                  press: [{ type: 'easydeck.set-variable', params: { name: 'micOn', value: 'off' } }],
                 },
               },
               {
                 id: 'off',
                 visual: { background: '#f00', label: { text: 'Мик выкл' } },
                 actions: {
-                  down: [{ type: 'easydeck.set-variable', params: { name: 'micOn', value: 'on' } }],
+                  press: [{ type: 'easydeck.set-variable', params: { name: 'micOn', value: 'on' } }],
                 },
               },
             ],
@@ -90,7 +90,7 @@ const testProfile: ProfileDefinition = {
                 id: 'default',
                 visual: { background: '#222', label: { text: 'Зрителей: {{viewers}}' } },
                 actions: {
-                  down: [{ type: 'easydeck.increment-variable', params: { name: 'viewers' } }],
+                  press: [{ type: 'easydeck.increment-variable', params: { name: 'viewers' } }],
                   longPress: [
                     { type: 'easydeck.set-variable', params: { name: 'viewers', value: 0 } },
                   ],
@@ -106,7 +106,7 @@ const testProfile: ProfileDefinition = {
                 id: 'default',
                 visual: { background: '#00f', label: { text: 'Стр. 2' } },
                 actions: {
-                  up: [{ type: 'easydeck.go-to-page', params: { pageId: 'main-2' } }],
+                  press: [{ type: 'easydeck.go-to-page', params: { pageId: 'main-2' } }],
                 },
               },
             ],
@@ -123,7 +123,7 @@ const testProfile: ProfileDefinition = {
               {
                 id: 'default',
                 visual: { label: { text: 'Инструменты' } },
-                actions: { up: [{ type: 'easydeck.open-folder', params: { folderId: 'tools' } }] },
+                actions: { press: [{ type: 'easydeck.open-folder', params: { folderId: 'tools' } }] },
               },
             ],
           },
@@ -145,7 +145,7 @@ const testProfile: ProfileDefinition = {
                   {
                     id: 'default',
                     visual: { label: { text: 'Наверх' } },
-                    actions: { up: [{ type: 'easydeck.go-up' }] },
+                    actions: { press: [{ type: 'easydeck.go-up' }] },
                   },
                 ],
               },
@@ -157,14 +157,18 @@ const testProfile: ProfileDefinition = {
   },
 };
 
+/** The surface reports a finished gesture; deciding which it was is its job. */
+function tap(surface: FakePresenter, key: number): void {
+  surface.gesture(key, 'press');
+}
+
 async function setup(profile = testProfile) {
   const surface = new FakePresenter();
   const clock = new ManualClock();
   const registry = registerBuiltinActions(new ActionRegistry());
-  const controller = new DeckController(surface, registry, {
-    clock,
-    longPressMs: 400,
-  });
+  // No gesture thresholds here any more: recognising them is the surface's
+  // job, so the controller has nothing to time.
+  const controller = new DeckController(surface, registry, { clock });
   controller.load(profile);
   await controller.start();
   return { surface, clock, controller };
@@ -195,7 +199,7 @@ describe('DeckController', () => {
   it('follows a variable-bound state, whichever way the variable changes', async () => {
     const { surface, controller } = await setup();
 
-    surface.press(0);
+    tap(surface, 0);
     await settle();
     assert.equal(surface.lastText(0), '#f00|Мик выкл');
 
@@ -209,7 +213,7 @@ describe('DeckController', () => {
     const { surface } = await setup();
     surface.writes.length = 0;
 
-    surface.press(1);
+    tap(surface, 1);
     await settle();
 
     assert.deepEqual(
@@ -222,38 +226,29 @@ describe('DeckController', () => {
   it('fires longPress only after the threshold, and not on a quick tap', async () => {
     const { surface, clock } = await setup();
 
-    surface.press(1);
+    tap(surface, 1);
     await settle();
-    surface.press(1);
+    tap(surface, 1);
     await settle();
     assert.equal(surface.lastText(1), '#222|Зрителей: 2');
 
-    surface.release(1);
-    assert.equal(clock.pendingCount, 0);
-
-    surface.press(1);
-    clock.fire();
+    surface.gesture(1, 'longPress');
     await settle();
     assert.equal(surface.lastText(1), '#222|Зрителей: 0');
   });
 
-  it('swallows the release that follows a long press', async () => {
-    const { surface, clock } = await setup();
+  it('tells the surface which keys need a double-press window', async () => {
+    // Only the profile knows this, and the surface recognising gestures needs
+    // it — otherwise every key waits, or a second tap is never seen.
+    const { surface } = await setup();
 
-    surface.press(1);
-    clock.fire();
-    await settle();
-    surface.release(1);
-    await settle();
-
-    assert.equal(surface.lastText(1), '#222|Зрителей: 0');
+    assert.deepEqual(surface.doublePressKeys, []);
   });
 
   it('moves between pages of a folder and clears keys the new page does not use', async () => {
     const { surface, controller } = await setup();
 
-    surface.press(2);
-    surface.release(2);
+    tap(surface, 2);
     await settle();
 
     assert.deepEqual(controller.currentLocation, { folderId: 'root', pageId: 'main-2' });
@@ -266,8 +261,7 @@ describe('DeckController', () => {
 
     controller.goToPage('main-2');
     await settle();
-    surface.press(0);
-    surface.release(0);
+    tap(surface, 0);
     await settle();
 
     assert.deepEqual(controller.currentLocation, { folderId: 'tools', pageId: 'tools-main' });
@@ -276,8 +270,7 @@ describe('DeckController', () => {
       ['root', 'tools'],
     );
 
-    surface.press(0);
-    surface.release(0);
+    tap(surface, 0);
     await settle();
     assert.equal(controller.currentLocation?.folderId, 'root');
   });
@@ -350,7 +343,7 @@ describe('DeckController', () => {
                 id: 'b',
                 key: 0,
                 states: [
-                  { id: 'default', visual: { label: { text: 'x' } }, actions: { down: [{ type: 'boom' }] } },
+                  { id: 'default', visual: { label: { text: 'x' } }, actions: { press: [{ type: 'boom' }] } },
                 ],
               },
             ],
@@ -363,7 +356,7 @@ describe('DeckController', () => {
     controller.on('error', (error) => errors.push(error));
     await controller.start();
 
-    surface.press(0);
+    tap(surface, 0);
     await settle();
 
     assert.equal(errors.length, 1);
@@ -433,7 +426,7 @@ describe('DeckController', () => {
     await controller.stop();
     surface.writes.length = 0;
 
-    surface.press(1);
+    tap(surface, 1);
     await settle();
 
     assert.equal(surface.writes.length, 0);

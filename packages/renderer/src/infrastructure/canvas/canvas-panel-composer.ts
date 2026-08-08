@@ -5,6 +5,7 @@ import type {
   PanelComposer,
   RegionRequest,
   RegionSource,
+  ShrinkTileRequest,
   TileRequest,
 } from '../../application/panel-composer.js';
 import type { LabelSpec } from '../../domain/button-visual.js';
@@ -122,6 +123,36 @@ export class CanvasPanelComposer implements PanelComposer {
     rctx.rotate((request.rotationDegrees * Math.PI) / 180);
     rctx.drawImage(tile, -request.width / 2, -request.height / 2);
     return toBitmap(rctx, request.width, request.height);
+  }
+
+  /**
+   * Redraws an encoded tile at a fraction of its size, centred on black.
+   *
+   * Decoding our own JPEG is the cheap way round: a couple of milliseconds
+   * against reopening a GIF and replaying it to the frame currently on the
+   * key, which is what any other route would cost.
+   */
+  async shrinkTile(tile: Uint8Array, request: ShrinkTileRequest): Promise<RgbaBitmap> {
+    let image;
+    try {
+      image = await loadImage(Buffer.from(tile));
+    } catch (cause) {
+      throw new RenderError('Could not read the tile to shrink it', { cause });
+    }
+
+    const canvas = createCanvas(request.width, request.height);
+    const ctx = canvas.getContext('2d');
+
+    // Black rather than transparent: the key has no backdrop of its own, and
+    // the panel around it is black anyway.
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, request.width, request.height);
+
+    const width = request.width * request.scale;
+    const height = request.height * request.scale;
+    ctx.drawImage(image, (request.width - width) / 2, (request.height - height) / 2, width, height);
+
+    return toBitmap(ctx, request.width, request.height);
   }
 
   private fill(ctx: SKRSContext2D, request: RegionRequest): void {

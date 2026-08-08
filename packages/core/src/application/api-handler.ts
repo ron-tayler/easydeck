@@ -110,6 +110,10 @@ export class ApiHandler {
         this.deck.simulateLongPress(integer(params, 'key'));
         return { ok: true };
 
+      case 'simulateDoublePress':
+        this.deck.simulateDoublePress(integer(params, 'key'));
+        return { ok: true };
+
       default:
         throw new Error(`Unknown method '${request.method}'`);
     }

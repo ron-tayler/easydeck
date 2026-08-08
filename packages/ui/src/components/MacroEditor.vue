@@ -13,10 +13,10 @@ import type {
 
 import ActionParams from './ActionParams.vue';
 
-type Trigger = 'down' | 'up' | 'longPress';
+type Trigger = 'press' | 'longPress' | 'doublePress';
 type ActionMap = NonNullable<ButtonStateDefinition['actions']>;
 
-const TRIGGERS: readonly Trigger[] = ['down', 'up', 'longPress'];
+const TRIGGERS: readonly Trigger[] = ['press', 'longPress', 'doublePress'];
 
 /** Ours alone, so a key being dragged in the grid can never land in a macro. */
 const STEP_MIME = 'application/x-easydeck-step';
@@ -47,7 +47,7 @@ const say = (text: LocalizedText | undefined): string =>
  * not editing to reach the one you were. A macro is read as an ordered list,
  * so the list is what gets the room.
  */
-const trigger = ref<Trigger>('down');
+const trigger = ref<Trigger>('press');
 const list = computed<readonly ActionDescriptor[]>(() => props.actions[trigger.value] ?? []);
 const countOf = (which: Trigger): number => (props.actions[which] ?? []).length;
 

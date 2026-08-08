@@ -5,6 +5,7 @@ import type {
   FrameSource,
   OpenRequest,
   PanelFormat,
+  ShrinkTileRequest,
   TileBitmap,
 } from '@easydeck/compositor';
 import { tileOrigin } from '@easydeck/compositor';
@@ -51,6 +52,10 @@ export function toComposerPort(composer: PanelComposer, format: PanelFormat): Co
         ...(request.cornerRadius === undefined ? {} : { cornerRadius: request.cornerRadius }),
         ...(request.label ? { label: request.label } : {}),
       });
+    },
+
+    shrinkTile(tile: Uint8Array, request: ShrinkTileRequest): Promise<TileBitmap> {
+      return composer.shrinkTile(tile, request);
     },
   };
 }
