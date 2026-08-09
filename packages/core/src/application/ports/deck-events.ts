@@ -13,7 +13,13 @@ import type { DeckState } from '../../domain/api-messages.js';
  */
 export interface DeckEvents {
   state: [state: DeckState];
-  locationChanged: [location: DeckLocation];
+  /*
+   * Everything that happens *to a deck* names it. With several running, a
+   * configurator showing one of them must be able to tell which events are
+   * about the deck it is showing — otherwise pressing a key on the panel
+   * lights up the same key in a window displaying the tablet.
+   */
+  locationChanged: [event: { deckId: string; location: DeckLocation }];
   /**
    * The panel was repainted, with the keys that were written.
    *
@@ -22,10 +28,13 @@ export interface DeckEvents {
    * set-button-state, which touches no variable at all. Reporting the repaint
    * itself means the window cannot drift from the device.
    */
-  viewChanged: [keys: readonly number[]];
+  viewChanged: [event: { deckId: string; keys: readonly number[] }];
+  /** Variables belong to the machine, so this one names no deck. */
   variablesChanged: [variables: Record<string, VariableValue>];
-  keyDown: [key: number];
-  keyUp: [key: number];
+  keyDown: [event: { deckId: string; key: number }];
+  keyUp: [event: { deckId: string; key: number }];
   profilesChanged: [];
+  /** A device was approved, revoked, or has started asking to be let in. */
+  devicesChanged: [];
   actionError: [message: string];
 }

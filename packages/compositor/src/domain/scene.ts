@@ -48,6 +48,15 @@ export interface SceneRegion {
   readonly image?: SceneImage;
   /** At most one per key of the region; keys without one show no text. */
   readonly labels?: readonly SceneLabel[];
+  /**
+   * Keys of this region whose last press ended in an error, as `col,row`.
+   *
+   * Drawn as a warning sign on top of whatever the key shows, and gone again a
+   * few seconds later. A deck has no window to put a message in — the D6 least
+   * of all — so the key that failed says so itself, and the alternative is a
+   * press that silently does nothing.
+   */
+  readonly alerts?: readonly { readonly col: number; readonly row: number }[];
 }
 
 export interface Scene {
@@ -161,4 +170,9 @@ export function validateScene(format: PanelFormat, scene: Scene): void {
       owner.set(key, region);
     }
   }
+}
+
+/** Whether this key of the region is flagged as having failed. */
+export function alertAt(region: SceneRegion, col: number, row: number): boolean {
+  return (region.alerts ?? []).some((cell) => cell.col === col && cell.row === row);
 }

@@ -56,6 +56,15 @@ export interface ButtonVisual {
   readonly backdrop?: BackdropSlice;
   readonly icon?: IconSpec;
   readonly label?: LabelSpec;
+  /**
+   * The last press of this key ended in an error, and it says so.
+   *
+   * Not part of what a profile stores — it is set while drawing, and cleared a
+   * few seconds later. A deck has nowhere to put a message: on the D6 the keys
+   * are the entire display, so the key that failed is where the failure has to
+   * appear.
+   */
+  readonly alert?: boolean;
 }
 
 /** A visual as stored in a profile: label text may contain placeholders. */

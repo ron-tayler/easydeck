@@ -16,6 +16,12 @@ import { openGif, isGif } from './gif-sequence.js';
 import type { GifSequence } from './gif-sequence.js';
 import { readSource } from './read-source.js';
 
+/** A third of the key, tucked into a corner: seen at a glance, in the way of nothing. */
+const ALERT_SIZE = 0.34;
+const ALERT_MARGIN = 0.06;
+const ALERT_FILL = '#f5c518';
+const ALERT_EDGE = '#1a1a1a';
+
 const DEFAULT_BACKGROUND = '#000000';
 const DEFAULT_LABEL_COLOR = '#ffffff';
 const DEFAULT_CORNER_RADIUS = 12;
@@ -113,6 +119,7 @@ export class CanvasPanelComposer implements PanelComposer {
     ctx.drawImage(source, -request.x, -request.y);
 
     if (request.label) this.drawLabel(ctx, request.width, request.height, request.label);
+    if (request.alert) this.drawAlert(ctx, request.width, request.height);
     this.roundCorners(ctx, request);
 
     if (request.rotationDegrees === 0) return toBitmap(ctx, request.width, request.height);
@@ -153,6 +160,42 @@ export class CanvasPanelComposer implements PanelComposer {
     ctx.drawImage(image, (request.width - width) / 2, (request.height - height) / 2, width, height);
 
     return toBitmap(ctx, request.width, request.height);
+  }
+
+  /**
+   * A yellow warning triangle, over everything.
+   *
+   * Drawn rather than composed from a font: the panel has no glyph for it, and
+   * three lines and a bang cost nothing next to loading an icon. Sized against
+   * the tile so it is the same mark on any panel, and outlined in black so it
+   * reads on a light picture as well as a dark one.
+   */
+  private drawAlert(ctx: SKRSContext2D, width: number, height: number): void {
+    const size = Math.min(width, height) * ALERT_SIZE;
+    const x = width - size - Math.min(width, height) * ALERT_MARGIN;
+    const y = Math.min(width, height) * ALERT_MARGIN;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x + size / 2, y);
+    ctx.lineTo(x + size, y + size);
+    ctx.lineTo(x, y + size);
+    ctx.closePath();
+
+    ctx.fillStyle = ALERT_FILL;
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, size * 0.08);
+    ctx.strokeStyle = ALERT_EDGE;
+    ctx.stroke();
+
+    // The bang: a bar and a dot, both in the dark edge colour.
+    ctx.fillStyle = ALERT_EDGE;
+    const barWidth = size * 0.12;
+    ctx.fillRect(x + size / 2 - barWidth / 2, y + size * 0.34, barWidth, size * 0.34);
+    ctx.beginPath();
+    ctx.arc(x + size / 2, y + size * 0.82, barWidth * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   private fill(ctx: SKRSContext2D, request: RegionRequest): void {

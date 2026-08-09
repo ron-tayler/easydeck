@@ -3,21 +3,27 @@ import { watch } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
 
 import type { Surface } from '@easydeck/device';
+import { DeckController } from '@easydeck/engine';
 import type {
   ActionRegistry,
-  DeckController,
+  ButtonEvent,
   KeyView,
   PluginManifest,
   ProfileDefinition,
   VariableValue,
 } from '@easydeck/engine';
 
-import type { DeckState } from '../domain/api-messages.js';
-import { ProfileNotFoundError } from '../domain/errors.js';
+import type { DeckState, NetworkState } from '../domain/api-messages.js';
+import { NoProfilesError, ProfileNotFoundError } from '../domain/errors.js';
 import { iconsDir } from '../infrastructure/config-paths.js';
 import { listLibraryImages } from '../infrastructure/icon-library.js';
 import type { LibraryImage } from '../infrastructure/icon-library.js';
-import type { DaemonSettings } from '../domain/settings.js';
+import type { DaemonSettings, DeckBinding } from '../domain/settings.js';
+import { localAddresses } from '../infrastructure/api/network-addresses.js';
+import { DEFAULT_PORT } from '../infrastructure/api/websocket-server.js';
+import { NetworkDeck } from '../infrastructure/network-deck.js';
+import type { DeckEntry, DeckRegistry } from './deck-registry.js';
+import type { DeviceDirectory } from './device-directory.js';
 import type { DeckEvents } from './ports/deck-events.js';
 import type { DeckFacade } from './ports/deck-facade.js';
 import type { ProfileRepository, ProfileSummary, SettingsRepository } from './ports/repositories.js';
@@ -26,21 +32,43 @@ import type { ProfileRepository, ProfileSummary, SettingsRepository } from './po
 export type DeckServiceEvents = DeckEvents;
 
 export interface DeckServiceOptions {
-  readonly surface: Surface;
-  readonly controller: DeckController;
   /**
-   * The panel's in-memory model, when the deck is driving real hardware.
+   * Every deck that is running.
    *
-   * Optional so a headless test can build a service without one; a running
-   * deck always has it, and it owns timers and decoders that have to be
-   * released with everything else.
+   * The service still speaks about one at a time — the API has no notion of
+   * decks yet — and acts on the first. Everything below it is already plural,
+   * so making the API plural is a change to this file rather than to the
+   * machinery underneath.
    */
-  readonly compositor?: { stop(): Promise<void> };
+  readonly decks: DeckRegistry;
   readonly actions: ActionRegistry;
   readonly profiles: ProfileRepository;
   readonly settings: SettingsRepository;
   readonly settingsValue: DaemonSettings;
   readonly warnings?: readonly string[];
+  /**
+   * What the API server ended up listening on.
+   *
+   * Set after the fact, because the deck is built before the server is. Until
+   * it is known the configurator simply shows no network section, which is
+   * right for a run with no server at all.
+   */
+  readonly listening?: { readonly port: number; readonly networkAccess: boolean };
+  /**
+   * Devices allowed in, and devices asking to be.
+   *
+   * Optional so a headless test can build a service without one; anything
+   * serving an API has it.
+   */
+  readonly devices?: DeviceDirectory;
+  /**
+   * Starts, stops or restarts the API server to match the settings.
+   *
+   * Owned by whoever built the server — the desktop app or the headless
+   * runner — because only they can rebuild a socket. Without it the settings
+   * are merely stored, which is what a run with no server wants.
+   */
+  readonly applyNetwork?: () => Promise<{ port: number; networkAccess: boolean } | undefined>;
   /** Directory to watch for externally edited profiles. */
   readonly watchDirectory?: string;
 }
@@ -58,6 +86,7 @@ const RELOAD_DEBOUNCE_MS = 200;
 export class DeckService extends EventEmitter<DeckServiceEvents> implements DeckFacade {
   private readonly warnings: string[];
   private brightness: number;
+  private listening?: { port: number; networkAccess: boolean };
   private activeProfileId?: string;
   private watcher?: FSWatcher;
   private reloadTimer?: NodeJS.Timeout;
@@ -67,20 +96,41 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     super();
     this.warnings = [...(options.warnings ?? [])];
     this.brightness = options.settingsValue.brightness;
-    this.activeProfileId = options.controller.profileId;
+    this.activeProfileId = options.decks.first?.controller.profileId;
     this.publishBrightness();
 
-    options.controller.on('locationChanged', (location) => this.emit('locationChanged', location));
-    options.controller.on('painted', (keys) => this.emit('viewChanged', keys));
-    options.controller.on('error', (error) => this.emit('actionError', error.message));
-    options.controller.variables.onChange(() =>
-      this.emit('variablesChanged', options.controller.variables.snapshot()),
+    for (const deck of options.decks.list()) this.follow(deck);
+    /*
+     * Decks that arrive later are followed too.
+     *
+     * This used to happen once, over the decks that existed at startup — which
+     * is every panel plugged in and no tablet at all, since a network deck
+     * attaches when its page connects. The configurator therefore never heard
+     * a tablet change page: watching it showed a view frozen wherever it had
+     * been when the window opened.
+     */
+    options.decks.on('added', (deck) => this.follow(deck));
+
+    options.decks.on('error', (error) => this.emit('actionError', error.message));
+    options.devices?.on('changed', () => this.emit('devicesChanged'));
+    options.decks.variables.onChange(() =>
+      this.emit('variablesChanged', options.decks.variables.snapshot()),
     );
 
-    options.surface.on('keyDown', (event) => this.emit('keyDown', event.key));
-    options.surface.on('keyUp', (event) => this.emit('keyUp', event.key));
 
     if (options.watchDirectory) this.startWatching(options.watchDirectory);
+  }
+
+  /** Repeats one deck's own news, stamped with which deck it came from. */
+  private follow(deck: DeckEntry): void {
+    const deckId = deck.id;
+
+    deck.controller.on('locationChanged', (location) =>
+      this.emit('locationChanged', { deckId, location }),
+    );
+    deck.controller.on('painted', (keys) => this.emit('viewChanged', { deckId, keys }));
+    deck.surface?.on('keyDown', (event) => this.emit('keyDown', { deckId, key: event.key }));
+    deck.surface?.on('keyUp', (event) => this.emit('keyUp', { deckId, key: event.key }));
   }
 
   onDeckEvent<E extends keyof DeckEvents>(event: E, listener: (...args: DeckEvents[E]) => void): void {
@@ -90,39 +140,46 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
   }
 
   get surface(): Surface {
-    return this.options.surface;
+    return this.deck.surface!;
   }
 
   get controller(): DeckController {
-    return this.options.controller;
+    return this.deck.controller;
   }
 
   async state(): Promise<DeckState> {
-    const { surface, controller, actions } = this.options;
+    const { actions } = this.options;
+    const { surface, controller } = this.deck;
+    const network = await this.networkState();
 
     return {
       protocolVersion: 1,
-      device: {
-        model: surface.info.modelName,
-        rows: surface.layout.rows,
-        cols: surface.layout.cols,
-        keyWidth: surface.keyImage.width,
-        keyHeight: surface.keyImage.height,
-      },
-      activeProfileId: controller.profileId,
-      location: controller.currentLocation,
-      folderPath: controller.folderPath.map((folder) => ({ id: folder.id, name: folder.name })),
-      pages: controller.currentFolderPages.map((page) => ({ id: page.id, name: page.name })),
+      decks: this.options.decks.list().map((deck) => ({
+        id: deck.id,
+        name: deck.name,
+        online: deck.online,
+        rows: deck.controller.layout.rows,
+        cols: deck.controller.layout.cols,
+        ...(deck.surface ? { model: deck.surface.info.modelName } : {}),
+        keyWidth: deck.surface?.keyImage.width ?? 0,
+        keyHeight: deck.surface?.keyImage.height ?? 0,
+        ...(deck.controller.profileId ? { profileId: deck.controller.profileId } : {}),
+        ...(deck.controller.currentLocation ? { location: deck.controller.currentLocation } : {}),
+        folderPath: deck.controller.folderPath.map((folder) => ({ id: folder.id, name: folder.name })),
+        pages: deck.controller.currentFolderPages.map((page) => ({ id: page.id, name: page.name })),
+      })),
+      activeDeckId: this.deck.id,
       brightness: this.brightness,
-      variables: controller.variables.snapshot(),
-      variableDeclarations: controller.variableDeclarations,
+      network,
+      variables: this.options.decks.variables.snapshot(),
+      variableDeclarations: this.options.decks.declarations(),
       actionTypes: actions.types().sort(),
       warnings: this.warnings,
     };
   }
 
-  async pageView(): Promise<readonly KeyView[]> {
-    return this.options.controller.view();
+  async pageView(deckId?: string): Promise<readonly KeyView[]> {
+    return this.deckOf(deckId).controller.view();
   }
 
   async plugins(): Promise<readonly PluginManifest[]> {
@@ -159,41 +216,144 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     this.emit('profilesChanged');
   }
 
-  async activateProfile(id: string): Promise<void> {
+  async activateProfile(id: string, deckId?: string): Promise<void> {
     if (!(await this.options.profiles.has(id))) throw new ProfileNotFoundError(id);
 
+    const deck = this.deckOf(deckId);
     const profile = await this.options.profiles.load(id);
-    await this.applyProfile(profile);
-    this.activeProfileId = id;
+
+    await this.options.decks.setProfile(deck.id, profile);
+    this.activeProfileId = this.deck.controller.profileId;
+
+    /*
+     * Remembered against the deck, not against the daemon: this is what makes
+     * two panels run different profiles tomorrow as well as today. The
+     * daemon-wide id stays as the fallback for a deck nobody has set up.
+     */
     await this.persistSettings({ activeProfileId: id });
+    await this.persistDeckBinding(deck.id, { profileId: id });
+    this.emit('state', await this.state());
+  }
+
+  async attachNetworkDeck(options: {
+    readonly deviceId: string;
+    readonly name: string;
+    readonly rows: number;
+    readonly cols: number;
+    readonly send: (scene: unknown, doublePressKeys: readonly number[]) => void;
+  }): Promise<{ readonly deckId: string }> {
+    const deckId = `net-${options.deviceId}`;
+    const existing = this.options.decks.get(deckId);
+
+    // A device that reconnects rejoins the deck it had, rather than starting a
+    // second one: its page, its history and its profile are still there.
+    if (existing) await this.options.decks.removeDeck(deckId);
+
+    const presenter = new NetworkDeck({ rows: options.rows, cols: options.cols }, (scene, keys) =>
+      options.send(scene, keys),
+    );
+
+    const controller = new DeckController(presenter, this.options.actions, {
+      variables: this.options.decks.variables,
+      deckId,
+    });
+
+    const binding = (await this.options.settings.load()).decks?.[deckId];
+    const profile = await this.profileFor(binding?.profileId);
+
+    await this.options.decks.add(
+      { id: deckId, name: binding?.name ?? options.name, controller, presenter },
+      profile,
+    );
+
+    this.emit('state', await this.state());
+    return { deckId };
+  }
+
+  async detachDeck(deckId: string): Promise<void> {
+    await this.options.decks.removeDeck(deckId);
+    this.emit('state', await this.state());
+  }
+
+  reportGesture(deckId: string, key: number, gesture: string): void {
+    const deck = this.options.decks.get(deckId);
+    const presenter = deck?.presenter;
+    if (presenter instanceof NetworkDeck) presenter.report(key, gesture as ButtonEvent);
+  }
+
+  reportPressed(deckId: string, key: number, pressed: boolean): void {
+    if (!this.options.decks.get(deckId)) return;
+    this.emit(pressed ? 'keyDown' : 'keyUp', { deckId, key });
+  }
+
+  /** The profile a deck should run, falling back to whatever is available. */
+  private async profileFor(profileId: string | undefined): Promise<ProfileDefinition> {
+    if (profileId && (await this.options.profiles.has(profileId))) {
+      return this.options.profiles.load(profileId);
+    }
+
+    const current = this.deckOf(undefined).controller.profileId;
+    if (current && (await this.options.profiles.has(current))) {
+      return this.options.profiles.load(current);
+    }
+
+    const [first] = await this.options.profiles.list();
+    if (!first) throw new NoProfilesError('the profile repository');
+    return this.options.profiles.load(first.id);
+  }
+
+  async listDevices(): Promise<{
+    devices: readonly { id: string; name: string; approvedAt?: string; online: boolean }[];
+    pending: readonly { id: string; name: string; code: string; address?: string }[];
+  }> {
+    const directory = this.options.devices;
+    if (!directory) return { devices: [], pending: [] };
+
+    return { devices: await directory.devices(), pending: directory.waiting() };
+  }
+
+  async approveDevice(deviceId: string): Promise<void> {
+    await this.options.devices?.approve(deviceId);
+  }
+
+  async revokeDevice(deviceId: string): Promise<void> {
+    await this.options.devices?.revoke(deviceId);
+  }
+
+  async renameDeck(deckId: string, name: string): Promise<void> {
+    const deck = this.deckOf(deckId);
+    this.options.decks.rename(deck.id, name);
+
+    await this.persistDeckBinding(deck.id, { name });
+    this.emit('state', await this.state());
   }
 
   setVariable(name: string, value: VariableValue): void {
-    this.options.controller.variables.set(name, value);
+    this.options.decks.variables.set(name, value);
   }
 
   deleteVariable(name: string): void {
-    this.options.controller.variables.delete(name);
+    this.options.decks.variables.delete(name);
   }
 
-  goToPage(pageId: string): void {
-    this.options.controller.goToPage(pageId);
+  goToPage(pageId: string, deckId?: string): void {
+    this.deckOf(deckId).controller.goToPage(pageId);
   }
 
-  openFolder(folderId: string): void {
-    this.options.controller.openFolder(folderId);
+  openFolder(folderId: string, deckId?: string): void {
+    this.deckOf(deckId).controller.openFolder(folderId);
   }
 
-  goUp(): void {
-    this.options.controller.goUp();
+  goUp(deckId?: string): void {
+    this.deckOf(deckId).controller.goUp();
   }
 
-  goHome(): void {
-    this.options.controller.goHome();
+  goHome(deckId?: string): void {
+    this.deckOf(deckId).controller.goHome();
   }
 
-  goBack(): void {
-    this.options.controller.goBack();
+  goBack(deckId?: string): void {
+    this.deckOf(deckId).controller.goBack();
   }
 
   /** What the panel is set to now, for anything computing a change from it. */
@@ -203,7 +363,10 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
 
   async setBrightness(percent: number): Promise<void> {
     const clamped = Math.min(100, Math.max(0, Math.round(percent)));
-    await this.options.surface.setBrightness(clamped);
+    // One number for the whole machine: every panel follows it.
+    for (const deck of this.options.decks.list()) {
+      await deck.surface?.setBrightness(clamped).catch(() => undefined);
+    }
     this.brightness = clamped;
     this.publishBrightness();
     await this.persistSettings({ brightness: clamped });
@@ -215,19 +378,19 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
    * actually decided — anywhere else would be a second copy to keep in step.
    */
   private publishBrightness(): void {
-    this.options.controller.variables.set('deck.brightness', this.brightness);
+    this.options.decks.variables.set('deck.brightness', this.brightness);
   }
 
-  simulateKey(key: number): void {
-    this.options.controller.simulatePress(key);
+  simulateKey(key: number, deckId?: string): void {
+    this.deckOf(deckId).controller.simulatePress(key);
   }
 
-  simulateLongPress(key: number): void {
-    this.options.controller.simulateLongPress(key);
+  simulateLongPress(key: number, deckId?: string): void {
+    this.deckOf(deckId).controller.simulateLongPress(key);
   }
 
-  simulateDoublePress(key: number): void {
-    this.options.controller.simulateDoublePress(key);
+  simulateDoublePress(key: number, deckId?: string): void {
+    this.deckOf(deckId).controller.simulateDoublePress(key);
   }
 
   async stop(): Promise<void> {
@@ -237,44 +400,163 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     if (this.reloadTimer) clearTimeout(this.reloadTimer);
     this.watcher?.close();
 
-    await this.options.controller.stop();
-    // Before the surface closes: the compositor owns animation timers and open
-    // decoders, and one still writing frames would find the handle gone.
-    await this.options.compositor?.stop();
-    await this.options.surface.clearAllKeys().catch(() => undefined);
-    await this.options.surface.close();
+    await this.options.decks.stop();
   }
 
+  /**
+   * Reloads a profile everywhere it is being shown.
+   *
+   * Every deck running it, not just the active one: two decks may share a
+   * profile, and editing a button that only one of them refreshed would leave
+   * the other showing a version that no longer exists anywhere.
+   */
   private async applyProfile(profile: ProfileDefinition): Promise<void> {
-    const { controller } = this.options;
+    const showing = this.options.decks
+      .list()
+      .filter((deck) => deck.controller.profileId === profile.id);
 
-    // Editing one button reloads the whole profile it belongs to. Landing
-    // back on the first page and resetting every counter each time would make
-    // a configurator unusable, so reloading the *same* profile keeps where
-    // the deck was and what its variables held. Switching profiles still
-    // starts clean, which is what switching is for.
-    const reloading = controller.profileId === profile.id;
-    const previousLocation = reloading ? controller.currentLocation : undefined;
-    const previousVariables = reloading ? controller.variables.snapshot() : undefined;
+    // Nothing is showing it — an edit to a profile that is merely stored. The
+    // active deck takes it, which is what activating a profile means.
+    const targets = showing.length > 0 ? showing : [this.deck];
 
-    controller.load(profile);
+    for (const deck of targets) {
+      const { controller } = deck;
 
-    for (const [name, value] of Object.entries(previousVariables ?? {})) {
-      controller.variables.set(name, value);
-    }
+      /*
+       * Editing one button reloads the whole profile it belongs to. Landing
+       * back on the first page and resetting every counter each time would
+       * make a configurator unusable, so reloading the *same* profile keeps
+       * where the deck was. Switching profiles still starts clean, which is
+       * what switching is for.
+       *
+       * Variables are not restored here any more: they belong to the machine
+       * rather than to a deck, and reloading a profile no longer disturbs them.
+       */
+      const previousLocation =
+        controller.profileId === profile.id ? controller.currentLocation : undefined;
 
-    if (previousLocation) {
-      try {
-        controller.goToPage(previousLocation.pageId);
-      } catch {
-        // The edit removed the page the deck was on; the profile's own
-        // starting point is the sensible place to be instead.
+      controller.load(profile);
+
+      if (previousLocation) {
+        try {
+          controller.goToPage(previousLocation.pageId);
+        } catch {
+          // The edit removed the page the deck was on; the profile's own
+          // starting point is the sensible place to be instead.
+        }
       }
+
+      controller.invalidate();
     }
 
-    this.activeProfileId = profile.id;
-    controller.invalidate();
+    this.activeProfileId = this.deck.controller.profileId;
     this.emit('state', await this.state());
+  }
+
+  /**
+   * Tells the service where the API server actually ended up.
+   *
+   * Called by whoever started it: the port may differ from the setting — the
+   * stored one could have been taken — and a configurator that showed the
+   * setting rather than the truth would send people to the wrong address.
+   *
+   * Undefined means there is no server, which is the normal state until
+   * network access is switched on.
+   */
+  setListening(listening: { port: number; networkAccess: boolean } | undefined): void {
+    this.listening = listening;
+    void this.state().then((state) => this.emit('state', state));
+  }
+
+  /**
+   * How the daemon can be reached, as the configurator shows it.
+   *
+   * Always answered, even with no server running: "switched off" is a state
+   * worth showing, and the section that lets you switch it on cannot be the
+   * one that disappears when it is off.
+   */
+  private async networkState(): Promise<NetworkState> {
+    const stored = await this.options.settings.load();
+
+    return {
+      port: this.listening?.port ?? stored.port ?? DEFAULT_PORT,
+      running: this.listening !== undefined,
+      /*
+       * The truth, not the wish. These two can differ — a port that was taken,
+       * a server that has not been told to start — and a switch describing the
+       * setting rather than the socket is a switch that lies.
+       */
+      networkAccess: this.listening !== undefined,
+      networkDecks: stored.networkDecks === true,
+      extensionsApi: stored.extensionsApi === true,
+      // Addresses only while it is actually reachable at them: a list of IPs
+      // for a server that is switched off is an invitation to try them and
+      // wonder why nothing happens.
+      addresses: this.listening ? localAddresses().map(({ address }) => ({ address })) : [],
+    };
+  }
+
+  /**
+   * Changes how the daemon can be reached, and makes it so.
+   *
+   * The server is started, stopped or rebuilt here rather than at the next
+   * launch: telling someone to restart the program is asking them to do the
+   * work the program could have done. Network access is a feature of this
+   * program, not its nature — turning it off must take the socket away.
+   */
+  async setNetworkSettings(patch: {
+    networkAccess?: boolean;
+    networkDecks?: boolean;
+    extensionsApi?: boolean;
+    port?: number;
+  }): Promise<void> {
+    await this.persistSettings(patch);
+
+    try {
+      this.listening = await this.options.applyNetwork?.();
+    } catch (error) {
+      // A port that could not be taken leaves no server, and the switch has to
+      // say so rather than stay on because the setting did.
+      this.listening = undefined;
+      this.emit('state', await this.state());
+      throw error;
+    }
+
+    this.emit('state', await this.state());
+  }
+
+  /** The deck a request with no deck named acts on. */
+  private get deck() {
+    return this.deckOf(undefined);
+  }
+
+  /**
+   * The deck a request is about.
+   *
+   * An unknown id falls back to the active deck rather than failing: a UI can
+   * be holding an id for a panel that has just been unplugged, and answering
+   * about *some* deck is more useful than an error nobody can act on.
+   */
+  private deckOf(deckId: string | undefined) {
+    const named = deckId === undefined ? undefined : this.options.decks.get(deckId);
+    const deck = named ?? this.options.decks.first;
+    if (!deck) throw new Error('No deck is running');
+    return deck;
+  }
+
+  /**
+   * Merges one deck's binding into the stored settings.
+   *
+   * Read back from disk rather than patched onto the snapshot taken at start:
+   * bindings accumulate one deck at a time, and writing from a stale copy
+   * would drop whatever was set since.
+   */
+  private async persistDeckBinding(deckId: string, patch: Partial<DeckBinding>): Promise<void> {
+    const current = await this.options.settings.load();
+    await this.options.settings.save({
+      ...current,
+      decks: { ...current.decks, [deckId]: { ...current.decks?.[deckId], ...patch } },
+    });
   }
 
   private async persistSettings(patch: Partial<DaemonSettings>): Promise<void> {

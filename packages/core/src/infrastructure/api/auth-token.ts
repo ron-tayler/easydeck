@@ -48,13 +48,29 @@ export function tokenMatches(expected: string, received: string | undefined): bo
  * missing Origin means a non-browser client (a script, a native app), which
  * the token alone gates.
  */
-export function originAllowed(origin: string | undefined, port: number): boolean {
+export function originAllowed(
+  origin: string | undefined,
+  port: number,
+  host?: string,
+): boolean {
   if (origin === undefined || origin === 'null') return true;
+
+  /*
+   * The page the daemon itself served is welcome, whatever address it was
+   * reached at — a tablet opens the configurator on the machine's LAN
+   * address, and that is the whole point of the network mode.
+   *
+   * Compared against the request's own `Host` rather than a list of names we
+   * guessed: that is what "same origin" means here, and it keeps a page from
+   * some other site on the same port from passing as ours.
+   */
+  const value = origin.toLowerCase();
+  if (host && value === `http://${host.toLowerCase()}`) return true;
 
   const allowed = [
     `http://127.0.0.1:${port}`,
     `http://localhost:${port}`,
     `http://[::1]:${port}`,
   ];
-  return allowed.includes(origin.toLowerCase());
+  return allowed.includes(value);
 }

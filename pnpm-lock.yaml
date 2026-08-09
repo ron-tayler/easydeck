@@ -56,6 +56,9 @@ importers:
       '@easydeck/renderer':
         specifier: workspace:*
         version: link:../renderer
+      '@easydeck/ui':
+        specifier: workspace:*
+        version: link:../ui
       koffi:
         specifier: ^3.1.2
         version: 3.1.2

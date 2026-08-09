@@ -36,12 +36,29 @@ class FakeDeck implements DeckFacade {
     this.calls.push('state');
     return {
       protocolVersion: 1,
-      device: { model: 'Fake', rows: 1, cols: 2, keyWidth: 112, keyHeight: 112 },
-      activeProfileId: 'p',
-      location: { folderId: 'root', pageId: 'main' },
-      folderPath: [{ id: 'root', name: 'Root' }],
-      pages: [{ id: 'main' }],
+    decks: [
+      {
+        id: 'panel',
+        name: 'Panel',
+        online: true,
+        rows: 3,
+        cols: 5,
+        keyWidth: 112,
+        keyHeight: 112,
+        folderPath: [],
+        pages: [],
+      },
+    ],
+    activeDeckId: 'panel',
       brightness: 60,
+    network: {
+      port: 8317,
+      running: false,
+      networkAccess: false,
+      networkDecks: false,
+      extensionsApi: false,
+      addresses: [],
+    },
       variables: { a: 1 },
       variableDeclarations: [{ name: 'a', type: 'number' as const }],
       actionTypes: ['set-variable'],
@@ -49,9 +66,20 @@ class FakeDeck implements DeckFacade {
     };
   }
 
+  /** Set to give the page a picture, as a profile with an icon would. */
+  picture?: string;
+
   async pageView(): Promise<readonly KeyView[]> {
     this.calls.push('pageView');
-    return [{ key: 0, buttonId: 'b', stateId: 'default', visual: { label: { text: 'Hi' } } }];
+    const visual = this.picture
+      ? {
+          label: { text: 'Hi' },
+          backdrop: { source: this.picture, col: 0, row: 0, cols: 3, rows: 2 },
+          icon: { source: this.picture },
+        }
+      : { label: { text: 'Hi' } };
+
+    return [{ key: 0, buttonId: 'b', stateId: 'default', visual }];
   }
 
   async plugins(): Promise<readonly PluginManifest[]> {
@@ -108,16 +136,16 @@ class FakeDeck implements DeckFacade {
     this.calls.push(`openFolder:${folderId}`);
   }
 
-  goToPage(pageId: string): void {
-    this.calls.push(`goToPage:${pageId}`);
+  goToPage(pageId: string, deckId?: string): void {
+    this.calls.push(`goToPage:${pageId}:${deckId}`);
   }
 
   goUp(): void {
     this.calls.push('goUp');
   }
 
-  goHome(): void {
-    this.calls.push('goHome');
+  goHome(deckId?: string): void {
+    this.calls.push(`goHome:${deckId}`);
   }
 
   goBack(): void {
@@ -128,8 +156,8 @@ class FakeDeck implements DeckFacade {
     this.calls.push(`setBrightness:${percent}`);
   }
 
-  simulateKey(key: number): void {
-    this.calls.push(`simulateKey:${key}`);
+  simulateKey(key: number, deckId?: string): void {
+    this.calls.push(`simulateKey:${key}:${deckId}`);
   }
 
   simulateLongPress(key: number): void {
@@ -138,6 +166,44 @@ class FakeDeck implements DeckFacade {
 
   simulateDoublePress(key: number): void {
     this.calls.push(`simulateDoublePress:${key}`);
+  }
+
+  async listDevices(): Promise<{ devices: never[]; pending: never[] }> {
+    this.calls.push('listDevices');
+    return { devices: [], pending: [] };
+  }
+
+  async approveDevice(deviceId: string): Promise<void> {
+    this.calls.push(`approveDevice:${deviceId}`);
+  }
+
+  async revokeDevice(deviceId: string): Promise<void> {
+    this.calls.push(`revokeDevice:${deviceId}`);
+  }
+
+  async setNetworkSettings(patch: Record<string, unknown>): Promise<void> {
+    this.calls.push(`setNetworkSettings:${JSON.stringify(patch)}`);
+  }
+
+  async renameDeck(deckId: string, name: string): Promise<void> {
+    this.calls.push(`renameDeck:${deckId}:${name}`);
+  }
+
+  async attachNetworkDeck(): Promise<{ deckId: string }> {
+    this.calls.push('attachNetworkDeck');
+    return { deckId: 'net-1' };
+  }
+
+  async detachDeck(deckId: string): Promise<void> {
+    this.calls.push(`detachDeck:${deckId}`);
+  }
+
+  reportGesture(deckId: string, key: number, gesture: string): void {
+    this.calls.push(`reportGesture:${deckId}:${key}:${gesture}`);
+  }
+
+  reportPressed(deckId: string, key: number, pressed: boolean): void {
+    this.calls.push(`reportPressed:${deckId}:${key}:${pressed}`);
   }
 }
 
@@ -148,6 +214,28 @@ const request = (method: string, params?: Record<string, unknown>) => ({
   params,
 });
 
+describe('naming a deck in a request', () => {
+  it('passes the deck through to the facade', async () => {
+    const deck = new FakeDeck();
+    const handler = new ApiHandler(deck);
+
+    await handler.handle({ type: 'request', id: '1', method: 'goToPage', params: { pageId: 'p', deckId: 'tablet' } });
+    await handler.handle({ type: 'request', id: '2', method: 'simulateKey', params: { key: 3, deckId: 'tablet' } });
+
+    assert.deepEqual(deck.calls, ['goToPage:p:tablet', 'simulateKey:3:tablet']);
+  });
+
+  it('acts on the active deck when none is named', async () => {
+    // A client that knows about one deck keeps working unchanged.
+    const deck = new FakeDeck();
+    const handler = new ApiHandler(deck);
+
+    await handler.handle({ type: 'request', id: '1', method: 'goHome' });
+
+    assert.deepEqual(deck.calls, ['goHome:undefined']);
+  });
+});
+
 describe('ApiHandler', () => {
   it('answers getState with a snapshot a UI can render from', async () => {
     const deck = new FakeDeck();
@@ -155,9 +243,9 @@ describe('ApiHandler', () => {
 
     assert.equal(response.ok, true);
     const state = response.result as DeckState;
-    assert.equal(state.device.model, 'Fake');
-    assert.equal(state.location?.pageId, 'main');
-    assert.deepEqual(state.folderPath, [{ id: 'root', name: 'Root' }]);
+    assert.equal(state.decks[0]?.name, 'Panel');
+    assert.equal(state.activeDeckId, 'panel');
+    assert.equal(state.brightness, 60);
   });
 
   // The UI renders the panel from this, rather than resolving button states
@@ -173,6 +261,45 @@ describe('ApiHandler', () => {
       stateId: 'default',
       visual: { label: { text: 'Hi' } },
     });
+  });
+
+  // A picture in every key's description is what made a network deck spend a
+  // hundred megabytes on a page showing one animation.
+  it('sends pictures as links when there is somewhere to leave them', async () => {
+    const deck = new FakeDeck();
+    deck.picture = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+
+    const links: string[] = [];
+    const handler = new ApiHandler(deck, {
+      assets: {
+        link: (source) => {
+          links.push(source);
+          return '/asset/abc';
+        },
+      },
+    });
+
+    const { keys } = (await handler.handle(request('getPageView'))).result as { keys: KeyView[] };
+
+    assert.equal(keys[0]?.visual.backdrop?.source, '/asset/abc');
+    assert.equal(keys[0]?.visual.icon?.source, '/asset/abc');
+    assert.equal(links.length, 2, 'both the region picture and the icon are filed');
+    // Everything else about the key survives the swap.
+    assert.equal(keys[0]?.visual.backdrop?.cols, 3);
+    assert.equal(keys[0]?.visual.label?.text, 'Hi');
+  });
+
+  it('leaves pictures where they are when nothing is offered', async () => {
+    // The desktop window shares a machine with the daemon: a link would only
+    // add a hop.
+    const deck = new FakeDeck();
+    deck.picture = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+
+    const { keys } = (await new ApiHandler(deck).handle(request('getPageView'))).result as {
+      keys: KeyView[];
+    };
+
+    assert.equal(keys[0]?.visual.backdrop?.source, deck.picture);
   });
 
   // The configurator builds its action picker and every parameter form from
@@ -207,13 +334,13 @@ describe('ApiHandler', () => {
       'getProfile:p',
       'activateProfile:p',
       'setVariable:mic=on',
-      'goToPage:second',
+      'goToPage:second:undefined',
       'openFolder:tools',
       'goUp',
-      'goHome',
+      'goHome:undefined',
       'goBack',
       'setBrightness:42',
-      'simulateKey:3',
+      'simulateKey:3:undefined',
     ]);
   });
 

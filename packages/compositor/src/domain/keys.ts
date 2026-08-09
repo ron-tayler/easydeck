@@ -1,5 +1,5 @@
 import type { PanelFormat } from './panel-format.js';
-import { cornersOf, labelAt } from './scene.js';
+import { alertAt, cornersOf, labelAt } from './scene.js';
 import type { SceneLabel, SceneRegion } from './scene.js';
 
 /**
@@ -59,7 +59,13 @@ export function tileKey(
     `${corners.topLeft ? 1 : 0}${corners.topRight ? 1 : 0}` +
     `${corners.bottomRight ? 1 : 0}${corners.bottomLeft ? 1 : 0}`;
 
-  return [regionKeyValue, `${col},${row}`, rounded, labelPart(labelAt(region, col, row))].join('|');
+  return [
+    regionKeyValue,
+    `${col},${row}`,
+    rounded,
+    alertAt(region, col, row) ? '!' : NONE,
+    labelPart(labelAt(region, col, row)),
+  ].join('|');
 }
 
 /**

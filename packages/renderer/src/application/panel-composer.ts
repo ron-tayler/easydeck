@@ -48,6 +48,13 @@ export interface TileRequest {
    */
   readonly corners: TileCorners;
   readonly cornerRadius?: number;
+  /**
+   * Draws a warning sign over this tile.
+   *
+   * The panel is the only screen a physical deck has, so a press that failed
+   * has nowhere else to say so.
+   */
+  readonly alert?: boolean;
 }
 
 /**

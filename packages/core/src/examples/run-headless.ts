@@ -7,7 +7,12 @@
  * seeding a starter profile on first run, then serves the API a configurator
  * connects to. Editing a profile in a text editor reloads it live.
  */
+import { DeviceDirectory } from '../application/device-directory.js';
+import type { DeckService } from '../application/deck-service.js';
+import { localAddresses } from '../infrastructure/api/network-addresses.js';
+import { findUiDirectory } from '../infrastructure/api/ui-directory.js';
 import { startApiServer } from '../infrastructure/api/websocket-server.js';
+import type { RunningApiServer } from '../infrastructure/api/websocket-server.js';
 import { configDir } from '../infrastructure/config-paths.js';
 import { FileProfileRepository } from '../infrastructure/file-profile-repository.js';
 import { FileSettingsRepository } from '../infrastructure/file-settings-repository.js';
@@ -42,27 +47,80 @@ async function main(): Promise<void> {
     console.log(`No profiles found, wrote a starter one to ${profiles.path}`);
   }
 
-  const deck = await startDeck({ profiles, settings });
+  const devices = new DeviceDirectory(configDir());
+  const uiDirectory = findUiDirectory();
+
+  /*
+   * The server exists only while network access is on.
+   *
+   * Nothing local needs a port — the desktop window talks to the core
+   * directly — so a socket that is open regardless would be listening on
+   * someone's machine without their say-so. Switching the setting off takes
+   * the socket away, rather than leaving it up until the next launch.
+   */
+  let api: RunningApiServer | undefined;
+  let service: DeckService | undefined;
+
+  const applyNetwork = async (): Promise<{ port: number; networkAccess: boolean } | undefined> => {
+    const current = await settings.load();
+
+    await api?.close().catch(() => undefined);
+    api = undefined;
+
+    if (!current.networkAccess || !service) return undefined;
+
+    api = await startApiServer({
+      service,
+      configDirectory: configDir(),
+      devices,
+      host: '0.0.0.0',
+      ...(current.port ? { port: current.port } : {}),
+      ...(uiDirectory ? { uiDirectory } : {}),
+      permissions: async () => {
+        const now = await settings.load();
+        return {
+          networkDecks: now.networkDecks === true,
+          extensionsApi: now.extensionsApi === true,
+        };
+      },
+    });
+
+    return { port: api.port, networkAccess: true };
+  };
+
+  const deck = await startDeck({ profiles, settings, devices, applyNetwork });
+  service = deck;
   const state = await deck.state();
 
-  const api = await startApiServer({ service: deck, configDirectory: configDir() });
+  // The configurator shows where the daemon can be reached, and it must show
+  // the truth: the port asked for may have been taken.
+  deck.setListening(await applyNetwork());
 
   console.log(`Config:   ${configDir()}`);
-  console.log(`Device:   ${state.device.model}`);
-  console.log(`Profile:  ${state.activeProfileId}`);
-  console.log(`API:      ${api.url}?token=${api.token}`);
+  for (const deck of state.decks) {
+    console.log(`Deck:     ${deck.name} — ${deck.profileId ?? 'no profile'}`);
+  }
+  if (api) {
+    // What a tablet is meant to open: every one of these serves the deck, and
+    // only the deck.
+    for (const entry of localAddresses()) {
+      console.log(`Deck:     http://${entry.address}:${api.port}/`);
+    }
+  } else {
+    console.log('Network:  off — switch it on in Settings → Network to use a tablet as a deck');
+  }
   for (const warning of state.warnings) console.warn(`Warning:  ${warning}`);
   console.log('\nRunning. Edit a profile to reload it live. Ctrl+C to stop.\n');
 
   deck.on('actionError', (message) => console.error(`action: ${message}`));
-  deck.on('locationChanged', (location) =>
-    console.log(`location -> ${location.folderId} / ${location.pageId}`),
+  deck.on('locationChanged', ({ deckId, location }) =>
+    console.log(`${deckId}: location -> ${location.folderId} / ${location.pageId}`),
   );
   deck.on('profilesChanged', () => console.log('profiles changed on disk'));
 
   const shutdown = () => {
     void Promise.resolve()
-      .then(() => api.close())
+      .then(() => api?.close())
       .then(() => deck.stop())
       .catch((error) => console.error(describe(error)))
       .finally(() => process.exit(0));

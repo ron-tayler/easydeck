@@ -22,6 +22,15 @@ const props = defineProps<{
   selected: boolean;
   /** Whether this key owns a button, and so can have its picture stretched. */
   resizable?: boolean;
+  /**
+   * Whether this key can be dragged onto another.
+   *
+   * True in the configurator, where keys are rearranged by hand. False on a
+   * deck: there a long press is a gesture, and a browser that decides it was
+   * the start of a drag keeps the release for itself — leaving the key held
+   * down and the deck deaf to everything after it.
+   */
+  movable?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -116,7 +125,7 @@ function onDrop(event: DragEvent): void {
     :class="{ pressed, empty: !view, selected, over }"
     :style="{ background, borderRadius: corners }"
     type="button"
-    :draggable="Boolean(view)"
+    :draggable="movable !== false && Boolean(view)"
     @click="emit('select', index)"
     @contextmenu.prevent="emit('menu', { key: index, x: $event.clientX, y: $event.clientY })"
     @dragstart="onDragStart"
@@ -135,6 +144,7 @@ function onDrop(event: DragEvent): void {
     <img
       v-if="backdrop"
       class="backdrop"
+      draggable="false"
       :src="backdrop.source"
       :style="{
         width: `calc(${backdrop.cols * 100}% + ${(backdrop.cols - 1) * KEY_GAP}px)`,
@@ -152,10 +162,19 @@ function onDrop(event: DragEvent): void {
     <img
       v-if="icon"
       class="icon"
+      draggable="false"
       :src="icon.source"
       :style="{ objectFit: icon.fit ?? 'cover' }"
       alt=""
     />
+    <!-- The same mark the panel draws, for the same reason: a press that
+         failed must say so where the finger was. -->
+    <svg v-if="view?.visual.alert" class="alert" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 2 L23 21 L1 21 Z" fill="#f5c518" stroke="#1a1a1a" stroke-width="1.6" />
+      <rect x="11" y="8.5" width="2" height="7" fill="#1a1a1a" />
+      <circle cx="12" cy="18" r="1.3" fill="#1a1a1a" />
+    </svg>
+
     <span v-if="label" class="label" :style="{ color: labelColor, justifyContent: justify, fontSize }">
       {{ label.text }}
     </span>
@@ -287,6 +306,15 @@ function onDrop(event: DragEvent): void {
   inset: 0;
   width: 100%;
   margin: auto;
+  pointer-events: none;
+}
+
+.alert {
+  position: absolute;
+  top: 6%;
+  right: 6%;
+  width: 34%;
+  height: 34%;
   pointer-events: none;
 }
 

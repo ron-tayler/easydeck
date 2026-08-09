@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue';
-import type { DeckState, KeyView } from '@easydeck/core';
+import type { DeckSummary, KeyView } from '@easydeck/core';
 
 import DeckKey from './DeckKey.vue';
 
@@ -12,7 +12,7 @@ export interface KeySpan {
 }
 
 const props = defineProps<{
-  state?: DeckState;
+  deck?: DeckSummary;
   keys: readonly KeyView[];
   pressedKeys: ReadonlySet<number>;
   selectedKey?: number;
@@ -28,8 +28,8 @@ const emit = defineEmits<{
   resize: [payload: { key: number; colSpan: number; rowSpan: number }];
 }>();
 
-const rows = computed(() => props.state?.device.rows ?? 3);
-const cols = computed(() => props.state?.device.cols ?? 5);
+const rows = computed(() => props.deck?.rows ?? 3);
+const cols = computed(() => props.deck?.cols ?? 5);
 
 const byKey = computed(() => new Map(props.keys.map((view) => [view.key, view])));
 const slots = computed(() => Array.from({ length: rows.value * cols.value }, (_, index) => index));

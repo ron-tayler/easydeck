@@ -106,3 +106,20 @@ test('corner rounding is part of the tile, not the region', () => {
   // The top-left cell of a 3x2 rounds one corner; a lone key rounds all four.
   assert.notEqual(tileKey(key, region(), 0, 0), tileKey(key, single, 0, 0));
 });
+
+test('a key that is complaining is a different tile from one that is not', () => {
+  // Otherwise the warning sign appears once and then sticks: the cache would
+  // hand back the tile drawn before the failure, or after it.
+  const region: SceneRegion = { key: 0, cols: 2, rows: 1 };
+  const quiet = regionKey(FORMAT, region);
+
+  const plain = tileKey(quiet, region, 0, 0);
+  const flagged = tileKey(quiet, { ...region, alerts: [{ col: 0, row: 0 }] }, 0, 0);
+
+  assert.notEqual(plain, flagged);
+  // And only the key that failed changes.
+  assert.equal(
+    tileKey(quiet, region, 1, 0),
+    tileKey(quiet, { ...region, alerts: [{ col: 0, row: 0 }] }, 1, 0),
+  );
+});

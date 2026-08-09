@@ -39,6 +39,24 @@ export interface KeyView {
 
 export interface DeckControllerOptions {
   readonly clock?: ClockPort;
+  /**
+   * Identifies which deck this is, for actions that care.
+   *
+   * Several decks run at once — two panels, or a panel and a tablet — and an
+   * action needs to know which one its press came from, if only so that
+   * navigation moves the deck the user actually touched.
+   */
+  readonly deckId?: string;
+  /**
+   * Where variables live. Omit and this deck gets its own.
+   *
+   * Passing one shared store is what makes several decks a single machine
+   * rather than several: mute the mic on the tablet and the button on the
+   * panel goes red, because there is one truth about the mic and both decks
+   * are reading it. Only *where the deck is* — its profile, its page, its
+   * history — is private to it.
+   */
+  readonly variables?: VariableStore;
   /** How many locations `goBack` can retrace. */
   readonly historyLimit?: number;
 }
@@ -50,6 +68,9 @@ export interface DeckControllerEvents {
   /** Emitted after every repaint pass, with the keys actually written. */
   painted: [keys: number[]];
 }
+
+/** Long enough to notice, short enough not to sit there accusing. */
+const ALERT_MS = 3000;
 
 const DEFAULT_HISTORY_LIMIT = 32;
 
@@ -68,7 +89,9 @@ const DEFAULT_HISTORY_LIMIT = 32;
  * presenter, which can see the whole panel at once and measure what it does.
  */
 export class DeckController extends EventEmitter<DeckControllerEvents> {
-  readonly variables = new VariableStore();
+  readonly variables: VariableStore;
+  /** Which deck this is; see `DeckControllerOptions.deckId`. */
+  readonly deckId: string;
 
   private profile?: ProfileDefinition;
   private tree?: ProfileTree;
@@ -89,6 +112,16 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   /** Serializes repaints so two rapid presses cannot interleave writes. */
   private paintChain: Promise<unknown> = Promise.resolve();
   private paintQueued = false;
+  /**
+   * Keys whose last press failed, and the timer that clears each of them.
+   *
+   * A press that throws used to leave no trace anywhere the user was looking:
+   * the daemon logged it, the deck carried on, and the person pressing the key
+   * had no way to tell a broken macro from one that does its work quietly. The
+   * key says so itself now, for a few seconds — the only screen a physical
+   * panel has is its own keys.
+   */
+  private readonly failing = new Map<number, TimerHandle>();
 
   private readonly historyLimit: number;
   private readonly clock: ClockPort;
@@ -101,10 +134,17 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     super();
     this.historyLimit = options.historyLimit ?? DEFAULT_HISTORY_LIMIT;
     this.clock = options.clock ?? systemClock;
+    this.variables = options.variables ?? new VariableStore();
+    this.deckId = options.deckId ?? 'default';
   }
 
   get currentLocation(): DeckLocation | undefined {
     return this.location;
+  }
+
+  /** The deck's grid, as the profile must match it. */
+  get layout(): { readonly rows: number; readonly cols: number } {
+    return this.surface.layout;
   }
 
   get profileId(): string | undefined {
@@ -201,6 +241,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     if (!this.running) return;
     this.running = false;
 
+    this.clearAlerts();
     for (const off of this.unsubscribe.splice(0)) off();
 
     await this.paintChain.catch(() => undefined);
@@ -303,11 +344,17 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
         key,
         buttonId: owner.id,
         stateId: this.resolveState(owner).id,
-        visual,
+        visual: this.failing.has(key) ? { ...visual, alert: true } : visual,
       });
     }
 
     return views;
+  }
+
+  /** Forgets every complaint and cancels its timer. */
+  private clearAlerts(): void {
+    for (const timer of this.failing.values()) this.clock.clearTimeout(timer);
+    this.failing.clear();
   }
 
   /** Forces every key to be rewritten on the next pass. */
@@ -593,6 +640,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
         await this.actions.run(action, context);
       } catch (error) {
         // One bad action must not take the deck down with it.
+        this.markFailed(button.key);
         this.emit('error', error as Error);
       }
     }
@@ -600,9 +648,32 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     this.requestPaint();
   }
 
+  /**
+   * Flags a key as having failed, and unflags it a few seconds later.
+   *
+   * A repeat failure restarts the clock rather than adding a second mark: the
+   * question the sign answers is "did that press work", and the answer belongs
+   * to the most recent one.
+   */
+  private markFailed(key: number): void {
+    const standing = this.failing.get(key);
+    if (standing !== undefined) this.clock.clearTimeout(standing);
+
+    this.failing.set(
+      key,
+      this.clock.setTimeout(() => {
+        this.failing.delete(key);
+        this.requestPaint();
+      }, ALERT_MS),
+    );
+
+    this.requestPaint();
+  }
+
   private actionContext(button: ButtonDefinition): ActionContext {
     return {
       variables: this.variables,
+      deckId: this.deckId,
       button: { id: button.id, key: button.key },
       location: this.location ?? { folderId: '', pageId: '' },
       profileId: this.profile?.id ?? '',
@@ -718,9 +789,16 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     const top = Math.floor(button.key / gridCols);
 
     const labels: SceneLabel[] = [];
+    const alerts: { col: number; row: number }[] = [];
+
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
-        const own = this.buttonAt((top + row) * gridCols + left + col);
+        const key = (top + row) * gridCols + left + col;
+        // The sign belongs to the key that was pressed, even when the picture
+        // it sits on belongs to a merged button covering several.
+        if (this.failing.has(key)) alerts.push({ col, row });
+
+        const own = this.buttonAt(key);
         const label = own ? this.resolveVisual(own).label : undefined;
         if (!label) continue;
 
@@ -754,6 +832,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
           }
         : {}),
       ...(labels.length > 0 ? { labels } : {}),
+      ...(alerts.length > 0 ? { alerts } : {}),
     };
   }
 }

@@ -100,9 +100,19 @@ export interface BrightnessControl {
   set(percent: number): Promise<void>;
 }
 
+/**
+ * Finds the panel a press came from.
+ *
+ * Several decks run at once, so "sleep the panel" has to mean the panel the
+ * user touched — not the first one that happened to be opened. Returns
+ * undefined for a deck with no hardware behind it, such as a tablet across the
+ * network, whose backlight is not ours to switch off.
+ */
+export type PanelLookup = (deckId: string) => Surface | undefined;
+
 export function registerDeviceActions(
   registry: ActionRegistry,
-  surface: Surface,
+  panels: PanelLookup,
   brightness: BrightnessControl,
 ): ActionRegistry {
   return registry.installPlugin(deckManifest, {
@@ -121,7 +131,13 @@ export function registerDeviceActions(
       );
     },
 
-    'deck.sleep-panel': () => surface.sleep(),
-    'deck.wake-panel': () => surface.wake(),
+    /*
+     * Addressed to the deck the press came from. Brightness, by contrast, is
+     * still one setting for the whole machine — a per-deck backlight is a
+     * setting nobody has asked for, and one number is easier to explain than
+     * a number per panel.
+     */
+    'deck.sleep-panel': async (_params, context) => panels(context.deckId)?.sleep(),
+    'deck.wake-panel': async (_params, context) => panels(context.deckId)?.wake(),
   });
 }

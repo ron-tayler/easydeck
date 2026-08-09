@@ -10,6 +10,7 @@ import type { BrightnessControl } from './device-actions.js';
 
 const context: ActionContext = {
   variables: new VariableStore(),
+  deckId: 'test',
   button: { id: 'b', key: 0 },
   location: { folderId: 'root', pageId: 'main' },
   profileId: 'p',
@@ -40,7 +41,7 @@ async function run(
   brightness: BrightnessControl,
   params: Record<string, unknown>,
 ): Promise<void> {
-  const registry = registerDeviceActions(new ActionRegistry(), surface, brightness);
+  const registry = registerDeviceActions(new ActionRegistry(), () => surface, brightness);
   await registry.run({ type: 'deck.set-brightness', params }, context);
 }
 

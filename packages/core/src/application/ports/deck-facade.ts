@@ -15,7 +15,7 @@ import type { ProfileSummary } from './repositories.js';
 export interface DeckFacade {
   state(): Promise<DeckState>;
   /** The current page, resolved — what each key is showing right now. */
-  pageView(): Promise<readonly KeyView[]>;
+  pageView(deckId?: string): Promise<readonly KeyView[]>;
   /**
    * Installed plugins with their action declarations.
    *
@@ -36,24 +36,99 @@ export interface DeckFacade {
   getProfile(id: string): Promise<ProfileDefinition>;
   saveProfile(profile: ProfileDefinition): Promise<void>;
   deleteProfile(id: string): Promise<void>;
-  activateProfile(id: string): Promise<void>;
+  /** Puts a profile on a deck. Without one, on whichever deck is active. */
+  activateProfile(id: string, deckId?: string): Promise<void>;
 
+  /**
+   * Changes how the daemon can be reached.
+   *
+   * The port and network access take effect on the next start; the rest are
+   * checked per request and apply at once.
+   */
+  setNetworkSettings(patch: {
+    networkAccess?: boolean;
+    networkDecks?: boolean;
+    extensionsApi?: boolean;
+    port?: number;
+  }): Promise<void>;
+
+  /**
+   * Devices allowed in, and devices asking to be.
+   *
+   * Ordinary facade methods rather than something the socket handles, so the
+   * desktop window — which talks over IPC — can show the queue and answer it.
+   */
+  listDevices(): Promise<{
+    readonly devices: readonly { id: string; name: string; approvedAt?: string; online: boolean }[];
+    readonly pending: readonly { id: string; name: string; code: string; address?: string }[];
+  }>;
+  approveDevice(deviceId: string): Promise<void>;
+  revokeDevice(deviceId: string): Promise<void>;
+
+  /**
+   * Devices allowed in, and devices asking to be.
+   *
+   * Ordinary facade methods rather than something the socket handles, so the
+   * desktop window — which talks over IPC — can show the queue and answer it.
+   */
+  listDevices(): Promise<{
+    readonly devices: readonly { id: string; name: string; approvedAt?: string; online: boolean }[];
+    readonly pending: readonly { id: string; name: string; code: string; address?: string }[];
+  }>;
+  approveDevice(deviceId: string): Promise<void>;
+  revokeDevice(deviceId: string): Promise<void>;
+
+  /** Renames a deck, so two identical panels can be told apart. */
+  renameDeck(deckId: string, name: string): Promise<void>;
+
+  /**
+   * Registers a deck that lives on another device and draws for itself.
+   *
+   * It gets a profile, a page and a history like any other deck — the only
+   * difference is that scenes go out over the wire instead of to a compositor.
+   */
+  attachNetworkDeck(options: {
+    readonly deviceId: string;
+    readonly name: string;
+    readonly rows: number;
+    readonly cols: number;
+    readonly send: (scene: unknown, doublePressKeys: readonly number[]) => void;
+  }): Promise<{ readonly deckId: string }>;
+
+  /** Removes a network deck, for a device that went away. */
+  detachDeck(deckId: string): Promise<void>;
+
+  /** A gesture the device recognised for itself. */
+  reportGesture(deckId: string, key: number, gesture: string): void;
+
+  /** Contact and release, for the configurator's live highlight. */
+  reportPressed(deckId: string, key: number, pressed: boolean): void;
+
+  /*
+   * Variables belong to the machine, so these take no deck: there is one
+   * truth about the mic, and every deck reads it.
+   */
   setVariable(name: string, value: VariableValue): void;
   deleteVariable(name: string): void;
 
-  openFolder(folderId: string): void;
-  goToPage(pageId: string): void;
-  goUp(): void;
-  goHome(): void;
-  goBack(): void;
+  /*
+   * Navigation belongs to a deck. Turning a page on the tablet must leave the
+   * panel on the desk where it was, which is the whole point of several decks
+   * rather than several views of one.
+   */
+  openFolder(folderId: string, deckId?: string): void;
+  goToPage(pageId: string, deckId?: string): void;
+  goUp(deckId?: string): void;
+  goHome(deckId?: string): void;
+  goBack(deckId?: string): void;
 
   setBrightness(percent: number): Promise<void>;
   /** Runs a key's actions as if it had been pressed, for testing from a UI. */
-  simulateKey(key: number): void;
+  simulateKey(key: number, deckId?: string): void;
   /** Runs a key's long-press actions, without waiting out the hold. */
-  simulateLongPress(key: number): void;
+  simulateLongPress(key: number, deckId?: string): void;
   /** Runs a key's double-press actions, without waiting out the window. */
-  simulateDoublePress(key: number): void;
+  simulateDoublePress(key: number, deckId?: string): void;
 }
 
 /**

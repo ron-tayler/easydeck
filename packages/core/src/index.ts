@@ -52,6 +52,7 @@ export type {
   ServerMessage,
   ApiEvent,
   DeckState,
+  DeckSummary,
 } from './domain/api-messages.js';
 export { API_PROTOCOL_VERSION, isRequestMessage } from './domain/api-messages.js';
 
@@ -91,8 +92,18 @@ export {
   toPresenterPort,
 } from './infrastructure/panel-adapter.js';
 export { startApiServer } from './infrastructure/api/websocket-server.js';
+export { findUiDirectory } from './infrastructure/api/ui-directory.js';
+export { localAddresses } from './infrastructure/api/network-addresses.js';
+export type { NetworkAddress } from './infrastructure/api/network-addresses.js';
 export type { ApiServerOptions, RunningApiServer } from './infrastructure/api/websocket-server.js';
 export { loadOrCreateToken, tokenMatches, originAllowed } from './infrastructure/api/auth-token.js';
+
+export { DeckRegistry } from './application/deck-registry.js';
+export { DeviceDirectory } from './application/device-directory.js';
+export type { DeviceSummary } from './application/device-directory.js';
+export type { DeckEntry, DeckRegistryEvents } from './application/deck-registry.js';
+export { createPhysicalDeck } from './infrastructure/physical-deck.js';
+export { deckIdFor } from './infrastructure/deck-id.js';
 
 export { startDeck } from './start-deck.js';
 export type { StartDeckOptions } from './start-deck.js';

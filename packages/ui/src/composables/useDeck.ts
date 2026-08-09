@@ -1,4 +1,4 @@
-import { onScopeDispose, readonly, ref, shallowRef } from 'vue';
+import { computed, onScopeDispose, readonly, ref, shallowRef } from 'vue';
 import type {
   DeckState,
   KeyView,
@@ -28,6 +28,21 @@ const profiles = shallowRef<readonly ProfileSummary[]>([]);
 const profile = shallowRef<ProfileDefinition | undefined>();
 const plugins = shallowRef<readonly PluginManifest[]>([]);
 const pressedKeys = ref<ReadonlySet<number>>(new Set());
+/**
+ * Which deck the window is showing.
+ *
+ * Undefined means "whichever the daemon calls active", which is what a fresh
+ * window wants and what a machine with one deck always wants. Once the user
+ * picks one, every request and every event is filtered through it.
+ */
+const selectedDeckId = ref<string | undefined>();
+/** Devices already let in, and those knocking right now. */
+const devices = shallowRef<
+  readonly { id: string; name: string; approvedAt?: string; online?: boolean }[]
+>([]);
+const pendingDevices = shallowRef<
+  readonly { id: string; name: string; code: string; address?: string }[]
+>([]);
 
 /**
  * Whatever went wrong last, shown in the banner.
@@ -55,7 +70,7 @@ async function refreshState(): Promise<void> {
 
 async function refreshView(): Promise<void> {
   try {
-    const result = await client.call<{ keys: KeyView[] }>('getPageView');
+    const result = await client.call<{ keys: KeyView[] }>('getPageView', deckParam());
     keys.value = result.keys;
   } catch {
     keys.value = [];
@@ -72,7 +87,9 @@ async function refreshProfiles(): Promise<void> {
 }
 
 async function refreshProfile(): Promise<void> {
-  const id = state.value?.activeProfileId;
+  const decks = state.value?.decks ?? [];
+  const shown = selectedDeckId.value ?? state.value?.activeDeckId;
+  const id = (decks.find((entry) => entry.id === shown) ?? decks[0])?.profileId;
   if (!id) {
     profile.value = undefined;
     return;
@@ -100,7 +117,13 @@ let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
 async function refreshAll(): Promise<void> {
   loading.value = true;
-  await Promise.all([refreshState(), refreshView(), refreshProfiles(), refreshPlugins()]);
+  await Promise.all([
+    refreshState(),
+    refreshView(),
+    refreshProfiles(),
+    refreshPlugins(),
+    refreshDevices(),
+  ]);
   // Needs the state first: which profile to fetch comes from it.
   await refreshProfile();
   loading.value = false;
@@ -114,11 +137,41 @@ async function refreshAll(): Promise<void> {
   retryTimer = state.value ? undefined : setTimeout(() => void refreshAll(), RETRY_DELAY_MS);
 }
 
+/** The deck a request is about, as request parameters. */
+function deckParam(): Record<string, unknown> {
+  return selectedDeckId.value ? { deckId: selectedDeckId.value } : {};
+}
+
+/** Whether an event about `deckId` concerns the deck being shown. */
+function concernsShownDeck(payload: unknown): boolean {
+  const deckId = (payload as { deckId?: string } | undefined)?.deckId;
+  if (deckId === undefined) return true;
+
+  const shown = selectedDeckId.value ?? state.value?.activeDeckId;
+  return shown === undefined || shown === deckId;
+}
+
 function markPressed(key: number, pressed: boolean): void {
   const next = new Set(pressedKeys.value);
   if (pressed) next.add(key);
   else next.delete(key);
   pressedKeys.value = next;
+}
+
+async function refreshDevices(): Promise<void> {
+  try {
+    const result = await client.call<{
+      devices: { id: string; name: string; approvedAt?: string; online?: boolean }[];
+      pending: { id: string; name: string; code: string; address?: string }[];
+    }>('listDevices');
+
+    devices.value = result.devices;
+    pendingDevices.value = result.pending;
+  } catch {
+    // A daemon that predates device approval simply has no such method.
+    devices.value = [];
+    pendingDevices.value = [];
+  }
 }
 
 function start(): void {
@@ -133,18 +186,41 @@ function start(): void {
   // A repaint on the device and a repaint here are triggered by the same
   // events, so the window cannot drift from the panel.
   client.on('state', () => void refreshAll());
-  client.on('locationChanged', () => void Promise.all([refreshState(), refreshView()]));
+  client.on('locationChanged', (payload) => {
+    // State always: the deck list shows where every deck is. The view only
+    // when it is this deck's, or the window would repaint with another deck's
+    // page.
+    void refreshState();
+    if (concernsShownDeck(payload)) void refreshView();
+  });
   // Follows the repaint itself rather than guessing from what might have
   // caused it: a button state can change with no variable involved at all.
-  client.on('viewChanged', () => void refreshView());
+  client.on('viewChanged', (payload) => {
+    if (concernsShownDeck(payload)) void refreshView();
+  });
   client.on('variablesChanged', () => void Promise.all([refreshState(), refreshView()]));
   client.on('profilesChanged', () => void Promise.all([refreshProfiles(), refreshProfile()]));
+  /*
+   * A signal, not a payload. It used to carry the lists, and when it stopped
+   * carrying them this handler kept reading from nothing — it threw, silently,
+   * and the window never learnt that a device had been approved or refused.
+   * Asking for the list is one round trip and cannot rot the same way.
+   */
+  client.on('devicesChanged', () => void refreshDevices());
   client.on('actionError', (payload) => {
     lastError.value = (payload as { message?: string })?.message;
   });
 
-  client.on('keyDown', (payload) => markPressed((payload as { key: number }).key, true));
-  client.on('keyUp', (payload) => markPressed((payload as { key: number }).key, false));
+  /*
+   * Filtered by deck: with two panels running, a press on the other one would
+   * otherwise light up the same key in a window showing this one.
+   */
+  client.on('keyDown', (payload) => {
+    if (concernsShownDeck(payload)) markPressed((payload as { key: number }).key, true);
+  });
+  client.on('keyUp', (payload) => {
+    if (concernsShownDeck(payload)) markPressed((payload as { key: number }).key, false);
+  });
 }
 
 export function useDeck() {
@@ -159,14 +235,43 @@ export function useDeck() {
     profile,
     plugins,
     pressedKeys: readonly(pressedKeys),
+    selectedDeckId,
+    /** The deck being shown, resolved against what the daemon reports. */
+    deck: computed(() => {
+      const decks = state.value?.decks ?? [];
+      const wanted = selectedDeckId.value ?? state.value?.activeDeckId;
+      return decks.find((entry) => entry.id === wanted) ?? decks[0];
+    }),
+    selectDeck: async (deckId: string | undefined) => {
+      selectedDeckId.value = deckId;
+      pressedKeys.value = new Set();
+      await refreshView();
+    },
+    renameDeck: async (deckId: string, name: string) => {
+      await client.call('renameDeck', { deckId, name });
+    },
+
+    devices,
+    pendingDevices,
+    refreshDevices,
+    approveDevice: async (deviceId: string) => {
+      await client.call('approveDevice', { deviceId });
+    },
+    revokeDevice: async (deviceId: string) => {
+      await client.call('revokeDevice', { deviceId });
+    },
+    setNetworkSettings: async (patch: Record<string, unknown>) => {
+      await client.call('setNetworkSettings', patch);
+      await refreshState();
+    },
     lastError,
     loading: readonly(loading),
 
     transportKind: client.kind,
     refresh: refreshAll,
-    pressKey: (key: number) => client.call('simulateKey', { key }),
-    holdKey: (key: number) => client.call('simulateLongPress', { key }),
-    doubleKey: (key: number) => client.call('simulateDoublePress', { key }),
+    pressKey: (key: number) => client.call('simulateKey', { key, ...deckParam() }),
+    holdKey: (key: number) => client.call('simulateLongPress', { key, ...deckParam() }),
+    doubleKey: (key: number) => client.call('simulateDoublePress', { key, ...deckParam() }),
     saveProfile: async (profile: ProfileDefinition) => {
       await client.call('saveProfile', { profile });
       // The save triggers a reload on the host, which announces new state;
@@ -174,10 +279,10 @@ export function useDeck() {
       // waiting a round trip for the event to come back.
       await refreshAll();
     },
-    openFolder: (folderId: string) => client.call('openFolder', { folderId }),
-    goToPage: (pageId: string) => client.call('goToPage', { pageId }),
-    goUp: () => client.call('goUp'),
-    activateProfile: (id: string) => client.call('activateProfile', { id }),
+    openFolder: (folderId: string) => client.call('openFolder', { folderId, ...deckParam() }),
+    goToPage: (pageId: string) => client.call('goToPage', { pageId, ...deckParam() }),
+    goUp: () => client.call('goUp', deckParam()),
+    activateProfile: (id: string) => client.call('activateProfile', { id, ...deckParam() }),
     /* Fetched on demand rather than kept in state: the folder is the user's,
        it changes behind our back, and it only matters while a picker is open. */
     listIcons: async (): Promise<readonly LibraryImage[]> => {

@@ -52,6 +52,8 @@ export interface CutTileRequest {
   /** Which of this tile's corners face the panel rather than the picture. */
   readonly corners: TileCorners;
   readonly cornerRadius?: number;
+  /** Draws a warning sign on this key: its last press failed. */
+  readonly alert?: boolean;
 }
 
 /**

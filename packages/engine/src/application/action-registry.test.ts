@@ -8,6 +8,7 @@ import { ActionRegistry } from './action-registry.js';
 function contextWith(variables: Record<string, string | number | boolean>): ActionContext {
   return {
     variables: new VariableStore(variables),
+    deckId: 'test',
     button: { id: 'b', key: 0 },
     location: { folderId: 'root', pageId: 'main' },
     profileId: 'p',

@@ -85,15 +85,44 @@ function onPromptConfirm(name: string): void {
   pending?.apply(name);
 }
 
-const folderPath = computed(() => deck.state.value?.folderPath ?? []);
-const pages = computed(() => deck.state.value?.pages ?? []);
-const currentFolderId = computed(() => deck.state.value?.location?.folderId);
+/** Every deck the daemon reports, in the order it found them. */
+const decks = computed(() => deck.state.value?.decks ?? []);
+
+/*
+ * One request at a time, oldest first.
+ *
+ * Several devices knocking — three browser tabs left open on the deck page,
+ * say, all reconnecting the moment the daemon starts — used to stack three
+ * identical bars across the top of the window, each labelled with the same
+ * platform name and telling them apart only by a six-digit code. Answering one
+ * brings up the next, and the count says how many are left.
+ */
+const nextRequest = computed(() => deck.pendingDevices.value[0]);
+const alsoWaiting = computed(() => Math.max(0, deck.pendingDevices.value.length - 1));
+const shownDeckId = computed(() => deck.deck.value?.id ?? '');
+
+function onSelectDeck(event: Event): void {
+  void deck.selectDeck((event.target as HTMLSelectElement).value || undefined);
+}
+
+function renameShownDeck(): void {
+  const current = deck.deck.value;
+  if (!current) return;
+
+  ask(t('decks.rename'), current.name, (name) => {
+    void deck.renameDeck(current.id, name);
+  });
+}
+
+const folderPath = computed(() => deck.deck.value?.folderPath ?? []);
+const pages = computed(() => deck.deck.value?.pages ?? []);
+const currentFolderId = computed(() => deck.deck.value?.location?.folderId);
 /** Ancestors of the current folder, so the whole branch reads as active. */
 const openIds = computed(() => new Set(folderPath.value.map((folder) => folder.id)));
 /** The tree is rendered from the root's children plus the root itself. */
 const rootFolders = computed(() => (deck.profile.value ? [deck.profile.value.root] : []));
 
-const currentPageId = computed(() => deck.state.value?.location?.pageId);
+const currentPageId = computed(() => deck.deck.value?.location?.pageId);
 
 async function edit(change: (profile: ProfileDefinition) => ProfileDefinition): Promise<void> {
   const profile = deck.profile.value;
@@ -351,7 +380,9 @@ async function onResize(payload: { key: number; colSpan: number; rowSpan: number
  * can load would be a strange way to start.
  */
 async function createProfile(name: string): Promise<void> {
-  const device = deck.state.value?.device;
+  // Laid out for the deck being shown: with several running they may differ in
+  // size, and a profile authored for the wrong grid is refused by the engine.
+  const device = deck.deck.value;
   if (!device) return;
 
   const trimmed = name.trim() || t('profiles.newTitle');
@@ -670,10 +701,32 @@ onBeforeUnmount(() => {
     <header>
       <span class="brand">{{ t('app.title') }}</span>
 
+      <!--
+        One deck and there is nothing to choose, so the picker only appears
+        when it would earn its place. With several, choosing one is what makes
+        every other control in the window unambiguous.
+      -->
+      <label v-if="decks.length > 1" class="decks">
+        <span class="muted">{{ t('decks.label') }}</span>
+        <select :value="shownDeckId" @change="onSelectDeck">
+          <option v-for="entry in decks" :key="entry.id" :value="entry.id">
+            {{ entry.name }}{{ entry.online ? '' : ` — ${t('decks.offline')}` }}
+          </option>
+        </select>
+      </label>
+
       <div class="status">
-        <template v-if="deck.state.value">
-          <span class="dot ok" />
-          <span>{{ deck.state.value.device.model }}</span>
+        <template v-if="deck.deck.value">
+          <span class="dot" :class="deck.deck.value.online ? 'ok' : 'bad'" />
+          <span>{{ deck.deck.value.name }}</span>
+          <button
+            type="button"
+            class="rename"
+            :title="t('decks.rename')"
+            @click="renameShownDeck"
+          >
+            ✎
+          </button>
         </template>
         <template v-else-if="deck.loading.value">
           <span class="dot" />
@@ -685,6 +738,29 @@ onBeforeUnmount(() => {
         </template>
       </div>
     </header>
+
+    <!--
+      Requests to join sit above everything, and deliberately: a device is
+      waiting on someone to look, and a panel buried in settings would leave it
+      waiting until the request expired.
+    -->
+    <div v-if="nextRequest" class="pending">
+      <span>
+        <strong>{{ nextRequest.name }}</strong>
+        <span v-if="nextRequest.address" class="muted"> · {{ nextRequest.address }}</span>
+      </span>
+      <code class="code">{{ nextRequest.code }}</code>
+      <span class="muted">{{ t('devices.match') }}</span>
+      <span v-if="alsoWaiting > 0" class="muted">
+        {{ t('devices.alsoWaiting', { count: alsoWaiting }) }}
+      </span>
+      <button type="button" @click="void deck.approveDevice(nextRequest.id)">
+        {{ t('devices.approve') }}
+      </button>
+      <button type="button" class="ghost" @click="void deck.revokeDevice(nextRequest.id)">
+        {{ t('devices.reject') }}
+      </button>
+    </div>
 
     <p v-if="deck.lastError.value" class="error">
       {{ deck.lastError.value }}
@@ -753,7 +829,7 @@ onBeforeUnmount(() => {
           <label class="sr-only" for="profile-select">{{ t('profiles.label') }}</label>
           <select
             id="profile-select"
-            :value="deck.state.value?.activeProfileId ?? ''"
+            :value="deck.deck.value?.profileId ?? ''"
             :disabled="deck.profiles.value.length === 0"
             @change="deck.activateProfile(($event.target as HTMLSelectElement).value)"
           >
@@ -775,7 +851,7 @@ onBeforeUnmount(() => {
         </div>
 
         <DeckGrid
-          :state="deck.state.value"
+          :deck="deck.deck.value"
           :keys="deck.keys.value"
           :pressed-keys="deck.pressedKeys.value"
           :selected-key="selectedKey"
@@ -789,13 +865,13 @@ onBeforeUnmount(() => {
 
         <!-- Numbers only, no arrows: a scene has at most sixteen pages, so
              they all fit and paging through them would be pointless. -->
-        <div v-if="deck.state.value" class="pages">
+        <div v-if="deck.deck.value" class="pages">
           <button
             v-for="(page, index) in pages"
             :key="page.id"
             type="button"
             class="page"
-            :class="{ current: page.id === deck.state.value?.location?.pageId }"
+            :class="{ current: page.id === deck.deck.value?.location?.pageId }"
             :title="page.name"
             @click="deck.goToPage(page.id)"
             @contextmenu.prevent="onPageMenu(page.id, $event)"
@@ -893,7 +969,12 @@ onBeforeUnmount(() => {
       :state="deck.state.value"
       :plugins="deck.plugins.value"
       :transport-kind="deck.transportKind"
+      :devices="deck.devices.value"
+      :pending-devices="deck.pendingDevices.value"
       @close="settingsOpen = false"
+      @network="void deck.setNetworkSettings($event)"
+      @approve-device="void deck.approveDevice($event)"
+      @revoke-device="void deck.revokeDevice($event)"
     />
   </div>
 </template>
@@ -903,6 +984,48 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   height: 100vh;
+}
+
+.pending {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 16px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent-soft);
+}
+
+.pending .code {
+  font-size: 20px;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+}
+
+.decks {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 13px;
+}
+
+.decks select {
+  max-width: 200px;
+}
+
+/* Quiet until hovered: renaming a deck is rare, and the name is the point. */
+.rename {
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.rename:hover {
+  color: var(--text);
 }
 
 header {

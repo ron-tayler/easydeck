@@ -1,8 +1,7 @@
-import { PanelCompositor } from '@easydeck/compositor';
-import { createDeviceManager } from '@easydeck/device';
-import { ActionRegistry, DeckController, createActionRegistry } from '@easydeck/engine';
+import { DeviceNotFoundError, createDeviceManager } from '@easydeck/device';
+import type { Surface } from '@easydeck/device';
+import { ActionRegistry, createActionRegistry } from '@easydeck/engine';
 import type { ProfileDefinition } from '@easydeck/engine';
-import { CanvasPanelComposer, TileEncoder, createJpegEncoder } from '@easydeck/renderer';
 
 import { DeckService } from './application/deck-service.js';
 import type { ProfileRepository, SettingsRepository } from './application/ports/repositories.js';
@@ -15,13 +14,10 @@ import { registerKeyboardActions } from './infrastructure/actions/keyboard-actio
 import { registerSystemActions } from './infrastructure/actions/system-actions.js';
 import { FileProfileRepository } from './infrastructure/file-profile-repository.js';
 import { FileSettingsRepository } from './infrastructure/file-settings-repository.js';
-import { toComposerPort } from './infrastructure/composer-adapter.js';
-import {
-  toEncoderPort,
-  toPanelFormat,
-  toPanelPort,
-  toPresenterPort,
-} from './infrastructure/panel-adapter.js';
+import { DeckRegistry } from './application/deck-registry.js';
+import type { DeviceDirectory } from './application/device-directory.js';
+import { deckIdFor } from './infrastructure/deck-id.js';
+import { createPhysicalDeck } from './infrastructure/physical-deck.js';
 
 export interface StartDeckOptions {
   /** Profile to run. Omit to take it from storage. */
@@ -37,6 +33,10 @@ export interface StartDeckOptions {
   readonly actions?: ActionRegistry;
   /** Reload the active profile when its file changes. On by default. */
   readonly watchProfiles?: boolean;
+  /** Devices allowed in, and devices asking to be. */
+  readonly devices?: DeviceDirectory;
+  /** Brings the API server in line with the stored settings. */
+  readonly applyNetwork?: () => Promise<{ port: number; networkAccess: boolean } | undefined>;
 }
 
 /**
@@ -51,29 +51,24 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
   const settings = await settingsRepository.load();
   const profile = options.profile ?? (await resolveProfile(profiles, settings));
 
-  const surface = await createDeviceManager().openFirst({
-    brightness: options.brightness ?? settings.brightness,
-  });
+  const manager = createDeviceManager();
+  const devices = await manager.list();
+  if (devices.length === 0) throw new DeviceNotFoundError();
+
+  const initialBrightness = options.brightness ?? settings.brightness;
+  const opened: Surface[] = [];
 
   try {
-    const format = toPanelFormat(surface);
-    const encoder = new TileEncoder(await createJpegEncoder());
-
     /*
-     * The panel, simulated in memory. Everything about pictures happens on
-     * this side of the seam: a region is composed once and cut into tiles
-     * rather than laid out again for every key, frames are prepared in the
-     * background and cancelled when the scene moves on, and playback is paced
-     * against what the bus actually carries instead of what the GIF asks for.
+     * Every panel that is plugged in, not just the first.
+     *
+     * Each becomes a deck of its own: its own profile, page and history, but
+     * the same variables, because there is one truth about the machine and
+     * several ways to reach it.
      */
-    const compositor = new PanelCompositor(
-      toPanelPort(surface),
-      toComposerPort(new CanvasPanelComposer(), format),
-      toEncoderPort(encoder),
-      format,
-    );
-
-    const initialBrightness = options.brightness ?? settings.brightness;
+    for (const device of devices) {
+      opened.push(await manager.open(device, { brightness: initialBrightness }));
+    }
 
     /*
      * Brightness belongs to the service — it clamps, persists and reports it —
@@ -86,25 +81,42 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
       current: () => service?.currentBrightness ?? initialBrightness,
       set: async (percent: number) => {
         if (service) await service.setBrightness(percent);
-        else await surface.setBrightness(Math.min(100, Math.max(0, Math.round(percent))));
+        else {
+          const clamped = Math.min(100, Math.max(0, Math.round(percent)));
+          for (const surface of opened) await surface.setBrightness(clamped);
+        }
       },
     };
 
     const warnings: string[] = [];
     let actions = options.actions;
+    let registry: DeckRegistry | undefined;
+
     if (!actions) {
       actions = registerSystemActions(createActionRegistry());
       registerEasyDeckFolderActions(actions);
-      registerDeviceActions(actions, surface, brightness);
+      registerDeviceActions(actions, (deckId) => registry?.get(deckId)?.surface, brightness);
       const keyboard = await registerKeyboardActions(actions);
       if (keyboard.reason) warnings.push(keyboard.reason);
     }
 
-    const controller = new DeckController(toPresenterPort(surface, compositor), actions);
-    compositor.on('error', (error) => controller.emit('error', error));
+    registry = new DeckRegistry(actions);
 
-    controller.load(profile);
-    await controller.start();
+    for (const [index, surface] of opened.entries()) {
+      const device = devices[index]!;
+      const id = deckIdFor(device);
+      const binding = settings.decks?.[id];
+
+      const deck = await createPhysicalDeck({
+        surface,
+        id,
+        name: binding?.name ?? device.model.name,
+        actions,
+        variables: registry.variables,
+      });
+
+      await registry.add(deck, await profileForDeck(profiles, binding?.profileId, profile));
+    }
 
     const watchDirectory =
       options.watchProfiles !== false && profiles instanceof FileProfileRepository
@@ -112,9 +124,9 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
         : undefined;
 
     service = new DeckService({
-      surface,
-      controller,
-      compositor,
+      decks: registry,
+      ...(options.devices ? { devices: options.devices } : {}),
+      ...(options.applyNetwork ? { applyNetwork: options.applyNetwork } : {}),
       actions,
       profiles,
       settings: settingsRepository,
@@ -124,9 +136,33 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
     });
     return service;
   } catch (error) {
-    await surface.close().catch(() => undefined);
+    for (const surface of opened) await surface.close().catch(() => undefined);
     throw error;
   }
+}
+
+/**
+ * The profile this deck is bound to, or the daemon's default.
+ *
+ * A binding that no longer resolves — the profile was deleted, or the settings
+ * were edited by hand — falls back rather than refusing to start: a deck
+ * showing the wrong profile is recoverable from the configurator, and a deck
+ * that will not come up is not.
+ */
+async function profileForDeck(
+  profiles: ProfileRepository,
+  profileId: string | undefined,
+  fallback: ProfileDefinition,
+): Promise<ProfileDefinition> {
+  if (!profileId) return fallback;
+
+  try {
+    if (await profiles.has(profileId)) return await profiles.load(profileId);
+  } catch {
+    // Unreadable is the same as missing as far as starting up is concerned.
+  }
+
+  return fallback;
 }
 
 async function resolveProfile(

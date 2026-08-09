@@ -11,6 +11,14 @@ export interface WebSocketTransportOptions {
   readonly token: string;
   readonly host?: string;
   readonly port?: number;
+  /**
+   * Identifies this device when it has no token yet.
+   *
+   * A device arrives unknown, waits to be approved by sight, and is then given
+   * a token of its own; until that happens this is all the daemon knows it by.
+   */
+  readonly deviceId?: string;
+  readonly deviceName?: string;
 }
 
 /**
@@ -22,7 +30,18 @@ export interface WebSocketTransportOptions {
  * UI waiting on promises that will never settle.
  */
 export function createWebSocketTransport(options: WebSocketTransportOptions): Transport {
-  const url = `ws://${options.host ?? '127.0.0.1'}:${options.port ?? DEFAULT_PORT}/?token=${encodeURIComponent(options.token)}`;
+  /*
+   * Built from the address the page itself came from, not from a hardcoded
+   * loopback: a tablet loads the configurator over the network, and the API
+   * only accepts connections whose origin matches the host they asked for.
+   */
+  const query = new URLSearchParams({ token: options.token });
+  if (options.deviceId) query.set('device', options.deviceId);
+  if (options.deviceName) query.set('name', options.deviceName);
+
+  const host = options.host ?? window.location.hostname ?? '127.0.0.1';
+  const port = options.port ?? Number(window.location.port) ?? DEFAULT_PORT;
+  const url = `ws://${host}:${port || DEFAULT_PORT}/?${query.toString()}`;
 
   const eventListeners = new Set<(message: EventMessage) => void>();
   const connectionListeners = new Set<(connected: boolean) => void>();

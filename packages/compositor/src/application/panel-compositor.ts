@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 
 import { digest } from '../domain/digest.js';
-import { cornersOf, labelAt, validateScene } from '../domain/scene.js';
+import { alertAt, cornersOf, labelAt, validateScene } from '../domain/scene.js';
 import type { Scene } from '../domain/scene.js';
 import { regionGeometry } from '../domain/panel-format.js';
 import type { PanelFormat } from '../domain/panel-format.js';
@@ -384,6 +384,7 @@ export class PanelCompositor extends EventEmitter<PanelCompositorEvents> {
           ? {}
           : { cornerRadius: planned.region.cornerRadius }),
         ...(label ? { label } : {}),
+        ...(alertAt(planned.region, tile.col, tile.row) ? { alert: true } : {}),
       });
 
       const encoded = await this.encoder.encode(bitmap, {

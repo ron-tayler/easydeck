@@ -43,6 +43,15 @@ export interface SceneRegion {
   readonly cornerRadius?: number;
   readonly image?: SceneImage;
   readonly labels?: readonly SceneLabel[];
+  /**
+   * Keys of this region whose last press ended in an error, as `col,row`.
+   *
+   * Drawn as a warning sign on top of whatever the key shows, and gone again a
+   * few seconds later. A deck has no window to put a message in — the D6 least
+   * of all — so the key that failed says so itself, and the alternative is a
+   * press that silently does nothing.
+   */
+  readonly alerts?: readonly { readonly col: number; readonly row: number }[];
 }
 
 export interface Scene {
@@ -68,6 +77,10 @@ export function sceneSignature(scene: Scene): string {
       region.background ?? '',
       region.cornerRadius === undefined ? '' : String(region.cornerRadius),
     );
+
+    // The warning sign is part of the picture: leave it out and a key that
+    // starts or stops complaining is taken for unchanged and never repainted.
+    for (const cell of region.alerts ?? []) parts.push(`!${cell.col},${cell.row}`);
 
     for (const label of region.labels ?? []) {
       // Serialized rather than joined: label text is whatever the user typed,

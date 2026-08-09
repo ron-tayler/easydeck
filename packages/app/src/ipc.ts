@@ -33,12 +33,13 @@ export function registerIpc(host: DeckHost): void {
     broadcast(IPC_EVENT, { type: 'event', event, payload } satisfies EventMessage);
 
   host.onDeckEvent('state', (state) => forward('state', state));
-  host.onDeckEvent('locationChanged', (location) => forward('locationChanged', location));
-  host.onDeckEvent('viewChanged', (keys) => forward('viewChanged', { keys }));
+  host.onDeckEvent('locationChanged', (event) => forward('locationChanged', event));
+  host.onDeckEvent('viewChanged', (event) => forward('viewChanged', event));
   host.onDeckEvent('variablesChanged', (variables) => forward('variablesChanged', { variables }));
-  host.onDeckEvent('keyDown', (key) => forward('keyDown', { key }));
-  host.onDeckEvent('keyUp', (key) => forward('keyUp', { key }));
+  host.onDeckEvent('keyDown', (event) => forward('keyDown', event));
+  host.onDeckEvent('keyUp', (event) => forward('keyUp', event));
   host.onDeckEvent('profilesChanged', () => forward('profilesChanged'));
+  host.onDeckEvent('devicesChanged', () => forward('devicesChanged'));
   host.onDeckEvent('actionError', (message) => forward('actionError', { message }));
 }
 

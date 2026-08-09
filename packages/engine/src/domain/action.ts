@@ -48,6 +48,14 @@ export const BUTTON_EVENTS: readonly ButtonEvent[] = ['press', 'longPress', 'dou
  */
 export interface ActionContext {
   readonly variables: VariableStore;
+  /**
+   * Which deck the press came from.
+   *
+   * Navigation acts on this one: turning a page on the tablet must not move
+   * the panel on the desk. Variables, by contrast, are shared — one machine,
+   * several ways to reach it.
+   */
+  readonly deckId: string;
   /** The button whose event triggered this action. */
   readonly button: { readonly id: string; readonly key: number };
   readonly location: { readonly folderId: string; readonly pageId: string };

@@ -51,6 +51,7 @@ export function toComposerPort(composer: PanelComposer, format: PanelFormat): Co
         corners: request.corners,
         ...(request.cornerRadius === undefined ? {} : { cornerRadius: request.cornerRadius }),
         ...(request.label ? { label: request.label } : {}),
+        ...(request.alert ? { alert: true } : {}),
       });
     },
 

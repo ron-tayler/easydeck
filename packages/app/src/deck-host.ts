@@ -7,6 +7,8 @@ import {
   configDir,
   createStarterProfile,
   startDeck,
+  DeviceDirectory,
+  findUiDirectory,
   startApiServer,
 } from '@easydeck/core';
 import type {
@@ -53,6 +55,27 @@ export interface DeckHostEvents extends DeckEvents {
 export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource {
   private deck?: DeckService;
   private api?: RunningApiServer;
+  /** What the API server ended up on, for the window's network section. */
+  private listening?: { port: number; networkAccess: boolean };
+  /**
+   * Devices allowed in, and devices asking to be.
+   *
+   * Held by the host rather than by the server, because the window reaches
+   * the core over IPC: a queue living inside the socket would be invisible to
+   * the one place that can approve anything.
+   */
+  private readonly devices = new DeviceDirectory(configDir());
+
+  constructor() {
+    super();
+
+    /*
+     * Announced by the host, not by the deck: a device may knock while the
+     * deck is closed — the workstation locked — and the window still has to
+     * learn about it.
+     */
+    this.devices.on('changed', () => this.emit('devicesChanged'));
+  }
   private readonly handler = new ApiHandler(this);
   private current: HostStatus = { state: 'stopped' };
   private locked = false;
@@ -81,10 +104,51 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     this.gate = this.gate.then(() => this.openDeck()).catch(() => undefined);
     await this.gate;
 
-    if (!this.api) {
-      this.api = await startApiServer({ service: this, configDirectory: configDir() });
-    }
+    // Told to the deck, not merely remembered: without this the window shows a
+    // switch that is on beside a server it believes is off.
+    this.deck?.setListening(await this.applyNetwork());
   }
+
+  /**
+   * Brings the API server in line with the settings.
+   *
+   * The window talks to the core over IPC, so nothing here needs a port: the
+   * server exists only to let another device in, and it is started, rebuilt
+   * or taken away the moment that setting changes. Asking someone to restart
+   * the program would be asking them to do work the program can do itself.
+   */
+  private applyNetwork = async (): Promise<{ port: number; networkAccess: boolean } | undefined> => {
+    const settings = await new FileSettingsRepository().load();
+
+    await this.api?.close().catch(() => undefined);
+    this.api = undefined;
+
+    if (!settings.networkAccess) {
+      this.listening = undefined;
+      return undefined;
+    }
+
+    const uiDirectory = findUiDirectory();
+    this.api = await startApiServer({
+      service: this,
+      configDirectory: configDir(),
+      devices: this.devices,
+      host: '0.0.0.0',
+      ...(settings.port ? { port: settings.port } : {}),
+      ...(uiDirectory ? { uiDirectory } : {}),
+      permissions: async () => {
+        // Read afresh, so these two take effect without touching the socket.
+        const now = await new FileSettingsRepository().load();
+        return {
+          networkDecks: now.networkDecks === true,
+          extensionsApi: now.extensionsApi === true,
+        };
+      },
+    });
+
+    this.listening = { port: this.api.port, networkAccess: true };
+    return this.listening;
+  };
 
   /**
    * Releases the deck exactly as quitting would: the panel is cleared and the
@@ -130,8 +194,8 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     return this.require().state();
   }
 
-  pageView(): Promise<readonly KeyView[]> {
-    return this.require().pageView();
+  pageView(deckId?: string): Promise<readonly KeyView[]> {
+    return this.require().pageView(deckId);
   }
 
   plugins(): Promise<readonly PluginManifest[]> {
@@ -158,8 +222,8 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     return this.require().deleteProfile(id);
   }
 
-  activateProfile(id: string): Promise<void> {
-    return this.require().activateProfile(id);
+  activateProfile(id: string, deckId?: string): Promise<void> {
+    return this.require().activateProfile(id, deckId);
   }
 
   setVariable(name: string, value: VariableValue): void {
@@ -170,40 +234,86 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     this.require().deleteVariable(name);
   }
 
-  openFolder(folderId: string): void {
-    this.require().openFolder(folderId);
+  openFolder(folderId: string, deckId?: string): void {
+    this.require().openFolder(folderId, deckId);
   }
 
-  goToPage(pageId: string): void {
-    this.require().goToPage(pageId);
+  goToPage(pageId: string, deckId?: string): void {
+    this.require().goToPage(pageId, deckId);
   }
 
-  goUp(): void {
-    this.require().goUp();
+  goUp(deckId?: string): void {
+    this.require().goUp(deckId);
   }
 
-  goHome(): void {
-    this.require().goHome();
+  goHome(deckId?: string): void {
+    this.require().goHome(deckId);
   }
 
-  goBack(): void {
-    this.require().goBack();
+  goBack(deckId?: string): void {
+    this.require().goBack(deckId);
   }
 
   setBrightness(percent: number): Promise<void> {
     return this.require().setBrightness(percent);
   }
 
-  simulateKey(key: number): void {
-    this.require().simulateKey(key);
+  simulateKey(key: number, deckId?: string): void {
+    this.require().simulateKey(key, deckId);
   }
 
-  simulateLongPress(key: number): void {
-    this.require().simulateLongPress(key);
+  simulateLongPress(key: number, deckId?: string): void {
+    this.require().simulateLongPress(key, deckId);
   }
 
-  simulateDoublePress(key: number): void {
-    this.require().simulateDoublePress(key);
+  simulateDoublePress(key: number, deckId?: string): void {
+    this.require().simulateDoublePress(key, deckId);
+  }
+
+  /*
+   * Answered by the host rather than delegated: a device may be waiting while
+   * the deck is closed — the workstation locked, the panel unplugged — and
+   * the queue has to be visible and answerable regardless.
+   */
+  async listDevices(): Promise<{
+    devices: readonly { id: string; name: string; approvedAt?: string; online: boolean }[];
+    pending: readonly { id: string; name: string; code: string; address?: string }[];
+  }> {
+    return { devices: await this.devices.devices(), pending: this.devices.waiting() };
+  }
+
+  async approveDevice(deviceId: string): Promise<void> {
+    await this.devices.approve(deviceId);
+  }
+
+  async revokeDevice(deviceId: string): Promise<void> {
+    await this.devices.revoke(deviceId);
+  }
+
+  setNetworkSettings(patch: Parameters<DeckService['setNetworkSettings']>[0]): Promise<void> {
+    return this.require().setNetworkSettings(patch);
+  }
+
+  renameDeck(deckId: string, name: string): Promise<void> {
+    return this.require().renameDeck(deckId, name);
+  }
+
+  attachNetworkDeck(
+    options: Parameters<DeckService['attachNetworkDeck']>[0],
+  ): Promise<{ deckId: string }> {
+    return this.require().attachNetworkDeck(options);
+  }
+
+  detachDeck(deckId: string): Promise<void> {
+    return this.require().detachDeck(deckId);
+  }
+
+  reportGesture(deckId: string, key: number, gesture: string): void {
+    this.require().reportGesture(deckId, key, gesture);
+  }
+
+  reportPressed(deckId: string, key: number, pressed: boolean): void {
+    this.require().reportPressed(deckId, key, pressed);
   }
 
   private require(): DeckService {
@@ -227,12 +337,28 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
         await profiles.save(createStarterProfile(configDir()));
       }
 
-      const deck = await startDeck({ profiles, settings });
+      const deck = await startDeck({
+        profiles,
+        settings,
+        devices: this.devices,
+        applyNetwork: this.applyNetwork,
+      });
       this.deck = deck;
       this.forward(deck);
 
+      // The deck is rebuilt across a lock cycle while the server stays put, so
+      // a fresh one has to be told where that server is listening.
+      deck.setListening(this.listening);
+
       const state = await deck.state();
-      this.setStatus({ state: 'running', device: state.device.model, profileId: state.activeProfileId });
+      // The tray shows one line, so it shows the active deck; the rest are a
+      // click away in the window.
+      const active = state.decks.find((entry) => entry.id === state.activeDeckId) ?? state.decks[0];
+      this.setStatus({
+        state: 'running',
+        device: active?.model ?? active?.name ?? 'deck',
+        ...(active?.profileId ? { profileId: active.profileId } : {}),
+      });
 
       // Opening the device takes a second or two, so a UI that connected
       // first will have been told there is no deck. Announcing the state on

@@ -303,4 +303,39 @@ describe('FileSettingsRepository', () => {
     assert.equal(loaded.activeProfileId, 'main');
     assert.equal(loaded.brightness, 100);
   });
+
+  it('keeps per-deck bindings, and drops entries that make no sense', async () => {
+    // The settings file is meant to be edited by hand, so a half-written entry
+    // is an ordinary occurrence: keep what can be understood rather than
+    // refusing to start.
+    const file = join(directory, 'decks.json');
+    await writeFile(
+      file,
+      JSON.stringify({
+        brightness: 40,
+        decks: {
+          'd6-port-abc': { profileId: 'streaming', name: 'Слева' },
+          'd6-port-def': { profileId: 'gaming' },
+          broken: 'not an object',
+        },
+      }),
+      'utf8',
+    );
+
+    const settings = await new FileSettingsRepository(file).load();
+
+    assert.equal(settings.decks?.['d6-port-abc']?.profileId, 'streaming');
+    assert.equal(settings.decks?.['d6-port-abc']?.name, 'Слева');
+    assert.equal(settings.decks?.['d6-port-def']?.profileId, 'gaming');
+    assert.equal(settings.decks?.['broken'], undefined);
+  });
+
+  it('a deck binding survives a save', async () => {
+    const file = join(directory, 'roundtrip.json');
+    const repository = new FileSettingsRepository(file);
+
+    await repository.save({ brightness: 50, decks: { panel: { profileId: 'streaming' } } });
+
+    assert.equal((await repository.load()).decks?.['panel']?.profileId, 'streaming');
+  });
 });

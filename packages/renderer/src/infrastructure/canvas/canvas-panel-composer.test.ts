@@ -163,3 +163,27 @@ test('an unreadable picture is refused rather than silently skipped', async () =
     composer.open({ source: 'D:/nowhere/missing.png', width: TILE, height: TILE }),
   );
 });
+
+test('a failed press puts a warning sign in the corner, over the picture', async () => {
+  // The panel is the only screen a physical deck has: a press that threw says
+  // so on the key it happened on, or it says nothing anywhere.
+  const composer = new CanvasPanelComposer();
+
+  const source = await composer.open({
+    source: stripes(TILE, TILE),
+    background: '#000000',
+    width: TILE,
+    height: TILE,
+  });
+  const region = source.composeFrame(0);
+
+  const quiet = composer.cutTile(region, { ...SQUARE, x: 0, y: 0 });
+  const flagged = composer.cutTile(region, { ...SQUARE, x: 0, y: 0, alert: true });
+
+  // Yellow, in the top-right quarter where the sign is drawn.
+  const [r, g, b] = pixel(flagged, TILE - 20, 20);
+  assert.ok(r > 200 && g > 150 && b < 100, `expected the sign, got ${[r, g, b].join()}`);
+
+  // And nothing else moved: the opposite corner is the picture, untouched.
+  assert.deepEqual(pixel(flagged, 10, TILE - 10), pixel(quiet, 10, TILE - 10));
+});
