@@ -141,6 +141,34 @@ function hint(item: { label: LocalizedText; description?: LocalizedText }): stri
 ${description}` : say(item.label);
 }
 
+/**
+ * Actions a preset of the same plugin already puts on a key.
+ *
+ * Beside the grid, "Start / stop recording" and the Record preset are the
+ * same key — one plain, one dressed — and offering both makes the palette
+ * longer while making the choice harder. So the plain one steps aside where
+ * there is a preset that does its job, and stays in the key editor, where a
+ * preset means nothing and a step is what is wanted.
+ *
+ * Read out of the presets rather than declared: a flag on the action would be
+ * a second place to keep the truth, and the day somebody removes a preset and
+ * forgets the flag, the action disappears from the palette with no way to
+ * work out why.
+ */
+function actionsCoveredByPresets(plugin: PluginManifest): Set<string> {
+  const covered = new Set<string>();
+
+  for (const preset of plugin.presets ?? []) {
+    for (const state of preset.button.states) {
+      for (const sequence of Object.values(state.actions ?? {})) {
+        for (const action of sequence ?? []) covered.add(action.type);
+      }
+    }
+  }
+
+  return covered;
+}
+
 interface Group {
   readonly plugin: PluginManifest;
   readonly actions: readonly ActionDefinition[];
@@ -159,13 +187,19 @@ const groups = computed<Group[]>(() => {
   };
 
   return props.plugins
-    .map((plugin) => ({
-      plugin,
-      actions: plugin.actions.filter((action) => matches(plugin, action.label, action.type)),
-      presets: props.presets
-        ? (plugin.presets ?? []).filter((preset) => matches(plugin, preset.label, preset.name))
-        : [],
-    }))
+    .map((plugin) => {
+      const covered = props.presets ? actionsCoveredByPresets(plugin) : new Set<string>();
+
+      return {
+        plugin,
+        actions: plugin.actions.filter(
+          (action) => !covered.has(action.type) && matches(plugin, action.label, action.type),
+        ),
+        presets: props.presets
+          ? (plugin.presets ?? []).filter((preset) => matches(plugin, preset.label, preset.name))
+          : [],
+      };
+    })
     .filter((group) => group.actions.length + group.presets.length > 0);
 });
 </script>
