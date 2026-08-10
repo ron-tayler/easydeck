@@ -83,6 +83,12 @@ from a preset, so editing it afterwards is editing a button, and uninstalling
 the plugin leaves it in place showing nothing — which is correct, because a
 profile knows nothing about plugins.
 
+### Icons that move
+
+A preset's icon may answer to a variable — a needle that swings with the
+processor rather than a number that changes. Declared in the icon, wired up in
+the key, and described in [parametric-icons.md](parametric-icons.md).
+
 ### Bands
 
 A gauge wants "90 and above is red", and until presets there was no way to say
