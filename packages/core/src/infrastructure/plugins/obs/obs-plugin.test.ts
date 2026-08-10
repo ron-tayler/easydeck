@@ -31,6 +31,11 @@ const STATE = {
     ],
   },
   ToggleInputMute: {},
+  GetSourceFilterList: { filters: [{ filterName: 'Noise gate' }, { filterName: 'Colour' }] },
+  GetSourceFilter: { filterEnabled: true },
+  SetSourceFilterEnabled: {},
+  GetInputVolume: { inputVolumeDb: -6 },
+  SetInputVolume: {},
 };
 
 /** Everything an action is handed, of which OBS actions use only the first. */
@@ -260,6 +265,63 @@ describe('the OBS plugin', () => {
       ['Mic', 'Desktop'],
       'a webcam is not something to mute',
     );
+
+    await bed.dispose();
+  });
+
+  it('offers the filters of the source that was picked, and none before one is', async () => {
+    // The list depends on another parameter, which is why the loader is given
+    // what has been filled in so far. Asked with nothing chosen, it has
+    // nothing to say — and must not answer with every filter in OBS.
+    const bed = await bench();
+    await bed.until('a connection', () => bed.runtime.status('obs')?.status === 'ready');
+
+    assert.deepEqual(await bed.runtime.optionsFor('obs', 'filters', {}), []);
+
+    const filters = await bed.runtime.optionsFor('obs', 'filters', { source: 'Webcam' });
+    assert.deepEqual(
+      filters.map((option) => option.value),
+      ['Noise gate', 'Colour'],
+    );
+
+    const asked = bed.obs.requests.find((request) => request.type === 'GetSourceFilterList');
+    assert.deepEqual(asked?.data, { sourceName: 'Webcam' });
+
+    await bed.dispose();
+  });
+
+  it('changes a volume relative to what it already is', async () => {
+    // "Quieter" only means something against the current level, so the action
+    // reads before it writes.
+    const bed = await bench();
+    await bed.until('a connection', () => bed.runtime.status('obs')?.status === 'ready');
+
+    await bed.registry.run(
+      { type: 'obs.adjust-volume', params: { input: 'Mic', db: -4 } },
+      context(bed.variables),
+    );
+
+    const sent = bed.obs.requests.find((request) => request.type === 'SetInputVolume');
+    assert.deepEqual(sent?.data, { inputName: 'Mic', inputVolumeDb: -10 });
+
+    await bed.dispose();
+  });
+
+  it('toggles a filter, whichever kind OBS considers it', async () => {
+    const bed = await bench();
+    await bed.until('a connection', () => bed.runtime.status('obs')?.status === 'ready');
+
+    await bed.registry.run(
+      { type: 'obs.toggle-filter', params: { source: 'Webcam', filter: 'Noise gate' } },
+      context(bed.variables),
+    );
+
+    const sent = bed.obs.requests.find((request) => request.type === 'SetSourceFilterEnabled');
+    assert.deepEqual(sent?.data, {
+      sourceName: 'Webcam',
+      filterName: 'Noise gate',
+      filterEnabled: false,
+    });
 
     await bed.dispose();
   });

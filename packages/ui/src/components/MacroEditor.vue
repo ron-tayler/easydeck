@@ -37,6 +37,12 @@ const props = defineProps<{
   ownStates: readonly string[];
   /** Where each plugin that holds a connection has got to. */
   pluginStatuses?: Readonly<Record<string, { status: string; message?: LocalizedText }>>;
+  /** Asks a plugin for the choices behind one of its `optionsFrom` parameters. */
+  loadOptions?: (
+    pluginId: string,
+    source: string,
+    params: Readonly<Record<string, unknown>>,
+  ) => Promise<readonly { value: string; label?: LocalizedText }[]>;
 }>();
 
 const emit = defineEmits<{
@@ -436,6 +442,7 @@ function onTabDrop(which: Trigger): void {
           :pages="pages"
           :buttons="buttons"
           :own-states="ownStates"
+          :load-options="loadOptions"
           @update="updateParams(index, $event)"
         />
       </li>

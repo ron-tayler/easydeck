@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type {
   ActionDefinition,
@@ -23,6 +23,19 @@ const props = defineProps<{
   buttons: readonly { id: string; name: string; states: readonly string[] }[];
   /** States of the button being edited, used when no target is chosen. */
   ownStates: readonly string[];
+  /**
+   * Asks a plugin for the choices behind a parameter it declared with
+   * `optionsFrom` — the scenes OBS has open right now.
+   *
+   * A function rather than a list, because the answer depends on a program
+   * that may not be running, and on the other parameters already filled in:
+   * which filters exist depends on which source was picked.
+   */
+  loadOptions?: (
+    pluginId: string,
+    source: string,
+    params: Readonly<Record<string, unknown>>,
+  ) => Promise<readonly { value: string; label?: LocalizedText }[]>;
 }>();
 
 const emit = defineEmits<{ update: [params: Record<string, unknown>] }>();
@@ -33,6 +46,60 @@ const say = (text: LocalizedText | undefined): string =>
   text === undefined ? '' : (text[locale.value] ?? text.en);
 
 const fields = computed<readonly ParamDefinition[]>(() => props.definition?.params ?? []);
+
+// --- choices only the plugin knows ---------------------------------------
+
+/**
+ * What each dynamic parameter is currently offering.
+ *
+ * Empty until asked, and empty again whenever the plugin cannot answer — that
+ * is not a failure but the ordinary case: somebody sets up an OBS key with
+ * OBS closed, and the field falls back to a box they can type a name into.
+ */
+const dynamic = ref<Record<string, readonly { value: string; label?: LocalizedText }[]>>({});
+const loading = ref(new Set<string>());
+
+const pluginOf = (type: string | undefined): string => (type ?? '').split('.')[0] ?? '';
+
+async function loadOptionsFor(param: ParamDefinition): Promise<void> {
+  const source = param.optionsFrom;
+  const pluginId = pluginOf(props.definition?.type);
+  if (!source || !pluginId || !props.loadOptions) return;
+
+  loading.value = new Set(loading.value).add(param.name);
+  try {
+    const options = await props.loadOptions(pluginId, source, props.params);
+    dynamic.value = { ...dynamic.value, [param.name]: options };
+  } catch {
+    dynamic.value = { ...dynamic.value, [param.name]: [] };
+  } finally {
+    const next = new Set(loading.value);
+    next.delete(param.name);
+    loading.value = next;
+  }
+}
+
+/**
+ * Reloads every dynamic list when the action changes or a parameter is
+ * edited.
+ *
+ * The second half is what makes a dependent list work: choosing a source has
+ * to change which filters are offered, and nothing else would tell this that
+ * the question has a different answer now.
+ */
+watch(
+  [() => props.definition?.type, () => props.params],
+  () => {
+    dynamic.value = {};
+    for (const param of fields.value) {
+      if (param.optionsFrom) void loadOptionsFor(param);
+    }
+  },
+  { immediate: true, deep: true },
+);
+
+const choices = (param: ParamDefinition): readonly { value: string; label?: LocalizedText }[] =>
+  dynamic.value[param.name] ?? [];
 
 /**
  * Every text parameter is a template, so say so where it is being filled in.
@@ -180,15 +247,33 @@ function set(param: ParamDefinition, raw: string | boolean): void {
         @input="set(param, ($event.target as HTMLInputElement).value)"
       />
 
+      <!-- A list the plugin supplies, when it can. The name is typed by hand
+           when it cannot: setting up an OBS key while OBS is closed is the
+           ordinary case, not the exception, and a select with nothing in it
+           would make the key impossible to configure until the program it
+           drives happens to be running. -->
       <select
-        v-else-if="param.type === 'select'"
+        v-else-if="param.type === 'select' && (param.options?.length || choices(param).length)"
         :value="valueOf(param)"
         @change="set(param, ($event.target as HTMLSelectElement).value)"
       >
-        <option v-for="option in param.options ?? []" :key="option.value" :value="option.value">
-          {{ say(option.label) }}
+        <option value="" disabled>{{ t('editor.choose') }}</option>
+        <option
+          v-for="option in param.options?.length ? param.options : choices(param)"
+          :key="option.value"
+          :value="option.value"
+        >
+          {{ option.label ? say(option.label) : option.value }}
         </option>
       </select>
+
+      <input
+        v-else-if="param.type === 'select'"
+        type="text"
+        :value="valueOf(param)"
+        :placeholder="loading.has(param.name) ? t('editor.loadingOptions') : say(param.placeholder)"
+        @input="set(param, ($event.target as HTMLInputElement).value)"
+      />
 
       <!-- The host fills these in: only it knows this profile's variables,
            folders and pages. -->

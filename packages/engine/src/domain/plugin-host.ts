@@ -57,7 +57,7 @@ export interface PluginHost {
    * loader runs when a configurator opens the parameter, not when it is
    * registered, so a plugin may register sources before it can answer them.
    */
-  provideOptions(name: string, load: () => Promise<readonly ParamOption[]>): () => void;
+  provideOptions(name: string, load: OptionLoader): () => void;
 
   /**
    * Claims a path on the loopback callback server: `/plugin/<id>/<path>`.
@@ -74,6 +74,17 @@ export interface PluginHost {
 
   log(level: 'info' | 'warn' | 'error', message: string): void;
 }
+
+/**
+ * Supplies the choices for a parameter, given what is already filled in.
+ *
+ * The argument is what makes a dependent list possible: which filters exist
+ * depends on which source was chosen, and the configurator knows that before
+ * the plugin does. Ignored by every list that does not depend on anything.
+ */
+export type OptionLoader = (
+  params: Readonly<Record<string, unknown>>,
+) => Promise<readonly ParamOption[]>;
 
 /**
  * Where a plugin is up to, in the four states a user can act on.

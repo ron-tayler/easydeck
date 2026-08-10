@@ -1,4 +1,4 @@
-import { PLUGIN_API_VERSION, stringParam } from '@easydeck/engine';
+import { PLUGIN_API_VERSION, numberParam, stringParam } from '@easydeck/engine';
 import type {
   ActionHandler,
   ActionRegistry,
@@ -240,6 +240,88 @@ export const obsManifest: PluginManifest = {
       group: { en: 'Audio', ru: 'Звук' },
     },
     {
+      type: 'obs.set-volume',
+      icon: 'volume-up',
+      label: { en: 'Set volume', ru: 'Задать громкость' },
+      description: {
+        en: 'In decibels, as OBS shows them: 0 is unchanged, −60 is silence',
+        ru: 'В децибелах, как показывает OBS: 0 — без изменения, −60 — тишина',
+      },
+      params: [
+        {
+          name: 'input',
+          type: 'select',
+          optionsFrom: 'audio-inputs',
+          label: { en: 'Source', ru: 'Источник' },
+        },
+        {
+          name: 'db',
+          type: 'number',
+          label: { en: 'Volume, dB', ru: 'Громкость, дБ' },
+          default: 0,
+          min: -100,
+          max: 26,
+        },
+      ],
+      group: { en: 'Audio', ru: 'Звук' },
+    },
+    {
+      type: 'obs.adjust-volume',
+      icon: 'volume-down',
+      label: { en: 'Change volume', ru: 'Изменить громкость' },
+      description: {
+        en: 'Adds to the current volume; a negative number turns it down',
+        ru: 'Прибавляет к текущей громкости; отрицательное число убавляет',
+      },
+      params: [
+        {
+          name: 'input',
+          type: 'select',
+          optionsFrom: 'audio-inputs',
+          label: { en: 'Source', ru: 'Источник' },
+        },
+        {
+          name: 'db',
+          type: 'number',
+          label: { en: 'Change, dB', ru: 'Изменение, дБ' },
+          default: -3,
+          min: -50,
+          max: 50,
+        },
+      ],
+      group: { en: 'Audio', ru: 'Звук' },
+    },
+
+    {
+      type: 'obs.toggle-filter',
+      icon: 'toggle',
+      label: { en: 'Filter on / off', ru: 'Фильтр вкл / выкл' },
+      description: {
+        en: 'Any filter OBS lists on the source, audio or visual alike',
+        ru: 'Любой фильтр источника — что звуковой, что визуальный',
+      },
+      params: [
+        {
+          name: 'source',
+          type: 'select',
+          optionsFrom: 'sources',
+          label: { en: 'Source', ru: 'Источник' },
+        },
+        {
+          /*
+           * Depends on the source above: OBS keeps filters per source, and
+           * the list is asked for again whenever that box changes.
+           */
+          name: 'filter',
+          type: 'select',
+          optionsFrom: 'filters',
+          label: { en: 'Filter', ru: 'Фильтр' },
+        },
+      ],
+      group: { en: 'Filters', ru: 'Фильтры' },
+    },
+
+    {
       type: 'obs.toggle-source',
       icon: 'folder',
       label: { en: 'Show / hide source', ru: 'Показать / скрыть источник' },
@@ -458,6 +540,20 @@ export class ObsPlugin implements Plugin {
         .map((name) => ({ value: name, label: { en: name } }));
     });
 
+    host.provideOptions('filters', async (params) => {
+      const sourceName = String(params['source'] ?? '');
+      if (sourceName === '') return [];
+
+      const data = await this.require().request<{ filters?: { filterName?: string }[] }>(
+        'GetSourceFilterList',
+        { sourceName },
+      );
+      return (data.filters ?? [])
+        .map((filter) => String(filter.filterName ?? ''))
+        .filter((name) => name !== '')
+        .map((name) => ({ value: name, label: { en: name } }));
+    });
+
     host.provideOptions('sources', async () => {
       const data = await this.require().request<{ inputs?: { inputName?: string }[] }>('GetInputList');
       return (data.inputs ?? [])
@@ -579,6 +675,60 @@ export class ObsPlugin implements Plugin {
       'obs.toggle-replay-buffer': send('ToggleReplayBuffer'),
       'obs.save-replay': send('SaveReplayBuffer'),
       'obs.toggle-virtual-cam': send('ToggleVirtualCam'),
+
+      /**
+       * Volume in decibels, which is what OBS's own mixer shows.
+       *
+       * The alternative is a multiplier from zero to one, where the numbers
+       * on screen and the numbers in the profile would disagree.
+       */
+      'obs.set-volume': async (params) =>
+        void (await this.require().request('SetInputVolume', {
+          inputName: stringParam(params, 'input'),
+          inputVolumeDb: numberParam(params, 'db', 0),
+        })),
+
+      /** Reads first, because "quieter" only means something relative. */
+      'obs.adjust-volume': async (params) => {
+        const inputName = stringParam(params, 'input');
+        const connection = this.require();
+
+        const current = await connection.request<{ inputVolumeDb?: number }>('GetInputVolume', {
+          inputName,
+        });
+        // Clamped to what OBS accepts: a key pressed a dozen times must not
+        // wander off the end of the scale and start failing.
+        const next = Math.min(
+          26,
+          Math.max(-100, Number(current.inputVolumeDb ?? 0) + numberParam(params, 'db', 0)),
+        );
+
+        await connection.request('SetInputVolume', { inputName, inputVolumeDb: next });
+      },
+
+      /**
+       * Filters are one kind of thing to OBS.
+       *
+       * Its window sorts them into audio and visual for the eye, but the
+       * protocol lists them together per source, so one action covers both —
+       * a noise gate and a colour correction are toggled the same way.
+       */
+      'obs.toggle-filter': async (params) => {
+        const sourceName = stringParam(params, 'source');
+        const filterName = stringParam(params, 'filter');
+        const connection = this.require();
+
+        const state = await connection.request<{ filterEnabled?: boolean }>('GetSourceFilter', {
+          sourceName,
+          filterName,
+        });
+
+        await connection.request('SetSourceFilterEnabled', {
+          sourceName,
+          filterName,
+          filterEnabled: state.filterEnabled !== true,
+        });
+      },
 
       'obs.toggle-mute': async (params) =>
         void (await this.require().request('ToggleInputMute', {

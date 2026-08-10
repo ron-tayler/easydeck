@@ -99,7 +99,11 @@ export interface DeckFacade {
    * talks to is closed — which is what lets a key be set up before the
    * program it drives is even started.
    */
-  pluginOptions(pluginId: string, source: string): Promise<readonly ParamOption[]>;
+  pluginOptions(
+    pluginId: string,
+    source: string,
+    params?: Readonly<Record<string, unknown>>,
+  ): Promise<readonly ParamOption[]>;
 
   /** Where every plugin that holds a connection has got to, right now. */
   pluginStatuses(): Record<string, { status: PluginStatus; message?: LocalizedText }>;

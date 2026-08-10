@@ -40,6 +40,12 @@ const props = defineProps<{
   omittedIcons?: number;
   /** Where each plugin that holds a connection has got to. */
   pluginStatuses?: Readonly<Record<string, { status: string; message?: LocalizedText }>>;
+  /** Asks a plugin for the choices behind one of its `optionsFrom` parameters. */
+  loadOptions?: (
+    pluginId: string,
+    source: string,
+    params: Readonly<Record<string, unknown>>,
+  ) => Promise<readonly { value: string; label?: LocalizedText }[]>;
 }>();
 
 const emit = defineEmits<{
@@ -702,6 +708,7 @@ const preview = computed(() => {
             :buttons="buttons"
             :own-states="ownStates"
             :plugin-statuses="pluginStatuses"
+            :load-options="loadOptions"
             @update="patchState({ actions: $event })"
             @trigger="trigger = $event"
             @configure-plugin="emit('configurePlugin', $event)"

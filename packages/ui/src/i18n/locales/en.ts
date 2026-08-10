@@ -125,6 +125,7 @@ export default {
     page: { title: 'Delete this page?', message: 'Every button on this page will be removed.' },
   },
   editor: {
+    loadingOptions: 'Loading…',
     title: 'Button',
     appearance: 'Appearance',
     behaviour: 'Behaviour',

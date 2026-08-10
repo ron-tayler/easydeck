@@ -280,10 +280,14 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
   }
 
   /** The choices behind a parameter declared with `optionsFrom`. */
-  async pluginOptions(pluginId: string, source: string): Promise<readonly ParamOption[]> {
+  async pluginOptions(
+    pluginId: string,
+    source: string,
+    params: Readonly<Record<string, unknown>> = {},
+  ): Promise<readonly ParamOption[]> {
     const runtime = this.options.plugins;
     if (!runtime) return [];
-    return runtime.optionsFor(pluginId, source);
+    return runtime.optionsFor(pluginId, source, params);
   }
 
   /** Where every plugin with a life of its own has got to. */

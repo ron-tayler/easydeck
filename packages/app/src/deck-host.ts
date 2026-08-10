@@ -263,8 +263,8 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     return this.require().runPluginCommand(pluginId, command);
   }
 
-  pluginOptions(pluginId: string, source: string) {
-    return this.require().pluginOptions(pluginId, source);
+  pluginOptions(pluginId: string, source: string, params?: Readonly<Record<string, unknown>>) {
+    return this.require().pluginOptions(pluginId, source, params);
   }
 
   pluginStatuses() {

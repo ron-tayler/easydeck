@@ -125,6 +125,7 @@ export default {
     page: { title: 'Удалить страницу?', message: 'Все кнопки на этой странице будут удалены.' },
   },
   editor: {
+    loadingOptions: 'Загружаю список…',
     title: 'Кнопка',
     appearance: 'Вид',
     behaviour: 'Поведение',

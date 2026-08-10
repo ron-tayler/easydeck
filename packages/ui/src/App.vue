@@ -651,6 +651,26 @@ const configuringStatus = computed(() => {
   };
 });
 
+/**
+ * The choices behind a parameter a plugin declared with `optionsFrom`.
+ *
+ * Answers with nothing rather than throwing when the plugin cannot say —
+ * which is what turns the field into a box the name can be typed into,
+ * instead of a dead end.
+ */
+async function loadActionOptions(
+  pluginId: string,
+  source: string,
+  params: Readonly<Record<string, unknown>>,
+): Promise<readonly { value: string; label?: LocalizedText }[]> {
+  try {
+    const result = await deck.actionOptions(pluginId, source, params);
+    return result.options ?? [];
+  } catch {
+    return [];
+  }
+}
+
 function onConfigurePlugin(pluginId: string): void {
   void (async () => {
     try {
@@ -1093,6 +1113,7 @@ onBeforeUnmount(() => {
       :user-icons="userIcons"
       :omitted-icons="omittedIcons"
       :plugin-statuses="deck.pluginStatuses.value"
+      :load-options="loadActionOptions"
       @save="onEditorSave"
       @cancel="editing = undefined"
       @configure-plugin="onConfigurePlugin"

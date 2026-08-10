@@ -221,10 +221,18 @@ export class ApiHandler {
         await this.deck.runPluginCommand(text(params, 'pluginId'), text(params, 'command'));
         return { ok: true };
 
-      case 'getActionOptions':
+      case 'getActionOptions': {
+        const filled = params['params'];
         return {
-          options: await this.deck.pluginOptions(text(params, 'pluginId'), text(params, 'source')),
+          options: await this.deck.pluginOptions(
+            text(params, 'pluginId'),
+            text(params, 'source'),
+            typeof filled === 'object' && filled !== null && !Array.isArray(filled)
+              ? (filled as Record<string, unknown>)
+              : {},
+          ),
         };
+      }
 
       case 'setBrightness':
         await this.deck.setBrightness(integer(params, 'percent'));

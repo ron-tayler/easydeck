@@ -93,6 +93,7 @@ export type {
   LocalizedText,
 } from './domain/plugin.js';
 export type {
+  OptionLoader,
   Plugin,
   PluginHost,
   PluginStatus,

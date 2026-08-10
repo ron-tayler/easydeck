@@ -293,10 +293,15 @@ export function useDeck() {
       client.call('savePluginSettings', { pluginId, values }),
     runPluginCommand: (pluginId: string, command: string) =>
       client.call('runPluginCommand', { pluginId, command }),
-    actionOptions: (pluginId: string, source: string) =>
+    actionOptions: (
+      pluginId: string,
+      source: string,
+      params: Readonly<Record<string, unknown>> = {},
+    ) =>
       client.call<{ options: { value: string; label?: LocalizedText }[] }>('getActionOptions', {
         pluginId,
         source,
+        params,
       }),
     brokenPlugins,
     pressedKeys: readonly(pressedKeys),

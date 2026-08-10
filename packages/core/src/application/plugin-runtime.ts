@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 
 import type {
   LocalizedText,
+  OptionLoader,
   ParamOption,
   Plugin,
   PluginHost,
@@ -59,7 +60,7 @@ interface Entry {
   message?: LocalizedText;
   settings: Record<string, VariableValue>;
   readonly listeners: Array<(settings: Readonly<Record<string, VariableValue>>) => void>;
-  readonly options: Map<string, () => Promise<readonly ParamOption[]>>;
+  readonly options: Map<string, OptionLoader>;
   readonly routes: Array<() => void>;
   readonly variables: Set<string>;
 }
@@ -173,13 +174,17 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
    * the configurator falls back to a plain text field, which is what lets
    * somebody set up an OBS button while OBS is closed.
    */
-  async optionsFor(pluginId: string, source: string): Promise<readonly ParamOption[]> {
+  async optionsFor(
+    pluginId: string,
+    source: string,
+    params: Readonly<Record<string, unknown>> = {},
+  ): Promise<readonly ParamOption[]> {
     const entry = this.entries.get(pluginId);
     const load = entry?.options.get(source);
     if (!load) return [];
 
     try {
-      return await load();
+      return await load(params);
     } catch (cause) {
       this.options.log?.(pluginId, 'warn', `Could not list '${source}': ${describe(cause)}`);
       return [];
