@@ -24,10 +24,13 @@ const props = defineProps<{
   /** What the plugins folder holds, including plugins that run nothing. */
   installedPlugins?: readonly InstalledPluginInfo[];
   brokenPlugins?: readonly { id: string; problem: string }[];
+  /** Where each plugin that holds a connection has got to. */
+  pluginStatuses?: Readonly<Record<string, { status: string; message?: LocalizedText }>>;
 }>();
 
 const emit = defineEmits<{
   close: [];
+  configurePlugin: [pluginId: string];
   openFolder: [folder: 'config' | 'profiles' | 'plugins' | 'icons'];
   network: [patch: Record<string, unknown>];
   approveDevice: [deviceId: string];
@@ -38,6 +41,21 @@ const { t, locale } = useI18n();
 const { theme, setTheme } = useTheme();
 
 const SECTIONS = ['system', 'network', 'plugins', 'icons', 'core', 'deck', 'about'] as const;
+
+/** A plugin worth opening a window for: one with settings or commands. */
+const configurable = (plugin: PluginManifest): boolean =>
+  (plugin.settings?.length ?? 0) > 0 || (plugin.commands?.length ?? 0) > 0;
+
+const statusOf = (pluginId: string): string => props.pluginStatuses?.[pluginId]?.status ?? 'off';
+
+/** Why the lamp is that colour, in the plugin's own words. */
+function statusHint(pluginId: string): string {
+  const state = props.pluginStatuses?.[pluginId];
+  const message = state?.message ? (state.message[locale.value] ?? state.message.en) : '';
+  const name = t(`plugins.status.${state?.status ?? 'off'}`);
+  return message ? `${name}
+${message}` : name;
+}
 type Section = (typeof SECTIONS)[number];
 const section = ref<Section>('system');
 
@@ -318,7 +336,27 @@ const alsoWaiting = computed(() => Math.max(0, (props.pendingDevices?.length ?? 
                 <span class="muted"> · {{ plugin.id }} · v{{ plugin.version }}</span>
                 <p v-if="plugin.description" class="muted small">{{ say(plugin.description) }}</p>
               </div>
+
+              <!-- The gear lives here, where somebody goes to look at what is
+                   installed, rather than in the palette, where they are
+                   looking for something to put on a key. -->
+              <span
+                v-if="configurable(plugin)"
+                class="lamp"
+                :class="statusOf(plugin.id)"
+                :title="statusHint(plugin.id)"
+              />
               <span class="muted small">{{ plugin.actions.length }}</span>
+              <button
+                v-if="configurable(plugin)"
+                type="button"
+                class="icon"
+                :title="t('plugins.configure')"
+                :aria-label="t('plugins.configure')"
+                @click="emit('configurePlugin', plugin.id)"
+              >
+                ⚙
+              </button>
             </li>
           </ul>
 

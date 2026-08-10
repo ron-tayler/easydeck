@@ -1025,7 +1025,6 @@ onBeforeUnmount(() => {
           presets
           :variables="deck.state.value?.variables ?? {}"
           :statuses="deck.pluginStatuses.value"
-          @configure="onConfigurePlugin"
         />
       </aside>
     </div>
@@ -1068,8 +1067,10 @@ onBeforeUnmount(() => {
       :declarations="deck.state.value?.variableDeclarations ?? []"
       :user-icons="userIcons"
       :omitted-icons="omittedIcons"
+      :plugin-statuses="deck.pluginStatuses.value"
       @save="onEditorSave"
       @cancel="editing = undefined"
+      @configure-plugin="onConfigurePlugin"
     />
 
     <VariablesDialog
@@ -1122,6 +1123,8 @@ onBeforeUnmount(() => {
       :pending-devices="deck.pendingDevices.value"
       :installed-plugins="deck.installedPlugins.value"
       :broken-plugins="deck.brokenPlugins.value"
+      :plugin-statuses="deck.pluginStatuses.value"
+      @configure-plugin="onConfigurePlugin"
       @close="settingsOpen = false"
       @network="void deck.setNetworkSettings($event)"
       @approve-device="void deck.approveDevice($event)"

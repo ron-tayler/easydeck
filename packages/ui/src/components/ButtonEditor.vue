@@ -6,6 +6,7 @@ import type {
   ButtonStateDefinition,
   IconSpec,
   LibraryImage,
+  LocalizedText,
   PluginManifest,
   StateRange,
   VariableDeclaration,
@@ -37,9 +38,16 @@ const props = defineProps<{
   userIcons: readonly LibraryImage[];
   /** Pictures the folder holds but the library had no room for. */
   omittedIcons?: number;
+  /** Where each plugin that holds a connection has got to. */
+  pluginStatuses?: Readonly<Record<string, { status: string; message?: LocalizedText }>>;
 }>();
 
-const emit = defineEmits<{ save: [button: ButtonDefinition]; cancel: [] }>();
+const emit = defineEmits<{
+  save: [button: ButtonDefinition];
+  cancel: [];
+  /** Passed up from a macro step to whoever can open a plugin's settings. */
+  configurePlugin: [pluginId: string];
+}>();
 
 const { t } = useI18n();
 
@@ -693,8 +701,10 @@ const preview = computed(() => {
             :pages="pages"
             :buttons="buttons"
             :own-states="ownStates"
+            :plugin-statuses="pluginStatuses"
             @update="patchState({ actions: $event })"
             @trigger="trigger = $event"
+            @configure-plugin="emit('configurePlugin', $event)"
           />
         </section>
 

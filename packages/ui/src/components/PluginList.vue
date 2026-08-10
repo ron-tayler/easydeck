@@ -29,8 +29,6 @@ const props = defineProps<{
   statuses?: Readonly<Record<string, { status: string; message?: LocalizedText }>>;
 }>();
 
-const emit = defineEmits<{ configure: [pluginId: string] }>();
-
 const { t, locale } = useI18n();
 
 /** A plugin worth opening a window for: one with settings or commands. */
@@ -195,7 +193,12 @@ const groups = computed<Group[]>(() => {
 
           <!-- Only where the plugin holds something of its own: a connection,
                an account. A lamp beside navigation would be a light that can
-               only ever be one colour. -->
+               only ever be one colour.
+
+               It reports and does nothing, which is why it stays here while
+               the gear went to the settings window: somebody in the palette
+               is looking for something to put on a key, and wants to know
+               that OBS is unreachable — not to be invited to fix it now. -->
           <span
             v-if="configurable(group.plugin)"
             class="lamp"
@@ -205,16 +208,7 @@ const groups = computed<Group[]>(() => {
           <span class="count">{{ group.actions.length + group.presets.length }}</span>
         </button>
 
-        <button
-          v-if="configurable(group.plugin)"
-          type="button"
-          class="gear"
-          :title="t('plugins.configure')"
-          :aria-label="t('plugins.configure')"
-          @click.stop="emit('configure', group.plugin.id)"
-        >
-          ⚙
-        </button>
+
 
         <ul v-show="isOpen(group.plugin.id)">
           <!-- Presets first: they are whole keys, and a palette beside the
@@ -383,26 +377,6 @@ ul {
 
 .action:hover {
   border-color: var(--accent);
-}
-
-.group {
-  position: relative;
-}
-
-.gear {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  padding: 2px 5px;
-  font-size: 12px;
-  line-height: 1;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-}
-
-.gear:hover {
-  color: var(--accent);
 }
 
 /* Four states, four colours, and one of them is deliberately dull. */

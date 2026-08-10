@@ -35,18 +35,54 @@ const props = defineProps<{
   pages: readonly { id: string; name: string }[];
   buttons: readonly { id: string; name: string; states: readonly string[] }[];
   ownStates: readonly string[];
+  /** Where each plugin that holds a connection has got to. */
+  pluginStatuses?: Readonly<Record<string, { status: string; message?: LocalizedText }>>;
 }>();
 
 const emit = defineEmits<{
  update: [actions: ActionMap]
   /** The gesture tab the user switched to. */
   trigger: [which: Trigger];
+  /** Open the settings of the plugin this step belongs to. */
+  configurePlugin: [pluginId: string];
 }>();
 
 const { t, locale } = useI18n();
 
 const say = (text: LocalizedText | undefined): string =>
   text === undefined ? '' : (text[locale.value] ?? text.en);
+
+/**
+ * The plugin a step belongs to, which is the prefix of its type.
+ *
+ * Shown on the step itself because that is where the trouble is noticed: a
+ * key that does nothing is looked at in the editor, and "OBS is not
+ * connected" belongs next to the step that needs OBS, not in a window two
+ * clicks away.
+ */
+const pluginOf = (type: string): PluginManifest | undefined =>
+  props.plugins.find((plugin) => type.startsWith(`${plugin.id}.`));
+
+/** Only a plugin with something to hold has a status worth a lamp. */
+const watchable = (type: string): PluginManifest | undefined => {
+  const plugin = pluginOf(type);
+  if (!plugin) return undefined;
+  const configurable =
+    (plugin.settings?.length ?? 0) > 0 || (plugin.commands?.length ?? 0) > 0;
+  return configurable ? plugin : undefined;
+};
+
+const statusOf = (type: string): string =>
+  props.pluginStatuses?.[watchable(type)?.id ?? '']?.status ?? 'off';
+
+function statusHint(type: string): string {
+  const plugin = watchable(type);
+  const state = plugin ? props.pluginStatuses?.[plugin.id] : undefined;
+  const name = t(`plugins.status.${state?.status ?? 'off'}`);
+  const message = say(state?.message);
+  return message ? `${say(plugin?.name)}: ${name}
+${message}` : `${say(plugin?.name)}: ${name}`;
+}
 
 /**
  * One trigger at a time.
@@ -356,6 +392,19 @@ function onTabDrop(which: Trigger): void {
           </button>
 
           <span class="controls">
+            <!-- A lamp and a way to act on it, on the steps that depend on
+                 something outside this machine. -->
+            <template v-if="watchable(action.type)">
+              <span class="lamp" :class="statusOf(action.type)" :title="statusHint(action.type)" />
+              <button
+                type="button"
+                :title="t('plugins.configure')"
+                @click="emit('configurePlugin', watchable(action.type)!.id)"
+              >
+                ⚙
+              </button>
+            </template>
+
             <button type="button" :title="t('editor.duplicate')" @click="duplicate(index)">⧉</button>
             <button
               type="button"
@@ -402,6 +451,28 @@ function onTabDrop(which: Trigger): void {
 </template>
 
 <style scoped>
+.lamp {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  align-self: center;
+  border-radius: 999px;
+  background: var(--text-muted);
+  cursor: help;
+}
+
+.lamp.ready {
+  background: #3fae63;
+}
+
+.lamp.connecting {
+  background: #d3a038;
+}
+
+.lamp.error {
+  background: #d4544a;
+}
+
 .macro {
   display: flex;
   flex-direction: column;
