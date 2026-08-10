@@ -1,4 +1,4 @@
-import { validateProfile } from '@easydeck/engine';
+import { drawableIcon, validateProfile } from '@easydeck/engine';
 import type { KeyView, ProfileDefinition, VariableValue } from '@easydeck/engine';
 
 import type { RequestMessage, ResponseMessage } from '../domain/api-messages.js';
@@ -69,7 +69,19 @@ export class ApiHandler {
         visual: {
           ...view.visual,
           ...(backdrop ? { backdrop: { ...backdrop, source: assets.link(backdrop.source) } } : {}),
-          ...(icon ? { icon: { ...icon, source: assets.link(icon.source) } } : {}),
+          /*
+           * A parametric icon is substituted into before it is filed.
+           *
+           * What travels to a client is a link, and there is nothing to
+           * substitute into a link — so the values have to be in the picture
+           * by the time it becomes one. Each value is then its own asset with
+           * its own address, which is exactly what the immutable cache wants:
+           * a needle at 38% is a different picture from the same needle at
+           * 39%, and a needle that returns to 38% is fetched from the cache.
+           */
+          ...(icon
+            ? { icon: { ...icon, source: assets.link(drawableIcon(icon.source, icon.values)) } }
+            : {}),
         },
       };
     });

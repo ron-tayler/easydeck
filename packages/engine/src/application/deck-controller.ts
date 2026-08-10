@@ -14,7 +14,7 @@ import { isStateRange, withinRange } from '../domain/profile.js';
 import { ProfileTree } from '../domain/profile-tree.js';
 import { sceneKeys, sceneSignature } from '../domain/scene.js';
 import type { Scene, SceneLabel, SceneRegion } from '../domain/scene.js';
-import { readIconParams, resolveIconParams, svgTextOf } from '../domain/icon-params.js';
+import { drawableIcon, readIconParams, resolveIconParams, svgTextOf } from '../domain/icon-params.js';
 import { renderTemplate } from '../domain/template.js';
 import { validateProfile } from '../domain/validate-profile.js';
 import {
@@ -552,6 +552,21 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     return undefined;
   }
 
+  /**
+   * The picture as the panel will draw it, with an id that follows its
+   * contents.
+   *
+   * An ordinary icon passes straight through, so nothing is hashed twice for
+   * the overwhelming majority of keys.
+   */
+  private assetFor(icon: { source: string; values?: Readonly<Record<string, string>> }): {
+    id: string;
+    source: string;
+  } {
+    const drawable = drawableIcon(icon.source, icon.values);
+    return { id: this.assets.id(drawable), source: drawable };
+  }
+
   private resolveVisual(button: ButtonDefinition): ButtonVisual {
     const { visual } = this.resolveState(button);
 
@@ -901,9 +916,16 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
       ...(visual.cornerRadius === undefined ? {} : { cornerRadius: visual.cornerRadius }),
       ...(visual.icon
         ? {
-            image: {
-              asset: { id: this.assets.id(visual.icon.source), source: visual.icon.source },
-            },
+            /*
+             * A parametric icon is substituted into *here*, not further down.
+             *
+             * Everything after this point identifies a picture by its id, and
+             * the id is what the tile cache compares — so an icon whose needle
+             * moved but whose id did not would be recognised as already drawn
+             * and never repainted. Substituting first makes each value its own
+             * picture, which is what it is.
+             */
+            image: { asset: this.assetFor(visual.icon) },
           }
         : {}),
       ...(labels.length > 0 ? { labels } : {}),
