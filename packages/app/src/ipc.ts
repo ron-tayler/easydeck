@@ -41,6 +41,7 @@ export function registerIpc(host: DeckHost): void {
   host.onDeckEvent('profilesChanged', () => forward('profilesChanged'));
   host.onDeckEvent('devicesChanged', () => forward('devicesChanged'));
   host.onDeckEvent('actionError', (message) => forward('actionError', { message }));
+  host.onDeckEvent('pluginStatusChanged', (event) => forward('pluginStatusChanged', event));
 }
 
 function broadcast(channel: string, payload: unknown): void {

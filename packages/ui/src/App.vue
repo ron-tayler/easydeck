@@ -700,7 +700,16 @@ function onPluginCommand(command: string): void {
     configuring.value = { ...open, busy: true, note: undefined };
     try {
       await deck.runPluginCommand(open.pluginId, command);
-      configuring.value = { ...open, busy: false, note: t('plugins.commandDone') };
+      // Re-read rather than trust what was loaded: a command exists to change
+      // something, and the status line is the first place anybody looks to
+      // see whether it did.
+      const reloaded = await deck.pluginSettings(open.pluginId);
+      configuring.value = {
+        pluginId: open.pluginId,
+        ...reloaded,
+        filledSecrets: reloaded.filledSecrets ?? [],
+        note: t('plugins.commandDone'),
+      };
     } catch (error) {
       configuring.value = { ...open, busy: false, note: (error as Error).message };
     }

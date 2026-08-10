@@ -97,6 +97,10 @@ class FakeDeck implements DeckFacade {
     this.calls.push(`runPluginCommand:${pluginId}:${command}`);
   }
 
+  pluginStatuses() {
+    return { obs: { status: 'ready' as const } };
+  }
+
   async pluginOptions(pluginId: string, source: string) {
     this.calls.push(`pluginOptions:${pluginId}:${source}`);
     return [{ value: 'Intro', label: { en: 'Intro' } }];

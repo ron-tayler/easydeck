@@ -93,7 +93,15 @@ export class ApiHandler {
         return { keys: this.withLinks(await this.deck.pageView(deckId)) };
 
       case 'getPlugins':
-        return { plugins: await this.deck.plugins() };
+        /*
+         * Statuses ride along with the list.
+         *
+         * They change on their own and arrive by event afterwards, but a
+         * window that has just opened has heard no events yet — without this
+         * every lamp reads "not running" until the next time something
+         * happens to a plugin, which for a working OBS could be never.
+         */
+        return { plugins: await this.deck.plugins(), statuses: this.deck.pluginStatuses() };
 
       case 'getInstalledPlugins':
         return this.deck.installedPlugins();

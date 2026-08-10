@@ -122,10 +122,15 @@ async function refreshProfile(): Promise<void> {
 
 async function refreshPlugins(): Promise<void> {
   try {
-    const result = await client.call<{ plugins: PluginManifest[] }>('getPlugins');
+    const result = await client.call<{
+      plugins: PluginManifest[];
+      statuses?: Record<string, { status: string; message?: LocalizedText }>;
+    }>('getPlugins');
     plugins.value = result.plugins;
+    pluginStatuses.value = result.statuses ?? {};
   } catch {
     plugins.value = [];
+    pluginStatuses.value = {};
   }
 
   try {

@@ -101,6 +101,9 @@ export interface DeckFacade {
    */
   pluginOptions(pluginId: string, source: string): Promise<readonly ParamOption[]>;
 
+  /** Where every plugin that holds a connection has got to, right now. */
+  pluginStatuses(): Record<string, { status: PluginStatus; message?: LocalizedText }>;
+
   /**
    * Pictures from the user's icon folder, for the configurator to offer.
    *
