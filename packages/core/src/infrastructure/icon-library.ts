@@ -43,11 +43,21 @@ const TYPES: Readonly<Record<string, string>> = {
 
 /**
  * Caps, because this folder belongs to the user and nothing stops them putting
- * a wallpaper collection in it. Both are generous for icons and firm enough
- * that the picker cannot be made to stall.
+ * a wallpaper collection in it.
+ *
+ * The per-file limit is sized for animation rather than for icons: a GIF worth
+ * putting on a key is routinely several megabytes, and the old two-megabyte
+ * cap silently left exactly those out — the picture was in the folder, missing
+ * from the picker, with nothing said about why.
+ *
+ * The budget is what keeps that from costing anything: the whole library
+ * travels as one answer, so a folder holding a dozen large animations would
+ * otherwise be a hundred megabytes crossing a socket at once. What is left out
+ * is reported rather than dropped in silence.
  */
-const MAX_FILE_BYTES = 2_000_000;
+const MAX_FILE_BYTES = 12_000_000;
 const MAX_FILES = 4000;
+const MAX_TOTAL_BYTES = 96_000_000;
 /**
  * How deep the walk goes.
  *
@@ -57,14 +67,31 @@ const MAX_FILES = 4000;
  */
 const MAX_DEPTH = 4;
 
+export interface Library {
+  readonly images: readonly LibraryImage[];
+  /** Pictures found but left out, for want of room. */
+  readonly omitted: number;
+}
+
 export async function listLibraryImages(directory: string): Promise<LibraryImage[]> {
+  return (await readLibrary(directory)).images as LibraryImage[];
+}
+
+export async function readLibrary(directory: string): Promise<Library> {
   const images: LibraryImage[] = [];
-  await walk(directory, '', 0, images);
+  const budget = { left: MAX_TOTAL_BYTES, omitted: 0 };
+  await walk(directory, '', 0, images, budget);
 
   // Grouped first, then by name: a picker showing them in this order needs no
   // sorting of its own, and the same folder never appears twice.
   images.sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name));
-  return images;
+  return { images, omitted: budget.omitted };
+}
+
+/** What is left of the library's room, and what has been turned away. */
+interface Budget {
+  left: number;
+  omitted: number;
 }
 
 async function walk(
@@ -72,6 +99,7 @@ async function walk(
   group: string,
   depth: number,
   images: LibraryImage[],
+  budget: Budget,
 ): Promise<void> {
   if (depth > MAX_DEPTH || images.length >= MAX_FILES) return;
 
@@ -96,7 +124,7 @@ async function walk(
     }
 
     if (info.isDirectory()) {
-      await walk(file, group ? posix.join(group, entry) : entry, depth + 1, images);
+      await walk(file, group ? posix.join(group, entry) : entry, depth + 1, images, budget);
       continue;
     }
 
@@ -106,16 +134,28 @@ async function walk(
     const pack = await readIconPack(file, MAX_FILES - images.length);
     if (pack) {
       for (const image of pack.images) {
+        if (image.bytes > budget.left) {
+          budget.omitted++;
+          continue;
+        }
+
+        budget.left -= image.bytes;
         images.push({ ...image, group: group ? posix.join(group, pack.name) : pack.name });
       }
       continue;
     }
 
     const type = TYPES[extname(entry).toLowerCase()];
-    if (!type || info.size > MAX_FILE_BYTES) continue;
+    if (!type) continue;
+
+    if (info.size > MAX_FILE_BYTES || info.size > budget.left) {
+      budget.omitted++;
+      continue;
+    }
 
     try {
       const bytes = await readFile(file);
+      budget.left -= info.size;
       images.push({
         name: entry.slice(0, entry.length - extname(entry).length),
         source: `data:${type};base64,${bytes.toString('base64')}`,

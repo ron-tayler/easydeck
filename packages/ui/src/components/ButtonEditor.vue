@@ -29,6 +29,8 @@ const props = defineProps<{
   declarations: readonly VariableDeclaration[];
   /** The user's icon folder, already read by the host. */
   userIcons: readonly LibraryImage[];
+  /** Pictures the folder holds but the library had no room for. */
+  omittedIcons?: number;
 }>();
 
 const emit = defineEmits<{ save: [button: ButtonDefinition]; cancel: [] }>();
@@ -344,6 +346,7 @@ const preview = computed(() => {
             :icon="state.visual.icon"
             :color="state.visual.label?.color ?? '#ffffff'"
             :user-icons="userIcons"
+            :omitted-icons="omittedIcons"
             @update="patchVisual({ icon: $event })"
           />
 

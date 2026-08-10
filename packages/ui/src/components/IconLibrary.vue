@@ -22,6 +22,13 @@ const props = defineProps<{
   color: string;
   /** The user's own folder, read by the daemon. */
   userIcons: readonly LibraryImage[];
+  /**
+   * Pictures the folder holds that the library could not carry.
+   *
+   * Said out loud rather than swallowed: a file sitting in the folder and
+   * absent from here looks like the program losing it.
+   */
+  omitted?: number;
 }>();
 
 const emit = defineEmits<{ pick: [source: string]; close: [] }>();
@@ -237,7 +244,10 @@ async function pickFile(event: Event): Promise<void> {
         </div>
       </div>
 
-      <footer v-if="hidden > 0" class="muted">{{ t('icons.more', { count: hidden }) }}</footer>
+      <footer v-if="hidden > 0 || (omitted ?? 0) > 0" class="muted">
+        <span v-if="hidden > 0">{{ t('icons.more', { count: hidden }) }}</span>
+        <span v-if="(omitted ?? 0) > 0">{{ t('icons.omitted', { count: omitted }) }}</span>
+      </footer>
     </div>
   </div>
 </template>
@@ -390,6 +400,8 @@ h2 {
 }
 
 footer {
+  display: flex;
+  gap: 12px;
   padding: 8px 12px;
   border-top: 1px solid var(--border);
   font-size: 12px;

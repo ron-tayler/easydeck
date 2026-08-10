@@ -325,13 +325,18 @@ const pageButtons = computed(() => {
  * shown.
  */
 const userIcons = shallowRef<readonly LibraryImage[]>([]);
+/** Pictures the folder holds but the library had no room for. */
+const omittedIcons = ref(0);
 
 async function refreshUserIcons(): Promise<void> {
   try {
-    userIcons.value = await deck.listIcons();
+    const library = await deck.listIcons();
+    userIcons.value = library.images;
+    omittedIcons.value = library.omitted;
   } catch {
     // An unreadable folder costs the user the built-in set and nothing else.
     userIcons.value = [];
+    omittedIcons.value = 0;
   }
 }
 
@@ -934,6 +939,7 @@ onBeforeUnmount(() => {
       :buttons="pageButtons"
       :declarations="deck.state.value?.variableDeclarations ?? []"
       :user-icons="userIcons"
+      :omitted-icons="omittedIcons"
       @save="onEditorSave"
       @cancel="editing = undefined"
     />

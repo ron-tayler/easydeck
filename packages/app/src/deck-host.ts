@@ -11,7 +11,7 @@ import {
   findUiDirectory,
   startApiServer,
 } from '@easydeck/core';
-import type { ApiSource, AppFolder, DeckEvents, DeckService, DeckState, KeyView, LibraryImage, PluginManifest, ProfileDefinition, ProfileSummary, RunningApiServer, VariableValue } from '@easydeck/core';
+import type { ApiSource, AppFolder, DeckEvents, DeckService, DeckState, KeyView, Library, LibraryImage, PluginManifest, ProfileDefinition, ProfileSummary, RunningApiServer, VariableValue } from '@easydeck/core';
 
 export type HostStatus =
   | { readonly state: 'starting' }
@@ -194,7 +194,7 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     return this.require().listProfiles();
   }
 
-  listIcons(): Promise<readonly LibraryImage[]> {
+  listIcons(): Promise<Library> {
     return this.require().listIcons();
   }
 

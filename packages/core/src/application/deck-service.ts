@@ -17,8 +17,8 @@ import type {
 import type { DeckState, NetworkState } from '../domain/api-messages.js';
 import { NoProfilesError, ProfileNotFoundError } from '../domain/errors.js';
 import { configDir, iconsDir, pluginsDir, profilesDir } from '../infrastructure/config-paths.js';
-import { listLibraryImages } from '../infrastructure/icon-library.js';
-import type { LibraryImage } from '../infrastructure/icon-library.js';
+import { readLibrary } from '../infrastructure/icon-library.js';
+import type { Library, LibraryImage } from '../infrastructure/icon-library.js';
 import type { DaemonSettings, DeckBinding } from '../domain/settings.js';
 import { localAddresses } from '../infrastructure/api/network-addresses.js';
 import { DEFAULT_PORT } from '../infrastructure/api/websocket-server.js';
@@ -194,8 +194,8 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
 
   /** Read on every call: the point of a folder is that you can drop a file in
       it and see it appear without restarting anything. */
-  listIcons(): Promise<readonly LibraryImage[]> {
-    return listLibraryImages(iconsDir());
+  listIcons(): Promise<Library> {
+    return readLibrary(iconsDir());
   }
 
   getProfile(id: string): Promise<ProfileDefinition> {

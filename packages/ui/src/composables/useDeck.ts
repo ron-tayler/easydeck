@@ -288,9 +288,9 @@ export function useDeck() {
     activateProfile: (id: string) => client.call('activateProfile', { id, ...deckParam() }),
     /* Fetched on demand rather than kept in state: the folder is the user's,
        it changes behind our back, and it only matters while a picker is open. */
-    listIcons: async (): Promise<readonly LibraryImage[]> => {
-      const result = await client.call<{ icons: LibraryImage[] }>('listIcons');
-      return result.icons;
+    listIcons: async (): Promise<{ images: readonly LibraryImage[]; omitted: number }> => {
+      const result = await client.call<{ icons: LibraryImage[]; omitted?: number }>('listIcons');
+      return { images: result.icons, omitted: result.omitted ?? 0 };
     },
     setBrightness: (percent: number) => client.call('setBrightness', { percent }),
     setVariable: (name: string, value: string | number | boolean) =>

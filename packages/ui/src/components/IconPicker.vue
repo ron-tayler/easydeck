@@ -23,6 +23,8 @@ const props = defineProps<{
   color: string;
   /** The user's own folder, read by the daemon; empty until it is fetched. */
   userIcons: readonly LibraryImage[];
+  /** Pictures the folder holds but the library had no room for. */
+  omittedIcons?: number;
 }>();
 
 const emit = defineEmits<{ update: [icon: IconSpec | undefined] }>();
@@ -87,6 +89,7 @@ function chosen(source: string): void {
       v-if="browsing"
       :color="color"
       :user-icons="userIcons"
+      :omitted="omittedIcons ?? 0"
       @pick="chosen"
       @close="browsing = false"
     />

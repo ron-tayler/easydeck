@@ -74,7 +74,7 @@ export {
   iconsDir,
   settingsFile,
 } from './infrastructure/config-paths.js';
-export type { LibraryImage } from './infrastructure/icon-library.js';
+export type { Library, LibraryImage } from './infrastructure/icon-library.js';
 export { registerEasyDeckFolderActions } from './infrastructure/actions/easydeck-actions.js';
 export { migrateProfile } from './infrastructure/migrate-profile.js';
 export { FileProfileRepository, assertSafeProfileId } from './infrastructure/file-profile-repository.js';

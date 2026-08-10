@@ -95,8 +95,10 @@ export class ApiHandler {
       case 'getPlugins':
         return { plugins: await this.deck.plugins() };
 
-      case 'listIcons':
-        return { icons: await this.deck.listIcons() };
+      case 'listIcons': {
+        const library = await this.deck.listIcons();
+        return { icons: library.images, omitted: library.omitted };
+      }
 
       case 'listProfiles':
         return { profiles: await this.deck.listProfiles() };

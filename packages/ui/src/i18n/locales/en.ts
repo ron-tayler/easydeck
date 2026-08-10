@@ -22,6 +22,7 @@ export default {
     builtIn: 'Built-in',
     loose: 'Loose files',
     nothing: 'Nothing found',
+    omitted: '{count} more in the folder: too large to carry.',
     more: 'Not all shown: {count} more. Narrow the search, or open a folder.',
   },
   devices: {
