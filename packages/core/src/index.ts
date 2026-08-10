@@ -89,6 +89,13 @@ export type {
   PluginRuntimeOptions,
 } from './application/plugin-runtime.js';
 export { PluginSettingsStore } from './infrastructure/plugins/plugin-settings-store.js';
+export {
+  HardwarePlugin,
+  hardwareManifest,
+  findDisks,
+  registerHardwarePlugin,
+  HARDWARE_PLUGIN_ID,
+} from './infrastructure/plugins/hardware-plugin.js';
 export { plainSecretVault } from './application/ports/secret-vault.js';
 export type { SecretVault } from './application/ports/secret-vault.js';
 export { pluginSettingsDir, secretsDir } from './infrastructure/config-paths.js';

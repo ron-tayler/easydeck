@@ -133,9 +133,10 @@ offers it, avoids both the redirect and the secret entirely.
 1. Contract and storage — this document's subject.
 2. The settings window in the configurator.
 3. The loopback server and dynamic options.
-4. `hardware` — processor, memory, disks. No sockets, no authorisation: the
-   cheapest possible test of whether live keys really work.
+4. `hardware` — processor, memory, disks. Done: no sockets, no authorisation,
+   no settings, and it proved the live-key path end to end.
 5. `obs` — a socket, a password, dynamic scene lists, feedback by event.
+6. The settings window, once OBS has shown what a real one needs.
 
 Then Discord, which talks over a pipe rather than a socket, and Twitch, which
 is where authorisation gets interesting.

@@ -18,6 +18,7 @@ import { FileSettingsRepository } from './infrastructure/file-settings-repositor
 import { DeckRegistry } from './application/deck-registry.js';
 import { PluginRuntime } from './application/plugin-runtime.js';
 import { PluginSettingsStore } from './infrastructure/plugins/plugin-settings-store.js';
+import { registerHardwarePlugin } from './infrastructure/plugins/hardware-plugin.js';
 import { openTarget } from './infrastructure/actions/system-actions.js';
 import type { DeviceDirectory } from './application/device-directory.js';
 import type { SecretVault } from './application/ports/secret-vault.js';
@@ -101,6 +102,9 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
     };
 
     const warnings: string[] = [];
+    // Only when the caller did not bring a registry of its own: a test or an
+    // example that supplies one is asking for exactly what it listed.
+    const builtIn = options.actions === undefined;
     let actions = options.actions;
     let registry: DeckRegistry | undefined;
 
@@ -148,6 +152,8 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
         if (level === 'error') warnings.push(`${pluginId}: ${message}`);
       },
     });
+
+    if (builtIn) await registerHardwarePlugin(actions, plugins);
 
     const watchDirectory =
       options.watchProfiles !== false && profiles instanceof FileProfileRepository
