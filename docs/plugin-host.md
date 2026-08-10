@@ -130,13 +130,14 @@ offers it, avoids both the redirect and the secret entirely.
 
 ## Order of work
 
-1. Contract and storage — this document's subject.
-2. The settings window in the configurator.
-3. The loopback server and dynamic options.
-4. `hardware` — processor, memory, disks. Done: no sockets, no authorisation,
+1. Contract and storage — this document's subject. Done.
+2. `hardware` — processor, memory, disks. Done: no sockets, no authorisation,
    no settings, and it proved the live-key path end to end.
-5. `obs` — a socket, a password, dynamic scene lists, feedback by event.
-6. The settings window, once OBS has shown what a real one needs.
+3. `obs` — a socket, a password, dynamic scene lists, feedback by event.
+4. The settings window in the configurator, and dynamic options with it.
+   Deliberately after OBS rather than before: a form built for a plugin that
+   does not exist yet is a guess about what its settings need.
+5. The loopback server, which nothing wants until the first OAuth flow.
 
 Then Discord, which talks over a pipe rather than a socket, and Twitch, which
 is where authorisation gets interesting.
