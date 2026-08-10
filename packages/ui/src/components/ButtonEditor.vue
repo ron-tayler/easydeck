@@ -16,7 +16,7 @@ import type {
 } from '@easydeck/core';
 
 import { isStateRange } from '@easydeck/engine/profile';
-import { readIconParams, svgTextOf } from '@easydeck/engine/icons';
+import { iconParamsProblem, readIconParams, svgTextOf } from '@easydeck/engine/icons';
 import { parseVariableKey, variableKey } from '@easydeck/engine/variables';
 import { renderTemplate } from '@easydeck/engine/template';
 
@@ -306,11 +306,20 @@ function moveStep(target: number, payload: string): void {
 
 const iconParamsOpen = ref(false);
 
-/** Whether the chosen picture declares anything to wire up. */
+/**
+ * Whether the picture has anything to say about itself — or tried to.
+ *
+ * A broken declaration counts. Hiding the gear when the metadata will not
+ * parse leaves somebody staring at an icon they just wrote, with no way to
+ * tell "declares nothing" from "declares something with a comma in the wrong
+ * place"; the window says which.
+ */
 const iconIsParametric = computed(() => {
   const source = state.value.visual.icon?.source;
   if (!source) return false;
-  return readIconParams(svgTextOf(source) ?? '').length > 0;
+
+  const svg = svgTextOf(source) ?? '';
+  return readIconParams(svg).length > 0 || iconParamsProblem(svg) !== undefined;
 });
 
 function setIconParams(params: Record<string, IconBinding>): void {

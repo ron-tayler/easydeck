@@ -145,6 +145,31 @@ export function drawableIcon(
 
 
 /**
+ * What is wrong with an icon's metadata, when something is.
+ *
+ * Reading the parameters is deliberately forgiving — an icon must not fail to
+ * load over a typo — but a silent nothing is its own trap: the gear does not
+ * appear, and there is no way to tell "declares nothing" from "declares
+ * something unreadable". So the problem is available to be shown.
+ */
+export function iconParamsProblem(svg: string): string | undefined {
+  const found = METADATA.exec(svg);
+  if (!found?.[1]) return undefined;
+
+  try {
+    const parsed = JSON.parse(found[1].trim()) as { params?: unknown };
+    if (!Array.isArray(parsed.params)) return 'Metadata has no "params" array';
+
+    const nameless = parsed.params.some(
+      (param) => typeof param !== 'object' || param === null || typeof (param as IconParam).name !== 'string',
+    );
+    return nameless ? 'A parameter has no "name"' : undefined;
+  } catch (cause) {
+    return cause instanceof Error ? cause.message : 'Metadata is not valid JSON';
+  }
+}
+
+/**
  * The parameters an icon declares, or none.
  *
  * `<metadata>` is a standard SVG element every rasterizer ignores, so an icon
@@ -245,10 +270,16 @@ function withUnit(param: IconParam): string {
 function scale(value: number, binding: { from?: number; to?: number }, param: IconParam): number {
   if (!Number.isFinite(value)) return Number(param.default ?? 0);
 
-  const inFrom = binding.from ?? 0;
-  const inTo = binding.to ?? 100;
-  const outFrom = param.from ?? 0;
-  const outTo = param.to ?? 1;
+  // Everything is coerced: `"from": "0"` is what somebody writes when they
+  // are typing JSON by hand, and treating it as a different kind of zero
+  // would produce NaN and a picture that silently never moves.
+  const inFrom = Number(binding.from ?? 0);
+  const inTo = Number(binding.to ?? 100);
+  const outFrom = Number(param.from ?? 0);
+  const outTo = Number(param.to ?? 1);
+
+  if (!Number.isFinite(inFrom) || !Number.isFinite(inTo)) return outFrom;
+  if (!Number.isFinite(outFrom) || !Number.isFinite(outTo)) return 0;
 
   if (inTo === inFrom) return outFrom;
 

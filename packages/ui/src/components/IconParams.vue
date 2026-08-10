@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { IconBinding, IconParam, LocalizedText, VariableDeclaration } from '@easydeck/core';
-import { readIconParams, svgTextOf } from '@easydeck/engine/icons';
+import { iconParamsProblem, readIconParams, svgTextOf } from '@easydeck/engine/icons';
 
 /**
  * Wiring up an icon that answers to a variable.
@@ -39,7 +39,16 @@ const { t, locale } = useI18n();
 const say = (text: LocalizedText | undefined): string =>
   text === undefined ? '' : (text[locale.value] ?? text.en);
 
-const params = computed<IconParam[]>(() => readIconParams(svgTextOf(props.source) ?? ''));
+const svg = computed(() => svgTextOf(props.source) ?? '');
+const params = computed<IconParam[]>(() => readIconParams(svg.value));
+
+/**
+ * What is wrong with the picture's own declaration, if anything.
+ *
+ * Shown rather than swallowed: reading is forgiving so an icon never fails to
+ * load, and the price of that is a silence somebody has to be told about.
+ */
+const problem = computed(() => iconParamsProblem(svg.value));
 
 /** Names offered for binding, the user's own and the plugins' alike. */
 const variableNames = computed(() => {
@@ -177,6 +186,11 @@ function type(key: string, raw: string, commit: (value: string) => void): void {
       </header>
 
       <p class="muted desc">{{ t('editor.iconParamsHint') }}</p>
+
+      <p v-if="problem" class="problem">
+        {{ t('editor.iconBadMetadata') }}
+        <code>{{ problem }}</code>
+      </p>
 
       <section v-for="param in params" :key="param.name" class="param">
         <header class="param-head">
@@ -340,6 +354,23 @@ h2 {
 .desc {
   font-size: 12px;
   margin: 4px 0 0;
+}
+
+.problem {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  background: var(--surface-2);
+  border: 1px solid #d4544a;
+}
+
+.problem code {
+  display: block;
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-word;
 }
 
 .small {

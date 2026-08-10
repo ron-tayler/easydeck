@@ -32,6 +32,7 @@ export { referencedVariables, renderTemplate, hasPlaceholders } from './domain/t
 export type { IconParam, IconBinding } from './domain/icon-params.js';
 export {
   readIconParams,
+  iconParamsProblem,
   resolveIconParams,
   applyIconParams,
   svgTextOf,

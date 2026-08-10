@@ -125,6 +125,7 @@ export default {
     page: { title: 'Delete this page?', message: 'Every button on this page will be removed.' },
   },
   editor: {
+    iconBadMetadata: 'The picture declares something, but it did not parse:',
     iconParams: 'Picture parameters',
     iconParamsHint: 'The picture says what may be changed about it. Bind them to variables or set values.',
     iconFixed: 'Value',
