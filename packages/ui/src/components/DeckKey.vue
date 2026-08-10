@@ -43,6 +43,7 @@ const emit = defineEmits<{
   select: [key: number];
   menu: [payload: { key: number; x: number; y: number }];
   dropAction: [payload: { key: number; actionType: string; label: string }];
+  dropPreset: [payload: { key: number; pluginId: string; name: string }];
   dropKey: [payload: { from: number; to: number }];
   resizeStart: [payload: { key: number; axis: 'col' | 'row' | 'both' }];
 }>();
@@ -84,9 +85,12 @@ function onDragStart(event: DragEvent): void {
 
 function onDragOver(event: DragEvent): void {
   const types = event.dataTransfer?.types ?? [];
-  if (!types.includes('application/x-easydeck-action') && !types.includes('application/x-easydeck-key')) {
-    return;
-  }
+  const accepted = [
+    'application/x-easydeck-action',
+    'application/x-easydeck-preset',
+    'application/x-easydeck-key',
+  ];
+  if (!accepted.some((type) => types.includes(type))) return;
   event.preventDefault();
   over.value = true;
 }
@@ -99,6 +103,13 @@ function onDrop(event: DragEvent): void {
   if (action) {
     const { type, label: name } = JSON.parse(action) as { type: string; label: string };
     emit('dropAction', { key: props.index, actionType: type, label: name });
+    return;
+  }
+
+  const preset = event.dataTransfer?.getData('application/x-easydeck-preset');
+  if (preset) {
+    const { pluginId, name } = JSON.parse(preset) as { pluginId: string; name: string };
+    emit('dropPreset', { key: props.index, pluginId, name });
     return;
   }
 

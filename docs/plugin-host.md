@@ -59,6 +59,43 @@ Two habits belong to the plugin rather than the host:
 - **Clear on disconnect.** A key showing the last viewer count of a service
   that dropped an hour ago is the deck stating something untrue.
 
+## Presets
+
+An action is a step; a preset is a whole key. Dragging an action into a macro
+adds that step, and dragging a preset onto the grid puts down a finished
+button — its colours, its states, whatever it does. So the palette shows
+presets beside the deck grid and actions inside the key editor, and the same
+plugin reads as "here are some keys" in one place and "here are some steps" in
+the other.
+
+This is what lets a plugin that publishes but does not act appear at all. The
+hardware plugin has no actions whatsoever, so without presets it would be
+invisible in a palette made of actions, and its variables could only be used
+by somebody who knew to type `{{hw.cpu}}` into a label.
+
+No flags decide where a plugin shows up, and none are needed: a plugin with no
+actions is absent from the editor by itself, and a plugin with no presets
+still drops onto the grid as a key holding that one action, which is what the
+palette did before presets existed.
+
+What lands is an ordinary button. Nothing in a profile remembers that it came
+from a preset, so editing it afterwards is editing a button, and uninstalling
+the plugin leaves it in place showing nothing — which is correct, because a
+profile knows nothing about plugins.
+
+### Bands
+
+A gauge wants "90 and above is red", and until presets there was no way to say
+it: a number with no exact match walks the states like a carousel, which is
+right for a counter and nonsense for a reading. A state's `when` may now be a
+range instead of a value:
+
+```json
+{ "id": "hot", "when": { "min": 85 }, "visual": { "background": "#7a2c2c" } }
+```
+
+Both ends inclusive, either one optional, first match wins.
+
 ## Settings
 
 Declared as `ParamDefinition[]` — the same declarations an action's parameters

@@ -2,7 +2,7 @@
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 
-defineProps<{ title: string; message: string }>();
+defineProps<{ title: string; message: string; confirmLabel?: string }>();
 
 const emit = defineEmits<{ confirm: [dontAskAgain: boolean]; cancel: [] }>();
 
@@ -29,7 +29,7 @@ const dontAskAgain = ref(false);
         <!-- Focused rather than the cancel button: the dialog is opened by a
              deliberate delete, so Enter should finish what was started. -->
         <button type="button" class="danger" autofocus @click="emit('confirm', dontAskAgain)">
-          {{ t('confirm.delete') }}
+          {{ confirmLabel ?? t('confirm.delete') }}
         </button>
       </footer>
     </div>

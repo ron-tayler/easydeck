@@ -143,6 +143,77 @@ describe('binding a state to a variable', () => {
   });
 });
 
+describe('binding a state to a band of numbers', () => {
+  /** Bands in order, the way a gauge is written. */
+  const gauge = () =>
+    controllerFor(
+      [{ name: 'v', type: 'number', initial: 0 }],
+      [
+        state('calm', { max: 49 }),
+        state('busy', { min: 50, max: 89 }),
+        state('hot', { min: 90 }),
+      ],
+    );
+
+  it('shows the band the value falls inside', () => {
+    const controller = gauge();
+
+    assert.equal(shown(controller), 'calm');
+    controller.variables.set('v', 50);
+    assert.equal(shown(controller), 'busy');
+    controller.variables.set('v', 90);
+    assert.equal(shown(controller), 'hot');
+    controller.variables.set('v', 100);
+    assert.equal(shown(controller), 'hot', 'an open top end has no upper limit');
+  });
+
+  it('takes both ends as inclusive', () => {
+    const controller = gauge();
+
+    controller.variables.set('v', 49);
+    assert.equal(shown(controller), 'calm');
+    controller.variables.set('v', 89);
+    assert.equal(shown(controller), 'busy');
+  });
+
+  /**
+   * The reason bands exist at all. Without them a number falls through to the
+   * carousel, where a processor at 42% shows whichever state 42 happens to
+   * index — which is right for a counter and nonsense for a gauge.
+   */
+  it('beats the carousel a bare number would otherwise get', () => {
+    const controller = gauge();
+
+    controller.variables.set('v', 42);
+    assert.equal(shown(controller), 'calm');
+    controller.variables.set('v', 43);
+    assert.equal(shown(controller), 'calm', 'and does not walk to the next state');
+  });
+
+  it('lets an exact value win over a band that also covers it', () => {
+    // Both are the author speaking, and the more specific of the two is the
+    // one they can only have meant deliberately.
+    const controller = controllerFor(
+      [{ name: 'v', type: 'number', initial: 0 }],
+      [state('any', { min: 0, max: 100 }), state('exactly-fifty', 50)],
+    );
+
+    controller.variables.set('v', 50);
+    assert.equal(shown(controller), 'exactly-fifty');
+    controller.variables.set('v', 51);
+    assert.equal(shown(controller), 'any');
+  });
+
+  it('takes the first band when two overlap', () => {
+    const controller = controllerFor(
+      [{ name: 'v', type: 'number', initial: 95 }],
+      [state('warn', { min: 80 }), state('hot', { min: 90 })],
+    );
+
+    assert.equal(shown(controller), 'warn');
+  });
+});
+
 describe('variables declared by a plugin', () => {
   const registryWith = (variables: readonly VariableDeclaration[]): ActionRegistry =>
     new ActionRegistry().installPlugin(

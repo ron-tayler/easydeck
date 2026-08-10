@@ -104,6 +104,11 @@ export default {
       title: 'Delete the folder “{name}”?',
       message: 'Its pages, buttons and nested folders go with it.',
     },
+    preset: {
+      title: 'Replace the key?',
+      message: 'This key already has a button on it. The plugin’s ready-made one will take its place.',
+      replace: 'Replace',
+    },
     page: { title: 'Delete this page?', message: 'Every button on this page will be removed.' },
   },
   editor: {

@@ -17,20 +17,54 @@ export const PROFILE_FORMAT_VERSION = 5;
 export const MAX_PAGES_PER_FOLDER = 16;
 
 /** One appearance a button can have, together with what it does in it. */
+/**
+ * A band of numbers a state stands for, rather than one number.
+ *
+ * What a gauge needs and a counter does not: "90 and above is red" cannot be
+ * written as a list of values, and without this a number falls through to the
+ * carousel, where a processor at 42% would show whichever state 42 happens to
+ * index. Both ends are inclusive and either may be left out, so `{ min: 90 }`
+ * means ninety upwards.
+ *
+ * Overlaps are allowed and the first matching state wins, exactly as with a
+ * plain value — which makes the common case, a list of bands in order, behave
+ * the way it reads.
+ */
+export interface StateRange {
+  readonly min?: number;
+  readonly max?: number;
+}
+
+/** Whether a `when` is a band rather than a single value. */
+export function isStateRange(when: unknown): when is StateRange {
+  return typeof when === 'object' && when !== null;
+}
+
+/** Both ends inclusive, and an absent end means unbounded. */
+export function withinRange(value: number, range: StateRange): boolean {
+  if (range.min !== undefined && value < range.min) return false;
+  if (range.max !== undefined && value > range.max) return false;
+  // A band with neither end matches everything, which is a usable "otherwise"
+  // when it is written last and a mistake nowhere.
+  return true;
+}
+
 export interface ButtonStateDefinition {
   readonly id: string;
   readonly visual: ButtonVisualTemplate;
   readonly actions?: Partial<Record<ButtonEvent, readonly ActionDescriptor[]>>;
   /**
-   * Value of the bound variable this state stands for.
+   * What the bound variable has to be for this state to show.
    *
    * Only meaningful on a button with `stateFrom`, and only needed when the
    * state's own id is not the value — which is the common case as soon as the
    * variable is a boolean or an enum, since "on" is a better state name than
    * "true". Two states may claim the same value; the first one wins, so the
    * others act as spares rather than as an error.
+   *
+   * A `StateRange` instead of a value turns the button into a gauge.
    */
-  readonly when?: VariableValue;
+  readonly when?: VariableValue | StateRange;
 }
 
 export interface ButtonDefinition {
@@ -66,6 +100,7 @@ export interface ButtonDefinition {
    * this is the one rule a profile author has to hold in their head:
    *
    * - a state whose `when` equals the value always wins, whatever the type;
+   * - then a state whose `when` is a range the value falls inside;
    * - failing that, a state whose *id* equals the value wins, which is what
    *   every profile written before `when` existed relies on;
    * - `number` then falls back to a carousel: the value indexes the states and

@@ -24,6 +24,7 @@ const emit = defineEmits<{
   select: [key: number];
   menu: [payload: { key: number; x: number; y: number }];
   dropAction: [payload: { key: number; actionType: string; label: string }];
+  dropPreset: [payload: { key: number; pluginId: string; name: string }];
   dropKey: [payload: { from: number; to: number }];
   resize: [payload: { key: number; colSpan: number; rowSpan: number }];
 }>();
@@ -168,6 +169,7 @@ const preview = computed(() => {
       @select="emit('select', $event)"
       @menu="emit('menu', $event)"
       @drop-action="emit('dropAction', $event)"
+      @drop-preset="emit('dropPreset', $event)"
       @drop-key="emit('dropKey', $event)"
       @resize-start="onResizeStart"
     />

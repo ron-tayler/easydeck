@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { describe, it } from 'node:test';
 
-import { DeckController, VariableStore, createActionRegistry } from '@easydeck/engine';
+import { DeckController, VariableStore, createActionRegistry, validateProfile } from '@easydeck/engine';
 import type { ButtonEvent, ProfileDefinition, Scene } from '@easydeck/engine';
 
 import { PluginRuntime } from '../../application/plugin-runtime.js';
@@ -157,6 +157,67 @@ describe('hardware plugin', () => {
 
     const label = deck.view()[0]?.visual.label?.text;
     assert.match(label ?? '', /^\d{1,3}%$/, `the key read '${label}'`);
+
+    await deck.stop();
+    await bed.runtime.stopAll();
+  });
+
+  it('offers presets that are valid buttons, since that is what they become', async () => {
+    // A preset lands in a profile as an ordinary button, so anything wrong
+    // with it is wrong with somebody's profile. Checked here rather than
+    // discovered when the daemon refuses to load what the palette produced.
+    const disks = await findDisks();
+    const manifest = hardwareManifest(disks);
+    const presets = manifest.presets ?? [];
+
+    assert.ok(presets.length >= 2, 'the processor and the memory at least');
+
+    validateProfile({
+      ...gaugeProfile,
+      layout: { rows: 1, cols: presets.length },
+      root: {
+        id: 'root',
+        name: 'Root',
+        pages: [
+          {
+            id: 'main',
+            buttons: presets.map((preset, index) => ({
+              ...preset.button,
+              id: `preset-${index}`,
+              key: index,
+            })),
+          },
+        ],
+      },
+    });
+  });
+
+  it('colours a gauge by the band its value falls in', async () => {
+    // What the bands were added for. The preset is only interesting if a
+    // processor at 95% looks different from one at 5%.
+    const bed = bench();
+    const presenter = new Presenter();
+    const deck = new DeckController(presenter, bed.registry, { variables: bed.variables });
+
+    await registerHardwarePlugin(bed.registry, bed.runtime, { fastIntervalMs: 10_000 });
+    const cpu = (hardwareManifest([]).presets ?? []).find((preset) => preset.name === 'cpu');
+    assert.ok(cpu);
+
+    await deck.load({
+      ...gaugeProfile,
+      root: {
+        id: 'root',
+        name: 'Root',
+        pages: [{ id: 'main', buttons: [{ ...cpu.button, id: 'gauge', key: 0 }] }],
+      },
+    });
+
+    bed.variables.set('hw.cpu', 5);
+    assert.equal(deck.view()[0]?.stateId, 'calm');
+    bed.variables.set('hw.cpu', 70);
+    assert.equal(deck.view()[0]?.stateId, 'busy');
+    bed.variables.set('hw.cpu', 95);
+    assert.equal(deck.view()[0]?.stateId, 'hot');
 
     await deck.stop();
     await bed.runtime.stopAll();

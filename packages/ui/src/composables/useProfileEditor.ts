@@ -3,6 +3,7 @@ import type {
   ButtonDefinition,
   FolderDefinition,
   PageDefinition,
+  PresetButton,
   ProfileDefinition,
   VariableDeclaration,
 } from '@easydeck/core';
@@ -293,6 +294,33 @@ export function addActionToKey(
           ],
         };
       }),
+    };
+  });
+}
+
+/**
+ * Puts a plugin's ready-made key on the deck.
+ *
+ * Unlike an action, a preset is a whole button, so there is nothing sensible
+ * to append it to: an occupied key is replaced, and asking first is the
+ * caller's job. What lands is an ordinary button — its states, colours and
+ * bands are the plugin's suggestion and the user's to edit afterwards, and
+ * nothing in the profile remembers where it came from.
+ */
+export function addPresetToKey(
+  profile: ProfileDefinition,
+  pageId: string,
+  key: number,
+  preset: PresetButton,
+): ProfileDefinition {
+  const taken = allButtonIds(profile.root);
+
+  return updatePage(profile, pageId, (page) => {
+    const button: ButtonDefinition = { ...preset, id: freshId('button', taken), key };
+
+    return {
+      ...page,
+      buttons: [...page.buttons.filter((each) => each.key !== key), button],
     };
   });
 }

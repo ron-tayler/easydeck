@@ -33,6 +33,7 @@ import ConfirmDialog from './components/ConfirmDialog.vue';
 import { confirmAction, pendingConfirm, settleConfirm } from './composables/useConfirm.js';
 import {
   addActionToKey,
+  addPresetToKey,
   addFolder,
   addPage,
   createEmptyButton,
@@ -604,6 +605,35 @@ function onDropAction(payload: { key: number; actionType: string; label: string 
   );
 }
 
+/**
+ * Drops a plugin's ready-made key onto the grid.
+ *
+ * A preset is a whole button, so an occupied key is replaced rather than
+ * added to — which is worth asking about, since what it replaces may be an
+ * evening's work.
+ */
+function onDropPreset(payload: { key: number; pluginId: string; name: string }): void {
+  const plugin = deck.plugins.value.find((each) => each.id === payload.pluginId);
+  const preset = plugin?.presets?.find((each) => each.name === payload.name);
+  if (!preset) return;
+
+  void (async () => {
+    const occupied = deck.keys.value.some((view) => view.key === payload.key);
+    if (occupied) {
+      const replaced = await confirmAction(
+        'preset',
+        t('confirm.preset.title'),
+        t('confirm.preset.message'),
+        t('confirm.preset.replace'),
+      );
+      if (!replaced) return;
+    }
+
+    selectedKey.value = payload.key;
+    await edit((profile) => addPresetToKey(profile, currentPageId.value!, payload.key, preset.button));
+  })();
+}
+
 function onDropKey(payload: { from: number; to: number }): void {
   selectedKey.value = payload.to;
 
@@ -877,6 +907,7 @@ onBeforeUnmount(() => {
           @select="onSelect"
           @menu="onMenu"
           @drop-action="onDropAction"
+          @drop-preset="onDropPreset"
           @drop-key="onDropKey"
         />
 
@@ -910,7 +941,11 @@ onBeforeUnmount(() => {
 
       <aside class="right">
         <h2>{{ t('plugins.title') }}</h2>
-        <PluginList :plugins="deck.plugins.value" />
+        <PluginList
+          :plugins="deck.plugins.value"
+          presets
+          :variables="deck.state.value?.variables ?? {}"
+        />
       </aside>
     </div>
 
@@ -970,6 +1005,7 @@ onBeforeUnmount(() => {
       v-if="pendingConfirm"
       :title="pendingConfirm.title"
       :message="pendingConfirm.message"
+      :confirm-label="pendingConfirm.confirmLabel"
       @confirm="settleConfirm(true, $event)"
       @cancel="settleConfirm(false)"
     />

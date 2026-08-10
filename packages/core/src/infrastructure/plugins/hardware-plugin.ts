@@ -4,9 +4,11 @@ import { cpus, freemem, totalmem } from 'node:os';
 import { PLUGIN_API_VERSION } from '@easydeck/engine';
 import type {
   ActionRegistry,
+  ButtonPreset,
   Plugin,
   PluginHost,
   PluginManifest,
+  PresetButton,
   VariableDeclaration,
 } from '@easydeck/engine';
 
@@ -131,7 +133,69 @@ export function hardwareManifest(disks: readonly Disk[]): PluginManifest {
     // only to give the palette something to show.
     actions: [],
     variables,
+    presets: [
+      gauge('cpu', { en: 'Processor', ru: 'Процессор' }, 'hw.cpu', '{{hw.cpu}}%', {
+        en: 'Load, coloured as it climbs',
+        ru: 'Нагрузка, с цветом по мере роста',
+      }),
+      gauge('memory', { en: 'Memory', ru: 'Память' }, 'hw.memory', '{{hw.memory}}%', {
+        en: 'How much of the memory is in use',
+        ru: 'Сколько памяти занято',
+      }),
+      ...disks.map((disk) =>
+        gauge(
+          `disk-${disk.key}`,
+          { en: `Disk ${disk.label}`, ru: `Диск ${disk.label}` },
+          `hw.disk-${disk.key}`,
+          `${disk.label}\n{{hw.disk-${disk.key}-free}} GB`,
+          {
+            en: `Free space on ${disk.label}, coloured as it runs out`,
+            ru: `Свободное место на ${disk.label}, с цветом по мере заполнения`,
+          },
+        ),
+      ),
+    ],
   };
+}
+
+/**
+ * Three bands and a label: the shape every one of these gauges wants.
+ *
+ * Written once because they differ only in which variable they watch and what
+ * they say. The thresholds are the ordinary ones — comfortable below 60,
+ * working below 85, and worth looking at above — and a user who disagrees
+ * edits them, which is the point of a preset being an ordinary button once it
+ * lands.
+ */
+function gauge(
+  name: string,
+  label: { en: string; ru: string },
+  variable: string,
+  text: string,
+  description: { en: string; ru: string },
+): ButtonPreset {
+  const button: PresetButton = {
+    stateFrom: variable,
+    states: [
+      {
+        id: 'calm',
+        when: { max: 59 },
+        visual: { background: '#22303c', label: { text, fontSize: 13 } },
+      },
+      {
+        id: 'busy',
+        when: { min: 60, max: 84 },
+        visual: { background: '#6b5416', label: { text, fontSize: 13 } },
+      },
+      {
+        id: 'hot',
+        when: { min: 85 },
+        visual: { background: '#7a2c2c', label: { text, fontSize: 13 } },
+      },
+    ],
+  };
+
+  return { name, label, description, button };
 }
 
 export class HardwarePlugin implements Plugin {

@@ -1,6 +1,6 @@
 import { BUTTON_EVENTS } from './action.js';
 import { InvalidProfileError } from './errors.js';
-import { MAX_PAGES_PER_FOLDER } from './profile.js';
+import { MAX_PAGES_PER_FOLDER, isStateRange } from './profile.js';
 import type { FolderDefinition, ProfileDefinition } from './profile.js';
 import { VARIABLE_TYPES } from './variables.js';
 
@@ -194,6 +194,24 @@ function validateButtons(
         throw new InvalidProfileError(`Duplicate state id '${state.id}' on button '${button.id}'`);
       }
       stateIds.add(state.id);
+
+      if (isStateRange(state.when)) {
+        const { min, max } = state.when;
+        const bounded = (value: unknown) => value === undefined || typeof value === 'number';
+        if (!bounded(min) || !bounded(max)) {
+          throw new InvalidProfileError(
+            `State '${state.id}' on button '${button.id}' has a range with a non-numeric bound`,
+          );
+        }
+        // Caught here rather than left to select nothing at run time: a band
+        // that cannot match is always a typo, and one that silently never
+        // shows is a button somebody will stare at for an hour.
+        if (min !== undefined && max !== undefined && min > max) {
+          throw new InvalidProfileError(
+            `State '${state.id}' on button '${button.id}' has a range from ${min} to ${max}, which is empty`,
+          );
+        }
+      }
 
       for (const event of Object.keys(state.actions ?? {})) {
         if (!BUTTON_EVENTS.includes(event as never)) {

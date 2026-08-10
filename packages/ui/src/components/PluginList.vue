@@ -1,11 +1,31 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { ActionDefinition, LocalizedText, PluginManifest } from '@easydeck/core';
+import type {
+  ActionDefinition,
+  ButtonPreset,
+  LocalizedText,
+  PluginManifest,
+  VariableValue,
+} from '@easydeck/core';
+import { renderTemplate } from '@easydeck/engine/template';
 
 import { actionIconPath, isDrawnIcon } from '../icons/action-icons.js';
 
-const props = defineProps<{ plugins: readonly PluginManifest[] }>();
+const props = defineProps<{
+  plugins: readonly PluginManifest[];
+  /**
+   * Whether whole keys are on offer as well as single actions.
+   *
+   * True beside the deck grid, where a drop makes a key; false inside the key
+   * editor, where a drop adds a step to a macro and a finished key would mean
+   * nothing. The same palette, read as "here are some keys" in one place and
+   * "here are some steps" in the other.
+   */
+  presets?: boolean;
+  /** Current values, so a preset's tile shows real figures rather than `{{…}}`. */
+  variables?: Readonly<Record<string, VariableValue>>;
+}>();
 
 const { t, locale } = useI18n();
 const search = ref('');
@@ -51,27 +71,65 @@ function onDragStart(event: DragEvent, action: ActionDefinition): void {
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
 }
 
+function onPresetDragStart(event: DragEvent, plugin: PluginManifest, preset: ButtonPreset): void {
+  event.dataTransfer?.setData(
+    PRESET_MIME,
+    JSON.stringify({ pluginId: plugin.id, name: preset.name }),
+  );
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+}
+
+const PRESET_MIME = 'application/x-easydeck-preset';
+
+/**
+ * What a preset's first state looks like, with variables filled in.
+ *
+ * A sketch rather than the real key component: that one belongs to the grid,
+ * where it also handles dropping, resizing and its share of a stretched
+ * picture. Here all that is wanted is the colour, the picture and the words —
+ * enough that a preset is recognisable as the key it will become.
+ */
+function preview(preset: ButtonPreset): {
+  background: string;
+  text: string;
+  icon: string | undefined;
+} {
+  const state = preset.button.states[0];
+  const values = props.variables ?? {};
+
+  return {
+    background: state?.visual.background ?? '#111318',
+    text: renderTemplate(state?.visual.label?.text ?? '', values),
+    icon: state?.visual.icon?.source,
+  };
+}
+
 interface Group {
   readonly plugin: PluginManifest;
   readonly actions: readonly ActionDefinition[];
+  readonly presets: readonly ButtonPreset[];
 }
 
 const groups = computed<Group[]>(() => {
   const query = search.value.trim().toLowerCase();
+  const matches = (plugin: PluginManifest, label: LocalizedText, id: string): boolean => {
+    if (query.length === 0) return true;
+    return (
+      say(label).toLowerCase().includes(query) ||
+      say(plugin.name).toLowerCase().includes(query) ||
+      id.includes(query)
+    );
+  };
 
   return props.plugins
     .map((plugin) => ({
       plugin,
-      actions: plugin.actions.filter((action) => {
-        if (query.length === 0) return true;
-        return (
-          say(action.label).toLowerCase().includes(query) ||
-          say(plugin.name).toLowerCase().includes(query) ||
-          action.type.includes(query)
-        );
-      }),
+      actions: plugin.actions.filter((action) => matches(plugin, action.label, action.type)),
+      presets: props.presets
+        ? (plugin.presets ?? []).filter((preset) => matches(plugin, preset.label, preset.name))
+        : [],
     }))
-    .filter((group) => group.actions.length > 0);
+    .filter((group) => group.actions.length + group.presets.length > 0);
 });
 </script>
 
@@ -95,10 +153,31 @@ const groups = computed<Group[]>(() => {
         >
           <span class="chevron" :class="{ open: isOpen(group.plugin.id) }">›</span>
           <span class="name">{{ say(group.plugin.name) }}</span>
-          <span class="count">{{ group.actions.length }}</span>
+          <span class="count">{{ group.actions.length + group.presets.length }}</span>
         </button>
 
         <ul v-show="isOpen(group.plugin.id)">
+          <!-- Presets first: they are whole keys, and a palette beside the
+               grid is a shelf of keys before it is a list of steps. -->
+          <li v-for="preset in group.presets" :key="`preset:${preset.name}`">
+            <div
+              class="action preset"
+              draggable="true"
+              @dragstart="onPresetDragStart($event, group.plugin, preset)"
+            >
+              <span v-if="say(preset.description)" class="why" :title="say(preset.description)">?</span>
+
+              <!-- The key as it will arrive, in miniature. Nothing explains
+                   the difference between a preset and an action as quickly as
+                   one of them looking like a key. -->
+              <span class="face" :style="{ background: preview(preset).background }">
+                <img v-if="preview(preset).icon" class="face-icon" :src="preview(preset).icon" alt="" />
+                <span class="face-text">{{ preview(preset).text }}</span>
+              </span>
+              <span class="label">{{ say(preset.label) }}</span>
+            </div>
+          </li>
+
           <li v-for="action in group.actions" :key="action.type">
             <!-- The label travels with the type so a freshly created button
                  says what it does without the drop handler knowing any
@@ -273,6 +352,43 @@ ul {
 .why:hover {
   color: var(--text);
   background: var(--accent-soft);
+}
+
+/* The miniature key. Square, like the thing it stands for. */
+.face {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 5px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  /* The panel's own key edge, so the tile reads as a key rather than a swatch. */
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 12%);
+}
+
+.face-icon {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.face-text {
+  position: relative;
+  font-size: 9px;
+  line-height: 1.1;
+  color: #fff;
+  text-align: center;
+  padding: 0 2px;
+  /* Two lines of a two-line label; a third would not be legible at this size. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-line;
 }
 
 .mark {

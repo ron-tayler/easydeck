@@ -47,8 +47,10 @@ export type {
   ButtonDefinition,
   ButtonStateDefinition,
   DeckLocation,
+  StateRange,
 } from './domain/profile.js';
 export { PROFILE_FORMAT_VERSION, MAX_PAGES_PER_FOLDER } from './domain/profile.js';
+export { isStateRange, withinRange } from './domain/profile.js';
 export { ProfileTree } from './domain/profile-tree.js';
 export { validateProfile } from './domain/validate-profile.js';
 export {
@@ -82,6 +84,8 @@ export {
 export type {
   PluginManifest,
   PluginCommand,
+  ButtonPreset,
+  PresetButton,
   ActionDefinition,
   ParamDefinition,
   ParamOption,

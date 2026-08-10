@@ -10,6 +10,7 @@ import type {
   PageDefinition,
   ProfileDefinition,
 } from '../domain/profile.js';
+import { isStateRange, withinRange } from '../domain/profile.js';
 import { ProfileTree } from '../domain/profile-tree.js';
 import { sceneKeys, sceneSignature } from '../domain/scene.js';
 import type { Scene, SceneLabel, SceneRegion } from '../domain/scene.js';
@@ -473,6 +474,11 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     state: ButtonStateDefinition,
     name: string,
   ): VariableValue {
+    if (isStateRange(state.when)) {
+      // The low end, because a band is usually written from where it starts;
+      // a band open at the bottom is selected by its top.
+      return state.when.min ?? state.when.max ?? 0;
+    }
     if (state.when !== undefined) return state.when;
 
     const type = this.declarations.get(name)?.type ?? inferVariableType(this.variables.get(name));
@@ -498,9 +504,23 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
 
     // An explicit binding wins outright: the author said what they meant.
     const declared = button.states.find(
-      (state) => state.when !== undefined && String(state.when) === String(value),
+      (state) =>
+        state.when !== undefined &&
+        !isStateRange(state.when) &&
+        String(state.when) === String(value),
     );
     if (declared) return declared;
+
+    // Then a band, which is what makes a gauge out of a button. Ahead of the
+    // id and of the carousel, both of which would otherwise claim the value
+    // first and leave the bands unreachable.
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      const banded = button.states.find(
+        (state) => isStateRange(state.when) && withinRange(numeric, state.when),
+      );
+      if (banded) return banded;
+    }
 
     // Then the state id, which is how binding worked before `when` existed.
     // Kept ahead of the type-specific rules so that no profile changes
@@ -511,7 +531,6 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     const type = this.declarations.get(name)?.type ?? inferVariableType(value);
 
     if (type === 'number') {
-      const numeric = Number(value);
       if (!Number.isFinite(numeric)) return undefined;
 
       // A carousel, so a plain counter walks the states in author order and

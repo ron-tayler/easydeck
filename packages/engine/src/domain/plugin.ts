@@ -1,3 +1,4 @@
+import type { ButtonDefinition } from './profile.js';
 import type { VariableDeclaration, VariableValue } from './variables.js';
 
 /**
@@ -143,6 +144,37 @@ export interface PluginCommand {
   readonly confirm?: LocalizedText;
 }
 
+/**
+ * A whole key a plugin knows how to build, ready to drop onto the deck.
+ *
+ * The difference between the two palettes. Dragging an *action* into a macro
+ * adds that one step; dragging a *preset* onto the grid puts down a finished
+ * key — its picture, its colour, its states and whatever it does. Which is
+ * what "show me the processor" actually is: no action at all, a label reading
+ * `{{hw.cpu}}%` and three states that colour it.
+ *
+ * Without this a plugin that publishes but does not act — a gauge, a viewer
+ * count — cannot appear in the palette at all, because the palette is made of
+ * actions and it has none.
+ */
+export interface ButtonPreset {
+  /** Unique within the plugin, and never stored in a profile. */
+  readonly name: string;
+  readonly label: LocalizedText;
+  readonly description?: LocalizedText;
+  /**
+   * The key itself, minus where it sits.
+   *
+   * `id` and `key` are the configurator's to assign, exactly as when a button
+   * is made by dragging an action onto an empty space. Everything else — the
+   * states, the binding, the colours — is the plugin's to decide, because the
+   * point of a preset is that somebody already worked out what looks right.
+   */
+  readonly button: PresetButton;
+}
+
+export type PresetButton = Omit<ButtonDefinition, 'id' | 'key'>;
+
 export interface PluginManifest {
   /** Short and stable; the prefix of every action type the plugin declares. */
   readonly id: string;
@@ -175,6 +207,15 @@ export interface PluginManifest {
   readonly settings?: readonly ParamDefinition[];
   /** Buttons at the foot of the settings window. */
   readonly commands?: readonly PluginCommand[];
+  /**
+   * Ready-made keys, offered where keys are made rather than where macros are.
+   *
+   * A plugin may have both these and actions; the palette shows presets on
+   * the deck grid and actions inside the key editor, so the same plugin reads
+   * as "here are some keys" in one place and "here are some steps" in the
+   * other.
+   */
+  readonly presets?: readonly ButtonPreset[];
 }
 
 /** Picks the best translation available, falling back to English. */

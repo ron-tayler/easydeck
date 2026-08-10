@@ -21,6 +21,15 @@ export interface ConfirmRequest {
   readonly kind: string;
   readonly title: string;
   readonly message: string;
+  /**
+   * What the dangerous button says, when "Delete" is not what happens.
+   *
+   * Most of these confirmations are deletions and the word is the same every
+   * time; dropping a preset over a configured key destroys it just as surely
+   * but is called replacing, and a dialog whose button says the wrong verb is
+   * a dialog people stop reading.
+   */
+  readonly confirmLabel?: string;
   readonly resolve: (confirmed: boolean) => void;
 }
 
@@ -30,11 +39,18 @@ export function confirmAction(
   kind: string,
   title: string,
   message: string,
+  confirmLabel?: string,
 ): Promise<boolean> {
   if (suppressed.has(kind)) return Promise.resolve(true);
 
   return new Promise<boolean>((resolve) => {
-    pendingConfirm.value = { kind, title, message, resolve };
+    pendingConfirm.value = {
+      kind,
+      title,
+      message,
+      ...(confirmLabel === undefined ? {} : { confirmLabel }),
+      resolve,
+    };
   });
 }
 
