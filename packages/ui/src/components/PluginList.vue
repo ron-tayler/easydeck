@@ -141,52 +141,6 @@ function hint(item: { label: LocalizedText; description?: LocalizedText }): stri
 ${description}` : say(item.label);
 }
 
-/**
- * Actions a preset of the same plugin makes redundant beside the grid.
- *
- * "Start / stop recording" and the Record preset are the same key — one
- * plain, one dressed — and offering both makes the palette longer while
- * making the choice harder. The plain one steps aside, and keeps its place in
- * the key editor, where a preset means nothing and a step is what is wanted.
- *
- * Read out of the presets rather than declared on the action. A flag would be
- * a second place to keep one truth, and the day somebody deletes a preset and
- * forgets the flag, an action vanishes from the palette with nothing to
- * explain why.
- *
- * A preset only stands in for an action when it *is* that action wearing a
- * coat: one action type across all its states and gestures, with nothing
- * filled in. Two conditions, and each earns its place:
- *
- * - **One type.** A preset that starts the stream *and* switches scene is a
- *   sequence, not a dressed-up command; hiding both of its ingredients would
- *   leave somebody unable to build anything else out of them.
- * - **No parameters.** A preset that switches to "Intro" has already answered
- *   the question the general action asks, so it cannot replace it — the
- *   action is how you get a key for any other scene.
- */
-function actionsCoveredByPresets(plugin: PluginManifest): Set<string> {
-  const covered = new Set<string>();
-
-  for (const preset of plugin.presets ?? []) {
-    const used = new Set<string>();
-    let configured = false;
-
-    for (const state of preset.button.states) {
-      for (const sequence of Object.values(state.actions ?? {})) {
-        for (const action of sequence ?? []) {
-          used.add(action.type);
-          if (Object.keys(action.params ?? {}).length > 0) configured = true;
-        }
-      }
-    }
-
-    if (used.size === 1 && !configured) covered.add([...used][0]!);
-  }
-
-  return covered;
-}
-
 interface Group {
   readonly plugin: PluginManifest;
   readonly actions: readonly ActionDefinition[];
@@ -205,19 +159,19 @@ const groups = computed<Group[]>(() => {
   };
 
   return props.plugins
-    .map((plugin) => {
-      const covered = props.presets ? actionsCoveredByPresets(plugin) : new Set<string>();
-
-      return {
-        plugin,
-        actions: plugin.actions.filter(
-          (action) => !covered.has(action.type) && matches(plugin, action.label, action.type),
-        ),
-        presets: props.presets
-          ? (plugin.presets ?? []).filter((preset) => matches(plugin, preset.label, preset.name))
-          : [],
-      };
-    })
+    .map((plugin) => ({
+      plugin,
+      actions: plugin.actions.filter(
+        (action) =>
+          // `presetOnly` is the author saying a preset already offers this as
+          // a finished key. Only beside the grid: inside the key editor a
+          // preset means nothing and every action is worth having.
+          !(props.presets && action.presetOnly) && matches(plugin, action.label, action.type),
+      ),
+      presets: props.presets
+        ? (plugin.presets ?? []).filter((preset) => matches(plugin, preset.label, preset.name))
+        : [],
+    }))
     .filter((group) => group.actions.length + group.presets.length > 0);
 });
 </script>

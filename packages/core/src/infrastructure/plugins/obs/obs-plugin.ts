@@ -183,6 +183,7 @@ export const obsManifest: PluginManifest = {
 
     {
       type: 'obs.toggle-stream',
+      presetOnly: true,
       icon: 'globe',
       label: { en: 'Start / stop stream', ru: 'Начать / завершить трансляцию' },
       params: [],
@@ -190,6 +191,7 @@ export const obsManifest: PluginManifest = {
     },
     {
       type: 'obs.toggle-record',
+      presetOnly: true,
       icon: 'stop',
       label: { en: 'Start / stop recording', ru: 'Начать / остановить запись' },
       params: [],
@@ -204,6 +206,7 @@ export const obsManifest: PluginManifest = {
     },
     {
       type: 'obs.toggle-replay-buffer',
+      presetOnly: true,
       icon: 'previous',
       label: { en: 'Replay buffer on / off', ru: 'Буфер повтора вкл / выкл' },
       params: [],
@@ -218,6 +221,7 @@ export const obsManifest: PluginManifest = {
     },
     {
       type: 'obs.toggle-virtual-cam',
+      presetOnly: true,
       icon: 'app',
       label: { en: 'Virtual camera on / off', ru: 'Виртуальная камера вкл / выкл' },
       params: [],

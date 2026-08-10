@@ -123,6 +123,22 @@ export interface ActionDefinition {
    * plugin written against a newer set still has a usable palette.
    */
   readonly icon?: string;
+  /**
+   * Keeps this action out of the palette beside the deck grid, because a
+   * preset already offers it as a finished key.
+   *
+   * Declared rather than worked out. Two attempts at deducing it from the
+   * presets failed on the same rock: a preset holding one action may be that
+   * action dressed up *or* one ingredient of something larger, and a preset
+   * holding three may be a sequence whose parts are still worth offering
+   * separately *or* the only sensible way to use any of them. Nothing in the
+   * data distinguishes those, because the difference is what the author
+   * meant.
+   *
+   * The action stays in the key editor regardless: a preset means nothing
+   * inside a macro, where a step is what is wanted.
+   */
+  readonly presetOnly?: boolean;
 }
 
 /**

@@ -73,10 +73,20 @@ hardware plugin has no actions whatsoever, so without presets it would be
 invisible in a palette made of actions, and its variables could only be used
 by somebody who knew to type `{{hw.cpu}}` into a label.
 
-No flags decide where a plugin shows up, and none are needed: a plugin with no
-actions is absent from the editor by itself, and a plugin with no presets
-still drops onto the grid as a key holding that one action, which is what the
-palette did before presets existed.
+Where a plugin appears needs no flag: one with no actions is absent from the
+editor by itself, and one with no presets still drops onto the grid as a key
+holding that single action, which is what the palette did before presets
+existed.
+
+One flag does exist, on the action rather than the plugin. `presetOnly` keeps
+an action out of the palette beside the grid, because a preset already offers
+it as a finished key — "Start / stop recording" and the Record preset are the
+same key, one plain and one dressed, and offering both makes the palette
+longer while making the choice harder. It is declared rather than deduced:
+a preset holding one action may be that action dressed up or one ingredient
+of something larger, and only the author knows which. The action stays in the
+key editor either way, where a preset means nothing and a step is what is
+wanted.
 
 What lands is an ordinary button. Nothing in a profile remembers that it came
 from a preset, so editing it afterwards is editing a button, and uninstalling
