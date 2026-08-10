@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type {
   ButtonDefinition,
@@ -258,8 +258,64 @@ function setWhenMode(mode: WhenMode): void {
   else patchState({ when: 0 });
 }
 
+/**
+ * What is typed in the condition boxes, held here rather than read back out
+ * of the draft.
+ *
+ * The editor repaints while it is open — the preview follows live variables,
+ * so a processor gauge redraws it every couple of seconds — and a box whose
+ * value is bound straight to the draft gets that value written back over
+ * whatever is half-typed. It looked like the field clearing itself as you
+ * worked, and it was: the repaint, not the field.
+ *
+ * Everything else in the panel commits on each keystroke, so a repaint writes
+ * back what is already there and nothing is lost. These three cannot, because
+ * an empty box mid-edit does not mean "no condition" — so they keep what was
+ * typed and hand the draft only what parses.
+ */
+const whenValue = ref('');
+const whenMin = ref('');
+const whenMax = ref('');
+
+/** Refilled when the *source* changes, never merely because the draft did. */
+watch(
+  [stateIndex, whenMode, () => props.button],
+  () => {
+    const when = state.value.when;
+
+    if (isStateRange(when)) {
+      whenMin.value = when.min === undefined ? '' : String(when.min);
+      whenMax.value = when.max === undefined ? '' : String(when.max);
+      whenValue.value = '';
+      return;
+    }
+
+    whenValue.value = when === undefined ? '' : String(when);
+    whenMin.value = '';
+    whenMax.value = '';
+  },
+  { immediate: true },
+);
+
+/**
+ * A single value, from a box that may be empty part-way through typing.
+ *
+ * Empty is stored as zero rather than as "no condition": clearing the box to
+ * type a new number would otherwise switch the mode back to automatic and
+ * take the box away mid-keystroke.
+ */
+function setWhenValue(raw: string): void {
+  whenValue.value = raw;
+
+  if (boundType.value === 'number') patchState({ when: raw === '' ? 0 : Number(raw) });
+  else patchState({ when: raw === '' ? undefined : raw });
+}
+
 /** One end of a band; empty means unbounded on that side. */
 function setRange(end: 'min' | 'max', raw: string): void {
+  if (end === 'min') whenMin.value = raw;
+  else whenMax.value = raw;
+
   const next: { min?: number; max?: number } = { ...range.value };
 
   if (raw === '') delete next[end];
@@ -579,8 +635,8 @@ const preview = computed(() => {
               <input
                 v-if="whenMode === 'value'"
                 type="number"
-                :value="typeof state.when === 'number' ? state.when : ''"
-                @change="setWhen(($event.target as HTMLInputElement).value)"
+                :value="whenValue"
+                @input="setWhenValue(($event.target as HTMLInputElement).value)"
               />
 
               <template v-else-if="whenMode === 'range'">
@@ -591,14 +647,14 @@ const preview = computed(() => {
                 <input
                   type="number"
                   :placeholder="t('editor.whenFrom')"
-                  :value="range.min ?? ''"
-                  @change="setRange('min', ($event.target as HTMLInputElement).value)"
+                  :value="whenMin"
+                  @input="setRange('min', ($event.target as HTMLInputElement).value)"
                 />
                 <input
                   type="number"
                   :placeholder="t('editor.whenTo')"
-                  :value="range.max ?? ''"
-                  @change="setRange('max', ($event.target as HTMLInputElement).value)"
+                  :value="whenMax"
+                  @input="setRange('max', ($event.target as HTMLInputElement).value)"
                 />
               </template>
             </div>
@@ -606,9 +662,9 @@ const preview = computed(() => {
             <input
               v-else
               type="text"
-              :value="state.when === undefined ? '' : String(state.when)"
+              :value="whenValue"
               :placeholder="t('editor.whenAuto')"
-              @change="setWhen(($event.target as HTMLInputElement).value)"
+              @input="setWhenValue(($event.target as HTMLInputElement).value)"
             />
 
             <span class="desc">{{ t(`editor.bindingRule.${boundType}`) }}</span>
