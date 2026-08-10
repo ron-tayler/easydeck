@@ -148,6 +148,13 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     options.decks.on('added', (deck) => this.follow(deck));
 
     options.decks.on('error', (error) => this.emit('actionError', error.message));
+    // What the profiles read, told to the plugins that publish it — now and
+    // after every change, since a key added to a profile is a key somebody
+    // expects to start working without restarting anything.
+    this.publishWatched();
+    options.decks.on('changed', () => this.publishWatched());
+    options.decks.on('added', () => this.publishWatched());
+
     options.plugins?.on('status', (pluginId, status, message) =>
       this.emit('pluginStatusChanged', { pluginId, status, ...(message ? { message } : {}) }),
     );
@@ -300,6 +307,11 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
       };
     }
     return statuses;
+  }
+
+  /** Tells the plugins which of their variables anything is reading. */
+  private publishWatched(): void {
+    this.options.plugins?.setWatched(this.options.decks.variablesRead());
   }
 
   private requirePlugins(): PluginRuntime {
@@ -642,6 +654,9 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
 
     this.activeProfileId = this.deck.controller.profileId;
     this.emit('state', await this.state());
+
+    // A saved profile may have gained a key that reads something new.
+    this.publishWatched();
   }
 
   /**

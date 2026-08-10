@@ -36,6 +36,12 @@ const STATE = {
   SetSourceFilterEnabled: {},
   GetInputVolume: { inputVolumeDb: -6 },
   SetInputVolume: {},
+  GetInputMute: { inputMuted: true },
+  GetInputAudioMonitorType: { monitorType: 'OBS_MONITORING_TYPE_MONITOR_ONLY' },
+  SetInputAudioMonitorType: {},
+  GetSceneItemId: { sceneItemId: 7 },
+  GetSceneItemEnabled: { sceneItemEnabled: true },
+  GetCurrentSceneTransition: { transitionName: 'Fade', transitionDuration: 300 },
 };
 
 /** Everything an action is handed, of which OBS actions use only the first. */
@@ -323,6 +329,98 @@ describe('the OBS plugin', () => {
       filterEnabled: false,
     });
 
+    await bed.dispose();
+  });
+
+  it('knows while a transition is running', async () => {
+    // Both edges come from OBS, so this is known rather than timed — a
+    // transition can be cut short, and a key counting down would go on
+    // claiming it was running.
+    const bed = await bench();
+    await bed.until('a connection', () => bed.runtime.status('obs')?.status === 'ready');
+
+    assert.equal(bed.variables.get('obs.transition-name'), 'Fade');
+    assert.equal(bed.variables.get('obs.transition-duration'), 300);
+    assert.equal(bed.variables.get('obs.transitioning'), false);
+
+    bed.obs.emit('SceneTransitionStarted', { transitionName: 'Stinger' });
+    await bed.until('the start', () => bed.variables.get('obs.transitioning') === true);
+    assert.equal(bed.variables.get('obs.transition-name'), 'Stinger');
+
+    bed.obs.emit('SceneTransitionEnded', { transitionName: 'Stinger' });
+    await bed.until('the end', () => bed.variables.get('obs.transitioning') === false);
+
+    await bed.dispose();
+  });
+
+  it('reads only the family keys a profile actually uses', async () => {
+    // The whole point of families: OBS may have fifty inputs, and a deck
+    // showing one microphone should cost one question, not fifty.
+    const bed = await bench();
+    await bed.until('a connection', () => bed.runtime.status('obs')?.status === 'ready');
+
+    bed.obs.requests.length = 0;
+    bed.runtime.setWatched(['obs.mute(Mic)', 'obs.volume(Mic)', 'hardware.cpu']);
+    await bed.until('the mute', () => bed.variables.get('obs.mute(Mic)') === true);
+
+    assert.equal(bed.variables.get('obs.volume(Mic)'), -6);
+    assert.equal(
+      bed.obs.requests.filter((request) => request.type === 'GetInputMute').length,
+      1,
+      'one question about the one input a profile reads',
+    );
+    assert.equal(
+      bed.variables.has('obs.mute(Desktop)'),
+      false,
+      'nothing was published about an input nobody reads',
+    );
+
+    await bed.dispose();
+  });
+
+  it('follows the mixer by event, and only for what is watched', async () => {
+    const bed = await bench();
+    await bed.until('a connection', () => bed.runtime.status('obs')?.status === 'ready');
+    bed.runtime.setWatched(['obs.mute(Mic)']);
+    await bed.until('the first read', () => bed.variables.get('obs.mute(Mic)') === true);
+
+    bed.obs.emit('InputMuteStateChanged', { inputName: 'Mic', inputMuted: false });
+    await bed.until('the change', () => bed.variables.get('obs.mute(Mic)') === false);
+
+    bed.obs.emit('InputMuteStateChanged', { inputName: 'Desktop', inputMuted: true });
+    await delay(60);
+    assert.equal(bed.variables.has('obs.mute(Desktop)'), false, 'still nobody reads it');
+
+    await bed.dispose();
+  });
+
+  it('reads a pair, where the key names two things', async () => {
+    const bed = await bench();
+    await bed.until('a connection', () => bed.runtime.status('obs')?.status === 'ready');
+
+    bed.runtime.setWatched(['obs.visible(Game, Webcam)']);
+    await bed.until('the visibility', () => bed.variables.get('obs.visible(Game, Webcam)') === true);
+
+    const asked = bed.obs.requests.find((request) => request.type === 'GetSceneItemId');
+    assert.deepEqual(asked?.data, { sceneName: 'Game', sourceName: 'Webcam' });
+
+    await bed.dispose();
+  });
+
+  it('clears a key whose source has gone, rather than leaving it stale', async () => {
+    const bed = await bench();
+    await bed.until('a connection', () => bed.runtime.status('obs')?.status === 'ready');
+
+    bed.runtime.setWatched(['obs.mute(Mic)']);
+    await bed.until('the mute', () => bed.variables.get('obs.mute(Mic)') === true);
+
+    // A source that is not there any more, which OBS answers with a refusal
+    // rather than a value.
+    bed.obs.unknown.add('Ghost');
+    bed.runtime.setWatched(['obs.filter(Ghost, Gate)']);
+    await delay(120);
+
+    assert.equal(bed.variables.has('obs.filter(Ghost, Gate)'), false);
     await bed.dispose();
   });
 

@@ -49,6 +49,53 @@ export interface VariableDeclaration {
    * one by hand is exactly how you test a button that binds to it.
    */
   readonly pluginId?: string;
+  /**
+   * Turns this into a family of variables rather than one variable.
+   *
+   * A plugin that reports on things — every audio input's mute, every
+   * source's visibility — has as many values as the user has objects, and
+   * they come and go as the user renames them. Declaring one apiece produces
+   * a list of hundreds that reshuffles whenever somebody edits OBS, which is
+   * a list nobody can find anything in.
+   *
+   * So the declaration takes an argument and the *key* carries it:
+   * `obs.mute(Микрофон)`. One row in the picker, one row in the manifest, and
+   * the store, the templates and the state binding all work as they already
+   * did — a key is a key.
+   */
+  readonly argument?: VariableArgument;
+}
+
+/** What a family's argument is, and where its possible values come from. */
+export interface VariableArgument {
+  readonly label: LocalizedText;
+  readonly description?: LocalizedText;
+  /**
+   * A list the plugin supplies at run time, by the same name an action's
+   * parameter would use — so "which source?" is answered from OBS itself
+   * rather than typed from memory.
+   */
+  readonly optionsFrom?: string;
+  /** Families that need two, as scene-and-source does. Rare on purpose. */
+  readonly then?: VariableArgument;
+}
+
+/**
+ * Splits `obs.mute(Микрофон)` into its family and its argument.
+ *
+ * Returns the whole name as the family when there is no argument, so callers
+ * can look up a declaration without asking which kind of name they hold.
+ */
+export function parseVariableKey(key: string): { family: string; argument?: string } {
+  const opened = key.indexOf('(');
+  if (opened < 0 || !key.endsWith(')')) return { family: key };
+
+  return { family: key.slice(0, opened), argument: key.slice(opened + 1, -1) };
+}
+
+/** Builds the key a family and its argument name together. */
+export function variableKey(family: string, argument: string | undefined): string {
+  return argument === undefined || argument === '' ? family : `${family}(${argument})`;
 }
 
 /**

@@ -47,8 +47,33 @@ export interface PluginHost {
    */
   setVariable(name: string, value: VariableValue | undefined): void;
 
+  /**
+   * Publishes a value under a family key: `setFamily('obs.mute', 'Микрофон', true)`.
+   *
+   * Separate from `setVariable` so the plugin never builds the key itself,
+   * and so the host can check the family was declared without parsing every
+   * name it is handed.
+   */
+  setFamily(family: string, argument: string, value: VariableValue | undefined): void;
+
   /** Where the plugin is up to, shown on its gear and beside its actions. */
   setStatus(status: PluginStatus, message?: LocalizedText): void;
+
+  /**
+   * The keys of this plugin's variables that something is actually reading.
+   *
+   * Gathered from every loaded profile — the labels that substitute them and
+   * the buttons bound to them — and sent again whenever a profile changes.
+   *
+   * This is what makes a family of variables affordable. A plugin reporting
+   * on every audio input, every source in every scene and every filter would
+   * otherwise publish hundreds of values, almost none of them looked at by
+   * anybody, and ask the program it talks to about all of them on every
+   * connect. Told what is wanted, it can watch that and nothing else.
+   *
+   * Keys arrive whole, argument included: `obs.mute(Микрофон)`.
+   */
+  onWatched(listen: (keys: readonly string[]) => void): () => void;
 
   /**
    * Supplies the choices for a parameter declared with `optionsFrom`.

@@ -31,12 +31,17 @@ const OP = {
 /**
  * Which event categories to receive.
  *
- * General, Scenes, Inputs and Outputs — the four that carry what a deck can
- * show. Filters, transitions and scene items are left off: every event OBS
- * sends is a message parsed and discarded, and a busy scene can produce a lot
- * of them.
+ * General, Config, Scenes, Inputs, Transitions, Filters, Outputs and scene
+ * items — everything a key can be bound to. Left off: media playback and the
+ * high-volume streams OBS keeps behind separate flags, which nothing here
+ * shows and which arrive many times a second.
+ *
+ * Every event is a message parsed and mostly discarded, so this is not free —
+ * but the alternative is a deck that quietly fails to notice a filter being
+ * switched off in OBS's own window, which is the thing this plugin exists to
+ * avoid.
  */
-const SUBSCRIPTIONS = 1 | 4 | 8 | 64;
+const SUBSCRIPTIONS = 1 | 2 | 4 | 8 | 16 | 32 | 64 | 128;
 
 /** Long enough for OBS to answer while busy, short enough to notice a hang. */
 const REQUEST_TIMEOUT_MS = 5_000;

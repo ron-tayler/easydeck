@@ -14,7 +14,16 @@ import type { VariableValue } from './variables.js';
  * worth more here than one that can compute. Anything richer belongs in an
  * action that writes a variable.
  */
-const PLACEHOLDER = /\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}/g;
+/*
+ * Anything but a brace or a line break, and not only whitespace.
+ *
+ * It used to be Latin letters, digits and dots, which was fine while every
+ * variable was named by whoever wrote the profile. A plugin's keys carry the
+ * user's own words — `obs.mute(Игровой звук)` — and those have spaces,
+ * brackets and Cyrillic in them. Still not an expression language: there is
+ * nothing to evaluate here, only a name that may look like anything.
+ */
+const PLACEHOLDER = /\{\{\s*([^{}\s\r\n](?:[^{}\r\n]*[^{}\s\r\n])?)\s*\}\}/g;
 
 /** Variable names a template depends on, in order of first appearance. */
 export function referencedVariables(template: string): string[] {

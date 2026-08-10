@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 
 import type { PanelCompositor } from '@easydeck/compositor';
 import type { Surface } from '@easydeck/device';
-import { DeckController, VariableStore } from '@easydeck/engine';
+import { DeckController, VariableStore, variablesReadBy } from '@easydeck/engine';
 import type { ActionRegistry, ProfileDefinition, VariableDeclaration } from '@easydeck/engine';
 
 /**
@@ -91,6 +91,25 @@ export class DeckRegistry extends EventEmitter<DeckRegistryEvents> {
    * profiles behind it may differ: a variable declared only in the tablet's
    * profile is still a variable of this machine.
    */
+  /**
+   * Every variable any running deck reads, across all their profiles.
+   *
+   * Collected here because this is the one place that knows what is loaded:
+   * two decks may run different profiles, and a plugin should watch what
+   * either of them reads.
+   */
+  variablesRead(): string[] {
+    const names = new Set<string>();
+
+    for (const deck of this.decks.values()) {
+      const profile = deck.controller.loadedProfile;
+      if (!profile) continue;
+      for (const name of variablesReadBy(profile)) names.add(name);
+    }
+
+    return [...names];
+  }
+
   declarations(): VariableDeclaration[] {
     const merged = new Map<string, VariableDeclaration>();
 

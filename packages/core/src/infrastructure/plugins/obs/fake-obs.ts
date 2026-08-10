@@ -30,6 +30,13 @@ export class FakeObs {
   private readonly sockets = new Set<WebSocket>();
   /** Every request that arrived, in order, for assertions. */
   readonly requests: Array<{ type: string; data: Record<string, unknown> }> = [];
+  /**
+   * Names this OBS refuses to know anything about.
+   *
+   * What a real one does for a source that has been renamed or deleted since
+   * a profile mentioned it — the request is answered, and the answer is no.
+   */
+  readonly unknown = new Set<string>();
   private challenge = '';
   private closed = false;
 
@@ -120,7 +127,9 @@ export class FakeObs {
         data: (data['requestData'] as Record<string, unknown>) ?? {},
       });
 
-      const responseData = this.options.responses?.[type];
+      const named = Object.values((data['requestData'] as Record<string, unknown>) ?? {}).map(String);
+      const refused = named.some((value) => this.unknown.has(value));
+      const responseData = refused ? undefined : this.options.responses?.[type];
       socket.send(
         JSON.stringify({
           op: 7,

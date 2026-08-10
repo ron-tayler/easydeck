@@ -17,6 +17,7 @@ export type {
   VariableType,
   VariableOption,
   VariableDeclaration,
+  VariableArgument,
 } from './domain/variables.js';
 export {
   VariableStore,
@@ -24,8 +25,11 @@ export {
   coerceVariable,
   inferVariableType,
   initialVariableValue,
+  parseVariableKey,
+  variableKey,
 } from './domain/variables.js';
 export { referencedVariables, renderTemplate, hasPlaceholders } from './domain/template.js';
+export { variablesReadBy } from './domain/profile-variables.js';
 export type {
   ButtonVisual,
   ButtonVisualTemplate,

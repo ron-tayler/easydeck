@@ -1,4 +1,4 @@
-import { PLUGIN_API_VERSION, numberParam, stringParam } from '@easydeck/engine';
+import { PLUGIN_API_VERSION, numberParam, parseVariableKey, stringParam } from '@easydeck/engine';
 import type {
   ActionHandler,
   ActionRegistry,
@@ -7,6 +7,7 @@ import type {
   PluginHost,
   PluginManifest,
   PresetButton,
+  VariableValue,
 } from '@easydeck/engine';
 
 import type { PluginRuntime } from '../../../application/plugin-runtime.js';
@@ -132,6 +133,89 @@ export const obsManifest: PluginManifest = {
       type: 'boolean',
       label: { en: 'Virtual camera on', ru: 'Виртуальная камера включена' },
       initial: false,
+    },
+
+    {
+      /*
+       * True between the transition starting and ending.
+       *
+       * OBS reports both edges, so this is knowable rather than guessed from
+       * a duration — which matters because a transition can be stopped, and a
+       * key counting down a timer would then lie until the timer ran out.
+       */
+      name: 'obs.transitioning',
+      type: 'boolean',
+      label: { en: 'Transition running', ru: 'Идёт переход' },
+      initial: false,
+    },
+    {
+      name: 'obs.transition-name',
+      type: 'string',
+      label: { en: 'Current transition', ru: 'Текущий переход' },
+    },
+    {
+      name: 'obs.transition-duration',
+      type: 'number',
+      label: { en: 'Transition, ms', ru: 'Длительность перехода, мс' },
+      initial: 0,
+    },
+
+    /*
+     * Families: one declaration each, however many inputs and sources the
+     * user has. The key carries which one — `obs.mute(Микрофон)` — and only
+     * the keys a profile actually reads are ever asked about or published.
+     */
+    {
+      name: 'obs.mute',
+      type: 'boolean',
+      label: { en: 'Muted', ru: 'Звук выключен' },
+      argument: {
+        label: { en: 'Source', ru: 'Источник' },
+        optionsFrom: 'audio-inputs',
+      },
+    },
+    {
+      name: 'obs.volume',
+      type: 'number',
+      label: { en: 'Volume, dB', ru: 'Громкость, дБ' },
+      argument: {
+        label: { en: 'Source', ru: 'Источник' },
+        optionsFrom: 'audio-inputs',
+      },
+    },
+    {
+      name: 'obs.monitor',
+      type: 'enum',
+      label: { en: 'Monitoring', ru: 'Прослушивание' },
+      options: [
+        { value: 'off', label: { en: 'Off', ru: 'Выключено' } },
+        { value: 'monitor', label: { en: 'Monitor only', ru: 'Только слушать' } },
+        { value: 'both', label: { en: 'Monitor and output', ru: 'Слушать и выводить' } },
+      ],
+      argument: {
+        label: { en: 'Source', ru: 'Источник' },
+        optionsFrom: 'audio-inputs',
+      },
+    },
+    {
+      name: 'obs.filter',
+      type: 'boolean',
+      label: { en: 'Filter on', ru: 'Фильтр включён' },
+      argument: {
+        label: { en: 'Source', ru: 'Источник' },
+        optionsFrom: 'sources',
+        then: { label: { en: 'Filter', ru: 'Фильтр' }, optionsFrom: 'filters' },
+      },
+    },
+    {
+      name: 'obs.visible',
+      type: 'boolean',
+      label: { en: 'Source shown', ru: 'Источник показан' },
+      argument: {
+        label: { en: 'Scene', ru: 'Сцена' },
+        optionsFrom: 'scenes',
+        then: { label: { en: 'Source', ru: 'Источник' }, optionsFrom: 'scene-sources' },
+      },
     },
   ],
 
@@ -297,6 +381,36 @@ export const obsManifest: PluginManifest = {
     },
 
     {
+      type: 'obs.set-monitor',
+      icon: 'keyboard',
+      label: { en: 'Set monitoring', ru: 'Прослушивание источника' },
+      description: {
+        en: 'Whether you hear the source yourself, and whether the stream does',
+        ru: 'Слышите ли источник вы сами и попадает ли он в трансляцию',
+      },
+      params: [
+        {
+          name: 'input',
+          type: 'select',
+          optionsFrom: 'audio-inputs',
+          label: { en: 'Source', ru: 'Источник' },
+        },
+        {
+          name: 'monitor',
+          type: 'select',
+          label: { en: 'Monitoring', ru: 'Прослушивание' },
+          options: [
+            { value: 'off', label: { en: 'Off', ru: 'Выключено' } },
+            { value: 'monitor', label: { en: 'Monitor only', ru: 'Только слушать' } },
+            { value: 'both', label: { en: 'Monitor and output', ru: 'Слушать и выводить' } },
+          ],
+          default: 'monitor',
+        },
+      ],
+      group: { en: 'Audio', ru: 'Звук' },
+    },
+
+    {
       type: 'obs.toggle-filter',
       icon: 'toggle',
       label: { en: 'Filter on / off', ru: 'Фильтр вкл / выкл' },
@@ -451,9 +565,24 @@ export interface ObsPluginOptions {
   readonly retryDelaysMs?: readonly number[];
 }
 
+/** A key a profile reads, split into what it asks about. */
+interface Watch {
+  readonly family: string;
+  readonly first: string;
+  readonly second?: string;
+}
+
 export class ObsPlugin implements Plugin {
   private connection?: ObsConnection;
   private host?: PluginHost;
+  /**
+   * What some profile reads, and therefore all this plugin reports on.
+   *
+   * Without it, publishing every input's volume and every source's visibility
+   * in every scene would mean hundreds of requests on connect and hundreds of
+   * values kept up to date so that a deck could show one of them.
+   */
+  private watching: readonly Watch[] = [];
 
   constructor(private readonly options: ObsPluginOptions = {}) {}
 
@@ -461,6 +590,13 @@ export class ObsPlugin implements Plugin {
     this.host = host;
     this.connect();
     host.onSettingsChanged(() => this.connect());
+
+    host.onWatched((keys) => {
+      this.watching = keys.map(parseWatch).filter((watch): watch is Watch => watch !== undefined);
+      // Read at once rather than at the next connect: a key added while OBS
+      // is running should start showing something immediately.
+      if (this.connection?.connected) void this.readWatched();
+    });
   }
 
   stop(): void {
@@ -544,8 +680,28 @@ export class ObsPlugin implements Plugin {
         .map((name) => ({ value: name, label: { en: name } }));
     });
 
+    /*
+     * The sources of one scene, for the second half of `obs.visible(…)`.
+     *
+     * Takes its scene from whichever the caller has: an action names its
+     * parameters, a variable's argument is simply "the one before this".
+     */
+    host.provideOptions('scene-sources', async (params) => {
+      const sceneName = String(params['scene'] ?? params['argument'] ?? '');
+      if (sceneName === '') return [];
+
+      const data = await this.require().request<{ sceneItems?: { sourceName?: string }[] }>(
+        'GetSceneItemList',
+        { sceneName },
+      );
+      return (data.sceneItems ?? [])
+        .map((item) => String(item.sourceName ?? ''))
+        .filter((name) => name !== '')
+        .map((name) => ({ value: name, label: { en: name } }));
+    });
+
     host.provideOptions('filters', async (params) => {
-      const sourceName = String(params['source'] ?? '');
+      const sourceName = String(params['source'] ?? params['argument'] ?? '');
       if (sourceName === '') return [];
 
       const data = await this.require().request<{ filters?: { filterName?: string }[] }>(
@@ -597,10 +753,108 @@ export class ObsPlugin implements Plugin {
 
       const camera = await connection.request<{ outputActive?: boolean }>('GetVirtualCamStatus');
       host.setVariable('obs.virtual-cam', camera.outputActive === true);
+
+      const transition = await connection.request<{
+        transitionName?: string;
+        transitionDuration?: number;
+      }>('GetCurrentSceneTransition');
+      host.setVariable('obs.transition-name', String(transition.transitionName ?? ''));
+      host.setVariable('obs.transition-duration', Number(transition.transitionDuration ?? 0));
+      host.setVariable('obs.transitioning', false);
+
+      await this.readWatched();
     } catch (cause) {
       // A refused status request is not worth dropping the connection over:
       // the replay buffer is absent on some builds, and the rest still works.
       host.log('warn', `Could not read the whole of OBS's state: ${describe(cause)}`);
+    }
+  }
+
+  /**
+   * Asks OBS about exactly what some profile reads, and nothing else.
+   *
+   * One request per key: there is no bulk form for "the mute state of these
+   * six inputs", and six requests on connect is a price worth paying for not
+   * making sixty.
+   */
+  private async readWatched(): Promise<void> {
+    const host = this.host;
+    const connection = this.connection;
+    if (!host || !connection?.connected) return;
+
+    for (const watch of this.watching) {
+      try {
+        await this.readOne(connection, host, watch);
+      } catch (cause) {
+        // A source that has been renamed or deleted since the profile was
+        // written. Cleared rather than left at its last value, and reported
+        // once — the key it feeds simply shows nothing.
+        host.setFamily(watch.family, argumentOf(watch), undefined);
+        host.log('warn', `Cannot read ${watch.family} for '${argumentOf(watch)}': ${describe(cause)}`);
+      }
+    }
+  }
+
+  private async readOne(
+    connection: ObsConnection,
+    host: PluginHost,
+    watch: Watch,
+  ): Promise<void> {
+    const argument = argumentOf(watch);
+
+    switch (watch.family) {
+      case 'obs.mute': {
+        const data = await connection.request<{ inputMuted?: boolean }>('GetInputMute', {
+          inputName: watch.first,
+        });
+        host.setFamily(watch.family, argument, data.inputMuted === true);
+        return;
+      }
+
+      case 'obs.volume': {
+        const data = await connection.request<{ inputVolumeDb?: number }>('GetInputVolume', {
+          inputName: watch.first,
+        });
+        // Rounded to a tenth: the mixer moves in small steps and a key that
+        // repaints over the fourth decimal place is a key that flickers.
+        host.setFamily(watch.family, argument, round(Number(data.inputVolumeDb ?? 0)));
+        return;
+      }
+
+      case 'obs.monitor': {
+        const data = await connection.request<{ monitorType?: string }>('GetInputAudioMonitorType', {
+          inputName: watch.first,
+        });
+        host.setFamily(watch.family, argument, monitorName(String(data.monitorType ?? '')));
+        return;
+      }
+
+      case 'obs.filter': {
+        if (!watch.second) return;
+        const data = await connection.request<{ filterEnabled?: boolean }>('GetSourceFilter', {
+          sourceName: watch.first,
+          filterName: watch.second,
+        });
+        host.setFamily(watch.family, argument, data.filterEnabled === true);
+        return;
+      }
+
+      case 'obs.visible': {
+        if (!watch.second) return;
+        const found = await connection.request<{ sceneItemId?: number }>('GetSceneItemId', {
+          sceneName: watch.first,
+          sourceName: watch.second,
+        });
+        const data = await connection.request<{ sceneItemEnabled?: boolean }>('GetSceneItemEnabled', {
+          sceneName: watch.first,
+          sceneItemId: Number(found.sceneItemId),
+        });
+        host.setFamily(watch.family, argument, data.sceneItemEnabled === true);
+        return;
+      }
+
+      default:
+        return;
     }
   }
 
@@ -630,8 +884,124 @@ export class ObsPlugin implements Plugin {
       case 'VirtualcamStateChanged':
         host.setVariable('obs.virtual-cam', data['outputActive'] === true);
         return;
+
+      case 'SceneTransitionStarted':
+        host.setVariable('obs.transitioning', true);
+        host.setVariable('obs.transition-name', String(data['transitionName'] ?? ''));
+        return;
+
+      /*
+       * Ended, not VideoEnded: the video part of a stinger finishes before
+       * the transition does, and a key that lit up again mid-stinger would be
+       * lying for the rest of it.
+       */
+      case 'SceneTransitionEnded':
+        host.setVariable('obs.transitioning', false);
+        return;
+
+      case 'CurrentSceneTransitionChanged':
+        host.setVariable('obs.transition-name', String(data['transitionName'] ?? ''));
+        return;
+
+      case 'CurrentSceneTransitionDurationChanged':
+        host.setVariable('obs.transition-duration', Number(data['transitionDuration'] ?? 0));
+        return;
+
+      /*
+       * The mixer and the scene, as they change.
+       *
+       * Only keys somebody is watching are written: OBS reports every input
+       * it has, and publishing the lot would put back exactly the flood that
+       * watching was meant to avoid.
+       */
+      case 'InputMuteStateChanged':
+        this.publishIfWatched('obs.mute', String(data['inputName'] ?? ''), data['inputMuted'] === true);
+        return;
+
+      case 'InputVolumeChanged':
+        this.publishIfWatched(
+          'obs.volume',
+          String(data['inputName'] ?? ''),
+          round(Number(data['inputVolumeDb'] ?? 0)),
+        );
+        return;
+
+      case 'InputAudioMonitorTypeChanged':
+        this.publishIfWatched(
+          'obs.monitor',
+          String(data['inputName'] ?? ''),
+          monitorName(String(data['monitorType'] ?? '')),
+        );
+        return;
+
+      case 'SourceFilterEnableStateChanged':
+        this.publishIfWatched(
+          'obs.filter',
+          `${String(data['sourceName'] ?? '')}, ${String(data['filterName'] ?? '')}`,
+          data['filterEnabled'] === true,
+        );
+        return;
+
+      /*
+       * A scene item is identified by a number, and the event carries only
+       * that — so the source's name is looked up, once, against the keys we
+       * are already watching in that scene.
+       */
+      case 'SceneItemEnableStateChanged':
+        void this.publishSceneItem(
+          String(data['sceneName'] ?? ''),
+          Number(data['sceneItemId']),
+          data['sceneItemEnabled'] === true,
+        );
+        return;
+
+      /*
+       * Sources and scenes get renamed, and a watched key then names
+       * something that no longer exists. Re-reading settles both halves: the
+       * old key clears, the new one starts reporting if a profile reads it.
+       */
+      case 'InputNameChanged':
+      case 'SceneNameChanged':
+      case 'SceneListChanged':
+        void this.readWatched();
+        return;
       default:
         return;
+    }
+  }
+
+  /** Writes a family value only where some profile reads it. */
+  private publishIfWatched(family: string, argument: string, value: VariableValue): void {
+    const watched = this.watching.some(
+      (watch) => watch.family === family && argumentOf(watch) === argument,
+    );
+    if (watched) this.host?.setFamily(family, argument, value);
+  }
+
+  /** Turns a scene item's number back into the name a profile would use. */
+  private async publishSceneItem(
+    sceneName: string,
+    sceneItemId: number,
+    enabled: boolean,
+  ): Promise<void> {
+    const connection = this.connection;
+    if (!connection?.connected || !Number.isFinite(sceneItemId)) return;
+
+    for (const watch of this.watching) {
+      if (watch.family !== 'obs.visible' || watch.first !== sceneName || !watch.second) continue;
+
+      try {
+        const found = await connection.request<{ sceneItemId?: number }>('GetSceneItemId', {
+          sceneName,
+          sourceName: watch.second,
+        });
+        if (Number(found.sceneItemId) === sceneItemId) {
+          this.host?.setFamily(watch.family, argumentOf(watch), enabled);
+        }
+      } catch {
+        // The item went away between the event and the question. The next
+        // read settles it.
+      }
     }
   }
 
@@ -647,6 +1017,9 @@ export class ObsPlugin implements Plugin {
     host.setVariable('obs.recording-paused', false);
     host.setVariable('obs.replay-buffer', false);
     host.setVariable('obs.virtual-cam', false);
+    host.setVariable('obs.transitioning', false);
+    host.setVariable('obs.transition-name', '');
+    host.setVariable('obs.transition-duration', 0);
   }
 
   private require(): ObsConnection {
@@ -709,6 +1082,12 @@ export class ObsPlugin implements Plugin {
 
         await connection.request('SetInputVolume', { inputName, inputVolumeDb: next });
       },
+
+      'obs.set-monitor': async (params) =>
+        void (await this.require().request('SetInputAudioMonitorType', {
+          inputName: stringParam(params, 'input'),
+          monitorType: monitorType(stringParam(params, 'monitor')),
+        })),
 
       /**
        * Filters are one kind of thing to OBS.
@@ -785,6 +1164,46 @@ export async function registerObsPlugin(
   await runtime.install(obsManifest, plugin);
   runtime.registerCommands(OBS_PLUGIN_ID, { reconnect: () => plugin.reconnect() });
 }
+
+/**
+ * `obs.mute(Микрофон)` and `obs.visible(Игра, Веб-камера)`.
+ *
+ * A comma separates the two halves of a pair, which is the one shape a source
+ * name is unlikely to contain and the one a person would write anyway.
+ */
+function parseWatch(key: string): Watch | undefined {
+  const { family, argument } = parseVariableKey(key);
+  if (argument === undefined || argument === '') return undefined;
+
+  const comma = argument.indexOf(',');
+  if (comma < 0) return { family, first: argument.trim() };
+
+  return {
+    family,
+    first: argument.slice(0, comma).trim(),
+    second: argument.slice(comma + 1).trim(),
+  };
+}
+
+const argumentOf = (watch: Watch): string =>
+  watch.second === undefined ? watch.first : `${watch.first}, ${watch.second}`;
+
+/** Back the other way, for the action that sets it. */
+function monitorType(name: string): string {
+  if (name === 'both') return 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT';
+  if (name === 'monitor') return 'OBS_MONITORING_TYPE_MONITOR_ONLY';
+  return 'OBS_MONITORING_TYPE_NONE';
+}
+
+/** OBS's own names for monitoring, as something a person would bind to. */
+function monitorName(type: string): string {
+  if (type.endsWith('MONITOR_AND_OUTPUT')) return 'both';
+  if (type.endsWith('MONITOR_ONLY')) return 'monitor';
+  return 'off';
+}
+
+/** A tenth of a decibel: the mixer's own resolution, and no flicker below it. */
+const round = (db: number): number => Math.round(db * 10) / 10;
 
 function describe(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);

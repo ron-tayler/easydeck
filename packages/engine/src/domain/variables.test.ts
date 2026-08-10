@@ -88,7 +88,14 @@ describe('templates', () => {
     assert.equal(renderTemplate('Сцена 1', { a: 1 }), 'Сцена 1');
   });
 
-  it('ignores malformed placeholders rather than throwing', () => {
-    assert.equal(renderTemplate('{{ }} {{1bad}} {a}', {}), '{{ }} {{1bad}} {a}');
+  it('leaves alone what is not a placeholder at all', () => {
+    // A name may now be anything without braces — a plugin's keys carry the
+    // user's own words, `obs.mute(Игровой звук)` among them — so what is left
+    // untouched is an empty pair and a single brace.
+    assert.equal(
+      renderTemplate('{{ }} {a} {{unset}}', {}),
+      '{{ }} {a} ',
+      'an empty placeholder is text; an unknown name renders as nothing',
+    );
   });
 });

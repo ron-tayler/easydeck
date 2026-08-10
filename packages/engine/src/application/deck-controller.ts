@@ -148,6 +148,11 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     return this.surface.layout;
   }
 
+  /** The profile as loaded, for whoever needs to read it rather than run it. */
+  get loadedProfile(): ProfileDefinition | undefined {
+    return this.profile;
+  }
+
   get profileId(): string | undefined {
     return this.profile?.id;
   }

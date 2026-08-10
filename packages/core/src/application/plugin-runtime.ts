@@ -13,6 +13,8 @@ import type {
   VariableValue,
 } from '@easydeck/engine';
 
+import { parseVariableKey, variableKey } from '@easydeck/engine';
+
 import type { PluginSettingsStore } from '../infrastructure/plugins/plugin-settings-store.js';
 
 /**
@@ -63,10 +65,17 @@ interface Entry {
   readonly options: Map<string, OptionLoader>;
   readonly routes: Array<() => void>;
   readonly variables: Set<string>;
+  /** Families this plugin declared, which take an argument. */
+  readonly families: Set<string>;
+  readonly watchers: Array<(keys: readonly string[]) => void>;
+  /** What was last reported as being watched, for a plugin that starts late. */
+  watched: readonly string[];
 }
 
 export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
   private readonly entries = new Map<string, Entry>();
+  /** Every key the loaded profiles read, across all plugins. */
+  private watched: readonly string[] = [];
   /**
    * What a plugin's settings-window buttons actually do.
    *
@@ -101,7 +110,18 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
       listeners: [],
       options: new Map(),
       routes: [],
-      variables: new Set((manifest.variables ?? []).map((variable) => variable.name)),
+      variables: new Set(
+        (manifest.variables ?? [])
+          .filter((variable) => variable.argument === undefined)
+          .map((variable) => variable.name),
+      ),
+      families: new Set(
+        (manifest.variables ?? [])
+          .filter((variable) => variable.argument !== undefined)
+          .map((variable) => variable.name),
+      ),
+      watchers: [],
+      watched: this.watched.filter((key) => this.belongsTo(key, manifest.id)),
     };
     this.entries.set(manifest.id, entry);
 
@@ -191,6 +211,40 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
     }
   }
 
+  /**
+   * Tells each plugin which of its keys anything is reading.
+   *
+   * Called with every key the loaded profiles mention; each plugin hears only
+   * its own. A plugin that hears nothing stops watching, which is the point —
+   * the alternative is asking OBS about fifty inputs so that one key can show
+   * whether the microphone is muted.
+   */
+  setWatched(keys: readonly string[]): void {
+    this.watched = keys;
+
+    for (const entry of this.entries.values()) {
+      const mine = keys.filter((key) => this.belongsTo(key, entry.manifest.id));
+
+      // Unchanged is not worth telling: a plugin reacts by asking the program
+      // it talks to, and a profile save that touched nothing of its should
+      // not cost a round of requests.
+      if (same(mine, entry.watched)) continue;
+
+      entry.watched = mine;
+      for (const listen of [...entry.watchers]) {
+        try {
+          listen(mine);
+        } catch (cause) {
+          this.fail(entry, cause);
+        }
+      }
+    }
+  }
+
+  private belongsTo(key: string, pluginId: string): boolean {
+    return parseVariableKey(key).family.startsWith(`${pluginId}.`);
+  }
+
   /** Stops everything, in the reverse order it was started. */
   async stopAll(): Promise<void> {
     for (const entry of [...this.entries.values()].reverse()) {
@@ -254,6 +308,29 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
         else this.options.variables.set(name, value);
       },
 
+      setFamily: (family, argument, value) => {
+        if (!entry.families.has(family)) {
+          throw new Error(`Plugin '${id}' writes family '${family}' without declaring it`);
+        }
+
+        const key = variableKey(family, argument);
+        if (value === undefined) this.options.variables.delete(key);
+        else this.options.variables.set(key, value);
+      },
+
+      onWatched: (listen) => {
+        entry.watchers.push(listen);
+        // Told at once what is already wanted: a plugin installed after the
+        // profiles were loaded would otherwise wait for the next edit to
+        // learn there is anything to watch at all.
+        if (entry.watched.length > 0) listen(entry.watched);
+
+        return () => {
+          const at = entry.watchers.indexOf(listen);
+          if (at >= 0) entry.watchers.splice(at, 1);
+        };
+      },
+
       setStatus: (status, message) => {
         entry.status = status;
         entry.message = message;
@@ -300,6 +377,10 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
     this.emit('status', entry.manifest.id, entry.status, entry.message);
     this.emit('error', cause instanceof Error ? cause : new Error(describe(cause)));
   }
+}
+
+function same(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((key, index) => key === b[index]);
 }
 
 function describe(cause: unknown): string {
