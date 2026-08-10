@@ -19,6 +19,7 @@ import { DeckRegistry } from './application/deck-registry.js';
 import { PluginRuntime } from './application/plugin-runtime.js';
 import { PluginSettingsStore } from './infrastructure/plugins/plugin-settings-store.js';
 import { registerHardwarePlugin } from './infrastructure/plugins/hardware-plugin.js';
+import { registerObsPlugin } from './infrastructure/plugins/obs/obs-plugin.js';
 import { openTarget } from './infrastructure/actions/system-actions.js';
 import type { DeviceDirectory } from './application/device-directory.js';
 import type { SecretVault } from './application/ports/secret-vault.js';
@@ -153,7 +154,10 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
       },
     });
 
-    if (builtIn) await registerHardwarePlugin(actions, plugins);
+    if (builtIn) {
+      await registerHardwarePlugin(actions, plugins);
+      await registerObsPlugin(actions, plugins);
+    }
 
     const watchDirectory =
       options.watchProfiles !== false && profiles instanceof FileProfileRepository

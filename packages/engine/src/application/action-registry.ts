@@ -242,6 +242,17 @@ function checkType(param: ParamDefinition, value: unknown): string | undefined {
       return typeof value === 'boolean' ? undefined : `'${param.name}' must be true or false`;
 
     case 'select': {
+      /*
+       * A list that only the plugin knows is not one this can check against.
+       *
+       * `optionsFrom` names a source the host asks the plugin for while a
+       * configurator is open — the scenes OBS has right now. Checking such a
+       * parameter against the manifest's own (empty) `options` refused every
+       * value there is, which made a perfectly good scene button fail on the
+       * first press.
+       */
+      if (param.optionsFrom !== undefined) return undefined;
+
       const allowed = (param.options ?? []).map((option) => option.value);
       return allowed.includes(String(value))
         ? undefined
