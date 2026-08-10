@@ -97,6 +97,26 @@ describe('putting the values into the picture', () => {
     assert.match(drawn, /width="var\(--gone\)"/, 'left alone rather than blanked');
   });
 
+  it('expands properties the icon never offered as parameters', () => {
+    /*
+     * A picture uses properties it does not offer to configure — a colour it
+     * always draws in — and those must be expanded too. librsvg does not
+     * ignore an unresolved `var()`: it drops the declaration, and dropping a
+     * fill means the shape is not drawn at all. A browser would resolve it
+     * from `:root` and show the picture, so the panel has to as well.
+     */
+    const svg = `<svg><style>
+      :root { --value: 1; --colour: #808080; }
+      .bar { transform: scaleX(var(--value)); fill: var(--colour); }
+    </style><rect class="bar" width="120" height="12"/></svg>`;
+
+    const drawn = applyIconParams(svg, { value: '0.38' });
+
+    assert.match(drawn, /scaleX\(0\.38\)/, 'what was bound');
+    assert.match(drawn, /fill: #808080/, 'and what the icon kept to itself');
+    assert.doesNotMatch(drawn, /var\(/);
+  });
+
   it('leaves an icon with no parameters exactly as it was', () => {
     const svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="#2F80ED"/></svg>';
     assert.equal(applyIconParams(svg, {}), svg);

@@ -135,12 +135,22 @@ export function drawableIcon(
   source: string,
   values: Readonly<Record<string, string>> | undefined,
 ): string {
-  if (!values || Object.keys(values).length === 0) return source;
-
   const svg = svgTextOf(source);
   if (svg === undefined) return source;
 
-  return svgSourceOf(source, applyIconParams(svg, values));
+  /*
+   * Expanded even when nothing was bound.
+   *
+   * An icon that uses `var()` and has not been wired up yet still has to be
+   * drawable: a browser resolves those from the icon's own `:root` and shows
+   * the picture, while librsvg drops the declaration and — for a fill —
+   * the shape with it. Without this, dropping a parametric icon on a key gave
+   * a preview in the window and a hole on the panel, which is the one
+   * disagreement worth going out of the way to avoid.
+   */
+  if (!svg.includes('var(')) return source;
+
+  return svgSourceOf(source, applyIconParams(svg, values ?? {}));
 }
 
 
@@ -307,22 +317,56 @@ export function applyIconParams(svg: string, values: Readonly<Record<string, str
   let out = svg;
 
   for (const [name, value] of Object.entries(values)) {
-    const declaration = new RegExp(`(--${escapeName(name)}\\s*:)([^;}]*)`, 'g');
+    const declaration = new RegExp(`(--${escapeName(name)}\s*:)([^;}]*)`, 'g');
     out = out.replace(declaration, `$1 ${value}`);
   }
+
+  /*
+   * Everything the icon declares for itself, underneath what we were given.
+   *
+   * A picture may use properties it never offered as parameters — a colour it
+   * always draws in, a corner it never varies — and those have to be expanded
+   * too, because librsvg does not merely ignore an unresolved `var()`: it
+   * throws the declaration away, and with a fill that means the shape is not
+   * drawn at all. A browser resolves them from `:root` and shows the picture;
+   * the panel would show a hole, which is the one disagreement this whole
+   * mechanism exists to prevent.
+   */
+  const known = { ...declaredProperties(out), ...values };
 
   // Expanded after the declarations, so a property that reads another one —
   // rare, but legal — sees the value rather than the name.
   out = out.replace(
     /var\(\s*--([A-Za-z0-9_-]+)\s*(?:,\s*([^)]*))?\)/g,
     (whole, name: string, fallback: string | undefined) => {
-      const value = values[name];
+      const value = known[name];
       if (value !== undefined) return value;
       return fallback !== undefined ? fallback.trim() : whole;
     },
   );
 
   return out;
+}
+
+/**
+ * Custom properties the picture sets on itself, wherever it sets them.
+ *
+ * Read out of the text rather than through a stylesheet model: this is a
+ * substitution over markup, and something that started parsing CSS properly
+ * would have to keep doing it for ever. Declarations in the icons this is for
+ * are simple — a `:root` block, occasionally a class — and the last one
+ * written wins, which is what the cascade does at equal specificity anyway.
+ */
+function declaredProperties(svg: string): Record<string, string> {
+  const declared: Record<string, string> = {};
+
+  for (const match of svg.matchAll(/--([A-Za-z0-9_-]+)\s*:\s*([^;}]+)/g)) {
+    const name = match[1];
+    const value = match[2];
+    if (name && value) declared[name] = value.trim();
+  }
+
+  return declared;
 }
 
 function escapeName(name: string): string {

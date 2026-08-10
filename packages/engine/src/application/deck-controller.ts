@@ -14,7 +14,7 @@ import { isStateRange, withinRange } from '../domain/profile.js';
 import { ProfileTree } from '../domain/profile-tree.js';
 import { sceneKeys, sceneSignature } from '../domain/scene.js';
 import type { Scene, SceneLabel, SceneRegion } from '../domain/scene.js';
-import { readIconParams, resolveIconParams } from '../domain/icon-params.js';
+import { readIconParams, resolveIconParams, svgTextOf } from '../domain/icon-params.js';
 import { renderTemplate } from '../domain/template.js';
 import { validateProfile } from '../domain/validate-profile.js';
 import {
@@ -554,7 +554,14 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
 
   private resolveVisual(button: ButtonDefinition): ButtonVisual {
     const { visual } = this.resolveState(button);
-    const parametric = visual.icon?.params !== undefined;
+
+    /*
+     * A picture counts as parametric once it *declares* anything, bound or
+     * not: its own defaults have to be worked out too, so an icon dropped on
+     * a key and not yet wired up still shows what it was drawn to show.
+     */
+    const iconParams = visual.icon ? readIconParams(svgTextOf(visual.icon.source) ?? '') : [];
+    const parametric = iconParams.length > 0 || visual.icon?.params !== undefined;
     if (!visual.label && !parametric) return visual;
 
     const snapshot: Record<string, VariableValue> = this.variables.snapshot();
@@ -576,11 +583,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
       parametric && visual.icon
         ? {
             ...visual.icon,
-            values: resolveIconParams(
-              readIconParams(visual.icon.source),
-              visual.icon.params,
-              snapshot,
-            ),
+            values: resolveIconParams(iconParams, visual.icon.params, snapshot),
           }
         : visual.icon;
 
