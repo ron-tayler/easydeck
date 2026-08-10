@@ -104,6 +104,19 @@ function preview(preset: ButtonPreset): {
   };
 }
 
+/**
+ * The name, and the description under it where there is one.
+ *
+ * Both in the one tooltip rather than a name here and a question mark badge
+ * there: the tile is a picture of a key now, and a mark floating over it
+ * would be the only thing on the shelf that is not part of a key.
+ */
+function hint(preset: ButtonPreset): string {
+  const description = say(preset.description);
+  return description ? `${say(preset.label)}
+${description}` : say(preset.label);
+}
+
 interface Group {
   readonly plugin: PluginManifest;
   readonly actions: readonly ActionDefinition[];
@@ -160,21 +173,20 @@ const groups = computed<Group[]>(() => {
           <!-- Presets first: they are whole keys, and a palette beside the
                grid is a shelf of keys before it is a list of steps. -->
           <li v-for="preset in group.presets" :key="`preset:${preset.name}`">
+            <!-- The tile *is* the key it will become: same square, same
+                 colour, same words. A caption underneath would have said in
+                 text what the picture already says, at the cost of shrinking
+                 the picture to a third of the tile. The name is on hover,
+                 where it is wanted only when the key alone is not enough. -->
             <div
-              class="action preset"
+              class="preset"
               draggable="true"
+              :style="{ background: preview(preset).background }"
+              :title="hint(preset)"
               @dragstart="onPresetDragStart($event, group.plugin, preset)"
             >
-              <span v-if="say(preset.description)" class="why" :title="say(preset.description)">?</span>
-
-              <!-- The key as it will arrive, in miniature. Nothing explains
-                   the difference between a preset and an action as quickly as
-                   one of them looking like a key. -->
-              <span class="face" :style="{ background: preview(preset).background }">
-                <img v-if="preview(preset).icon" class="face-icon" :src="preview(preset).icon" alt="" />
-                <span class="face-text">{{ preview(preset).text }}</span>
-              </span>
-              <span class="label">{{ say(preset.label) }}</span>
+              <img v-if="preview(preset).icon" class="preset-icon" :src="preview(preset).icon" alt="" />
+              <span class="preset-text">{{ preview(preset).text }}</span>
             </div>
           </li>
 
@@ -354,21 +366,27 @@ ul {
   background: var(--accent-soft);
 }
 
-/* The miniature key. Square, like the thing it stands for. */
-.face {
+/* A key, at the size the palette gives it. */
+.preset {
   position: relative;
-  width: 34px;
-  height: 34px;
-  flex: none;
-  border-radius: 5px;
-  overflow: hidden;
+  aspect-ratio: 1;
   display: grid;
   place-items: center;
-  /* The panel's own key edge, so the tile reads as a key rather than a swatch. */
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 12%);
+  overflow: hidden;
+  /* The grid's own corner, so a shelf of presets lines up with the tiles of
+     actions beside them rather than looking like a different kind of thing. */
+  border-radius: 8px;
+  cursor: grab;
+  /* Its own edge, drawn inside: a border would eat a pixel of the picture and
+     leave the colour looking inset rather than filling the key. */
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 14%);
 }
 
-.face-icon {
+.preset:hover {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.preset-icon {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -376,16 +394,17 @@ ul {
   object-fit: cover;
 }
 
-.face-text {
+.preset-text {
   position: relative;
-  font-size: 9px;
-  line-height: 1.1;
+  font-size: 12px;
+  line-height: 1.15;
+  /* The panel draws labels white unless told otherwise, and so does this. */
   color: #fff;
   text-align: center;
-  padding: 0 2px;
-  /* Two lines of a two-line label; a third would not be legible at this size. */
+  padding: 0 4px;
+  /* Three lines here, where the key has room for them. */
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   white-space: pre-line;
