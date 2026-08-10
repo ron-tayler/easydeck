@@ -1,5 +1,7 @@
 import { createCanvas, loadImage, type SKRSContext2D } from '@napi-rs/canvas';
 
+import { drawableIcon, svgTextOf } from '@easydeck/engine';
+
 import type {
   BackdropSlice,
   ButtonVisual,
@@ -10,6 +12,7 @@ import { RenderError } from '../../domain/render-target.js';
 import type { RgbaBitmap } from '../../domain/render-target.js';
 import type { Rasterizer, RasterizeRequest } from '../../application/ports/rasterizer.js';
 import { resolveFontFamily } from './font-registry.js';
+import { rasterizeSvg } from './svg-rasterizer.js';
 
 const DEFAULT_BACKGROUND = '#000000';
 const DEFAULT_LABEL_COLOR = '#ffffff';
@@ -171,7 +174,32 @@ export class NapiCanvasRasterizer implements Rasterizer {
   private async drawIcon(ctx: SKRSContext2D, w: number, h: number, icon: IconSpec): Promise<void> {
     let image;
     try {
-      image = await loadImage(icon.source as Parameters<typeof loadImage>[0]);
+      /*
+       * A parametric icon is substituted into on its way to being drawn.
+       *
+       * Never before: the picture stored in the profile is what gets
+       * addressed and cached, and rewriting it as the needle moves would
+       * defeat both. The copy lives as long as this call does.
+       */
+      // Only a string can carry markup; bytes are a PNG and have no
+      // parameters to substitute.
+      const source =
+        typeof icon.source === 'string' ? drawableIcon(icon.source, icon.values) : icon.source;
+
+      /*
+       * SVG goes through librsvg, everything else through the canvas library.
+       *
+       * The canvas library ignores a `<style>` block outright — a class that
+       * sets a fill draws black, a transform in a rule moves nothing — which
+       * is exactly how a parametric icon is written. librsvg reads both, and
+       * rendering at the key's own size is what a vector is for.
+       */
+      const svg = typeof source === 'string' ? svgTextOf(source) : undefined;
+      const rendered = svg === undefined ? undefined : await rasterizeSvg(svg, w, h);
+
+      image = await loadImage(
+        (rendered ?? source) as Parameters<typeof loadImage>[0],
+      );
     } catch (cause) {
       throw new RenderError('Could not load icon image', { cause });
     }

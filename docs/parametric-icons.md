@@ -106,6 +106,19 @@ tablet glides while its panel steps looks like one of them is broken.
   ourselves. Simplest of all and gives up the point: that an author can open
   the file in an editor and draw whatever they like.
 
+## Where it stands
+
+Done: the declarations, the arithmetic, the expansion, and both sides drawing
+from it. The panel rasterizes SVG through librsvg and everything else through
+the canvas library, since the latter ignores a `<style>` block outright — a
+class that sets a fill draws black, a transform in a rule moves nothing. A
+machine where the native module will not load falls back to it and loses the
+CSS rather than the ability to draw a key.
+
+Still to come: the gear beside a parametric icon in the key editor, where the
+parameters it declares are wired to variables or to fixed values. Until that
+exists the bindings can only be written into the profile by hand.
+
 ## What is supported
 
 What librsvg understands. Classes, transforms, gradients, opacity: yes.

@@ -29,6 +29,15 @@ export {
   variableKey,
 } from './domain/variables.js';
 export { referencedVariables, renderTemplate, hasPlaceholders } from './domain/template.js';
+export type { IconParam, IconBinding } from './domain/icon-params.js';
+export {
+  readIconParams,
+  resolveIconParams,
+  applyIconParams,
+  svgTextOf,
+  svgSourceOf,
+  drawableIcon,
+} from './domain/icon-params.js';
 export { variablesReadBy } from './domain/profile-variables.js';
 export type {
   ButtonVisual,

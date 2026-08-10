@@ -3,6 +3,8 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { KeyView } from '@easydeck/core';
 
+import { drawableIcon } from '@easydeck/engine/icons';
+
 import KeyLabel from './KeyLabel.vue';
 
 const { t } = useI18n();
@@ -58,6 +60,21 @@ const over = ref(false);
 const background = computed(() => props.view?.visual.background ?? '#111318');
 const label = computed(() => props.view?.visual.label);
 const icon = computed(() => props.view?.visual.icon);
+
+/**
+ * The picture with its parameters filled in, done here rather than upstream.
+ *
+ * The daemon sends the icon exactly as the profile stores it, with the values
+ * beside it — so the picture keeps one address and stays cached however fast
+ * the needle moves, and the substituting costs a string replace per repaint.
+ *
+ * An `<img>` rather than inline markup, deliberately: an SVG inside one is
+ * rendered with no scripts and no external fetches, so icons arriving inside
+ * somebody else's plugin pack never need sanitising.
+ */
+const iconSource = computed(() =>
+  icon.value ? drawableIcon(icon.value.source, icon.value.values) : undefined,
+);
 const backdrop = computed(() => props.view?.visual.backdrop);
 
 /**
@@ -161,7 +178,7 @@ function onDrop(event: DragEvent): void {
       v-if="icon"
       class="icon"
       draggable="false"
-      :src="icon.source"
+      :src="iconSource"
       alt=""
     />
     <!-- The same mark the panel draws, for the same reason: a press that

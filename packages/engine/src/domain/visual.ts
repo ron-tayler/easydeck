@@ -12,6 +12,8 @@
  * any drift between them.
  */
 
+import type { IconBinding } from './icon-params.js';
+
 export interface IconSpec {
   /**
    * Path or data URL. Resolved to bytes by whoever rasterizes the visual.
@@ -22,6 +24,24 @@ export interface IconSpec {
    * icon, where what people wanted was for the picture to fill the key.
    */
   readonly source: string;
+  /**
+   * What feeds each parameter the icon declares, where any does.
+   *
+   * A constant is a value somebody chose once; an object binds a variable, so
+   * the picture answers to it. Absent on every ordinary icon, which is most
+   * of them — see `icon-params.ts` for what the icon says about itself.
+   */
+  readonly params?: Readonly<Record<string, IconBinding>>;
+  /**
+   * What those parameters came to, worked out when the key was resolved.
+   *
+   * Present on a resolved visual, never in a profile. The picture itself is
+   * left exactly as it was: whoever draws it — the renderer here, a browser
+   * over there — substitutes these into a copy. That is what keeps the icon
+   * cacheable while the needle moves, since the thing being addressed and
+   * cached never changes.
+   */
+  readonly values?: Readonly<Record<string, string>>;
 }
 
 export interface LabelSpec {

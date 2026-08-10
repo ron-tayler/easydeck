@@ -34,6 +34,13 @@ export interface IconSpec {
    * across the whole key, and the label goes on top.
    */
   readonly source: Uint8Array | string;
+  /**
+   * What a parametric icon's parameters came to, worked out by the engine.
+   *
+   * Substituted into a copy of the picture on the way to being drawn; the
+   * source itself is left alone, since that is what gets cached.
+   */
+  readonly values?: Readonly<Record<string, string>>;
 }
 
 export interface LabelSpec {

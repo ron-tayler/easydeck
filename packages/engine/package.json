@@ -19,6 +19,10 @@
       "types": "./dist/domain/profile.d.ts",
       "import": "./dist/domain/profile.js"
     },
+    "./icons": {
+      "types": "./dist/domain/icon-params.d.ts",
+      "import": "./dist/domain/icon-params.js"
+    },
     "./variables": {
       "types": "./dist/domain/variables.d.ts",
       "import": "./dist/domain/variables.js"

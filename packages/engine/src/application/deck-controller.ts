@@ -14,6 +14,7 @@ import { isStateRange, withinRange } from '../domain/profile.js';
 import { ProfileTree } from '../domain/profile-tree.js';
 import { sceneKeys, sceneSignature } from '../domain/scene.js';
 import type { Scene, SceneLabel, SceneRegion } from '../domain/scene.js';
+import { readIconParams, resolveIconParams } from '../domain/icon-params.js';
 import { renderTemplate } from '../domain/template.js';
 import { validateProfile } from '../domain/validate-profile.js';
 import {
@@ -553,10 +554,41 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
 
   private resolveVisual(button: ButtonDefinition): ButtonVisual {
     const { visual } = this.resolveState(button);
-    if (!visual.label) return visual;
+    const parametric = visual.icon?.params !== undefined;
+    if (!visual.label && !parametric) return visual;
 
     const snapshot: Record<string, VariableValue> = this.variables.snapshot();
-    return { ...visual, label: { ...visual.label, text: renderTemplate(visual.label.text, snapshot) } };
+
+    const label = visual.label
+      ? { ...visual.label, text: renderTemplate(visual.label.text, snapshot) }
+      : undefined;
+
+    /*
+     * The icon's parameters are worked out here and left beside it, rather
+     * than written into it.
+     *
+     * Substituting them now would produce a different picture on every
+     * repaint, and pictures are addressed and cached by their contents — a
+     * needle that moved would defeat the cache it depends on. Whoever draws
+     * the key does the substituting, on a copy.
+     */
+    const icon =
+      parametric && visual.icon
+        ? {
+            ...visual.icon,
+            values: resolveIconParams(
+              readIconParams(visual.icon.source),
+              visual.icon.params,
+              snapshot,
+            ),
+          }
+        : visual.icon;
+
+    return {
+      ...visual,
+      ...(label ? { label } : {}),
+      ...(icon ? { icon } : {}),
+    };
   }
 
   /** The merged button whose picture covers this key, and where in it we are. */
