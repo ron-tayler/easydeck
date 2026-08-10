@@ -58,6 +58,8 @@ export default {
     stretch: 'Stretch the picture over neighbouring keys',
   },
   plugins: {
+    saved: 'Saved',
+    close: 'Close',
     configure: 'Plugin settings',
     secretStored: 'stored — type a new one to replace it',
     secretEmpty: 'not set',

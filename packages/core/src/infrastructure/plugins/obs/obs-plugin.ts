@@ -46,6 +46,23 @@ export const obsManifest: PluginManifest = {
 
   settings: [
     {
+      /*
+       * Nothing special to the host: an ordinary boolean setting the plugin
+       * reads for itself.
+       *
+       * Which is the point — any plugin can have one, and it means whatever
+       * that plugin decides. Here it means "open the socket": a machine with
+       * no OBS on it should not have something knocking on port 4455 every
+       * half minute for ever, and a plugin that connects the moment it is
+       * installed is a plugin that fails before anybody has configured it.
+       */
+      name: 'enabled',
+      type: 'boolean',
+      label: { en: 'Connect to OBS', ru: 'Подключаться к OBS' },
+      default: false,
+      required: false,
+    },
+    {
       name: 'host',
       type: 'string',
       label: { en: 'Address', ru: 'Адрес' },
@@ -382,9 +399,16 @@ export class ObsPlugin implements Plugin {
     if (!host) return;
 
     this.connection?.stop();
+    this.connection = undefined;
     this.clearVariables();
 
     const settings = host.settings();
+
+    if (settings['enabled'] !== true) {
+      host.setStatus('off');
+      return;
+    }
+
     this.connection = new ObsConnection({
       ...(this.options.retryDelaysMs ? { retryDelaysMs: this.options.retryDelaysMs } : {}),
       host: String(settings['host'] ?? '127.0.0.1'),

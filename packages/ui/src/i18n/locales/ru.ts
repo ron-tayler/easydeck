@@ -58,6 +58,8 @@ export default {
     stretch: 'Растянуть картинку на соседние клавиши',
   },
   plugins: {
+    saved: 'Сохранено',
+    close: 'Закрыть',
     configure: 'Настройки плагина',
     secretStored: 'сохранено — впишите новое, чтобы заменить',
     secretEmpty: 'не задано',

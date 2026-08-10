@@ -51,7 +51,9 @@ function context(variables: VariableStore): ActionContext {
 }
 
 /** A runtime with the plugin installed, pointed at a fake OBS on a free port. */
-async function bench(options: { password?: string; serverPassword?: string } = {}) {
+async function bench(
+  options: { password?: string; serverPassword?: string; enabled?: boolean } = {},
+) {
   const obs = new FakeObs({
     ...(options.serverPassword === undefined ? {} : { password: options.serverPassword }),
     responses: STATE,
@@ -62,7 +64,12 @@ async function bench(options: { password?: string; serverPassword?: string } = {
   const settings = new PluginSettingsStore(undefined, `${dir}/open`, `${dir}/sealed`);
   await settings.save(
     'obs',
-    { host: '127.0.0.1', port, password: options.password ?? '' },
+    {
+      enabled: options.enabled ?? true,
+      host: '127.0.0.1',
+      port,
+      password: options.password ?? '',
+    },
     obsManifest.settings ?? [],
   );
 
@@ -104,6 +111,31 @@ describe('the OBS plugin', () => {
     assert.equal(bed.variables.get('obs.streaming'), false);
     assert.equal(bed.variables.get('obs.replay-buffer'), true);
 
+    await bed.dispose();
+  });
+
+  it('stays off until somebody turns it on', async () => {
+    // A machine with no OBS on it should not have something knocking on port
+    // 4455 every half minute for ever, and a plugin that connects the moment
+    // it is installed fails before anybody has configured it.
+    const bed = await bench({ enabled: false });
+    await delay(120);
+
+    assert.equal(bed.runtime.status('obs')?.status, 'off');
+    assert.equal(bed.obs.requests.length, 0, 'nothing was asked of OBS');
+    assert.equal(bed.variables.get('obs.connected'), false);
+
+    await bed.dispose();
+  });
+
+  it('connects as soon as it is turned on, without a restart', async () => {
+    const bed = await bench({ enabled: false });
+    await delay(80);
+    assert.equal(bed.runtime.status('obs')?.status, 'off');
+
+    await bed.runtime.configure('obs', { enabled: true });
+
+    await bed.until('a connection', () => bed.runtime.status('obs')?.status === 'ready');
     await bed.dispose();
   });
 

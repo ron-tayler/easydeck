@@ -91,6 +91,14 @@ function save(): void {
     else values[field.name] = raw;
   }
 
+  // Nothing is sent twice: what was saved is no longer something the user
+  // has changed, and a secret box is emptied because its contents are now
+  // stored rather than pending.
+  touched.value = new Set();
+  for (const field of fields.value) {
+    if (field.secret) draft.value = { ...draft.value, [field.name]: '' };
+  }
+
   emit('save', values);
 }
 </script>
@@ -117,17 +125,24 @@ function save(): void {
       </p>
 
       <form @submit.prevent="save">
-        <label v-for="field in fields" :key="field.name" class="field">
+        <label
+          v-for="field in fields"
+          :key="field.name"
+          class="field"
+          :class="{ tick: field.type === 'boolean' }"
+        >
           <span>{{ say(field.label) }}</span>
 
-          <select
+          <!-- A box to tick rather than a list of two: this is the shape a
+               plugin's own switch wants, and a switch is what most booleans
+               here will be. -->
+          <input
             v-if="field.type === 'boolean'"
-            :value="draft[field.name]"
-            @change="set(field, ($event.target as HTMLSelectElement).value)"
-          >
-            <option value="false">{{ t('editor.whenFalse') }}</option>
-            <option value="true">{{ t('editor.whenTrue') }}</option>
-          </select>
+            type="checkbox"
+            class="switch"
+            :checked="draft[field.name] === 'true'"
+            @change="set(field, ($event.target as HTMLInputElement).checked ? 'true' : 'false')"
+          />
 
           <select
             v-else-if="field.type === 'select'"
@@ -181,11 +196,15 @@ function save(): void {
 
       <p v-if="note" class="note">{{ note }}</p>
 
+      <!-- Save stays, Close leaves. The window is where you watch the lamp
+           turn green after typing a password, so saving must not take it
+           away — and a plugin reconnects on save by itself, which is the
+           thing worth watching. -->
       <footer>
-        <button type="button" @click="emit('close')">{{ t('prompt.cancel') }}</button>
         <button type="button" class="primary" :disabled="busy" @click="save">
           {{ t('editor.save') }}
         </button>
+        <button type="button" @click="emit('close')">{{ t('plugins.close') }}</button>
       </footer>
     </div>
   </div>
@@ -276,6 +295,21 @@ form {
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
+}
+
+/* A tick sits beside its label rather than under it. */
+.field.tick {
+  flex-direction: row-reverse;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.switch {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin: 0;
 }
 
 .commands {

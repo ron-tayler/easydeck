@@ -662,16 +662,32 @@ function onConfigurePlugin(pluginId: string): void {
   })();
 }
 
+/**
+ * Saves and stays.
+ *
+ * The window is where somebody watches the lamp turn green after typing a
+ * password, and a plugin reconnects on save by itself — closing on Save meant
+ * typing a password, losing the window, and having no idea whether it worked.
+ * What is reloaded afterwards is which secrets are now stored, so the
+ * password box stops offering to remember one it already has.
+ */
 function onSavePluginSettings(values: Record<string, VariableValue>): void {
   const open = configuring.value;
   if (!open) return;
 
   void (async () => {
+    configuring.value = { ...open, busy: true, note: undefined };
     try {
       await deck.savePluginSettings(open.pluginId, values);
-      configuring.value = undefined;
+      const reloaded = await deck.pluginSettings(open.pluginId);
+      configuring.value = {
+        pluginId: open.pluginId,
+        ...reloaded,
+        filledSecrets: reloaded.filledSecrets ?? [],
+        note: t('plugins.saved'),
+      };
     } catch (error) {
-      deck.lastError.value = (error as Error).message;
+      configuring.value = { ...open, busy: false, note: (error as Error).message };
     }
   })();
 }
