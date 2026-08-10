@@ -28,6 +28,7 @@ export type {
   VariableType,
   VariableOption,
   VariableDeclaration,
+  VariableArgument,
   PluginManifest,
   PluginCommand,
   ButtonPreset,

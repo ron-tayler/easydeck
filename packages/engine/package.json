@@ -19,6 +19,10 @@
       "types": "./dist/domain/profile.d.ts",
       "import": "./dist/domain/profile.js"
     },
+    "./variables": {
+      "types": "./dist/domain/variables.d.ts",
+      "import": "./dist/domain/variables.js"
+    },
     "./label": {
       "types": "./dist/domain/label-layout.d.ts",
       "import": "./dist/domain/label-layout.js"
