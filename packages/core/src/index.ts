@@ -22,6 +22,8 @@ export type {
   ButtonEvent,
   ButtonVisual,
   IconSpec,
+  IconParam,
+  IconBinding,
   LabelSpec,
   KeyView,
   VariableValue,

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import type {
   ButtonDefinition,
   ButtonStateDefinition,
+  IconBinding,
   IconSpec,
   LibraryImage,
   LocalizedText,
@@ -15,9 +16,11 @@ import type {
 } from '@easydeck/core';
 
 import { isStateRange } from '@easydeck/engine/profile';
+import { readIconParams, svgTextOf } from '@easydeck/engine/icons';
 import { parseVariableKey, variableKey } from '@easydeck/engine/variables';
 import { renderTemplate } from '@easydeck/engine/template';
 
+import IconParams from './IconParams.vue';
 import IconPicker from './IconPicker.vue';
 import { TEXT_POSITIONS, textPositionIcon } from '../icons/text-position.js';
 import KeyLabel from './KeyLabel.vue';
@@ -297,6 +300,28 @@ function moveStep(target: number, payload: string): void {
   });
 
   draft.value = { ...draft.value, states };
+}
+
+// --- a picture that answers to a variable ---------------------------------
+
+const iconParamsOpen = ref(false);
+
+/** Whether the chosen picture declares anything to wire up. */
+const iconIsParametric = computed(() => {
+  const source = state.value.visual.icon?.source;
+  if (!source) return false;
+  return readIconParams(svgTextOf(source) ?? '').length > 0;
+});
+
+function setIconParams(params: Record<string, IconBinding>): void {
+  const icon = state.value.visual.icon;
+  if (!icon) return;
+
+  // An empty set is stored as absent: a profile should not carry a field
+  // saying that nothing was configured.
+  patchVisual({
+    icon: Object.keys(params).length > 0 ? { ...icon, params } : { source: icon.source },
+  });
 }
 
 /**
@@ -746,6 +771,19 @@ const preview = computed(() => {
                 @input="patchVisual({ background: ($event.target as HTMLInputElement).value })"
               />
 
+              <!-- Only where the picture asks for it: an ordinary icon declares
+                   no parameters, so the gear is absent from almost every key. -->
+              <button
+                v-if="iconIsParametric"
+                type="button"
+                class="icon-gear"
+                :title="t('editor.iconParams')"
+                :aria-label="t('editor.iconParams')"
+                @click="iconParamsOpen = true"
+              >
+                ⚙
+              </button>
+
               <IconPicker
                 :icon="state.visual.icon"
                 :color="state.visual.label?.color ?? '#ffffff'"
@@ -939,6 +977,16 @@ const preview = computed(() => {
         </button>
       </footer>
     </div>
+  <IconParams
+    v-if="iconParamsOpen && state.visual.icon"
+    :source="state.visual.icon.source"
+    :bindings="state.visual.icon.params"
+    :declarations="declarations"
+    :values="variables"
+    @update="setIconParams"
+    @close="iconParamsOpen = false"
+  />
+
   </div>
 </template>
 
@@ -1156,6 +1204,20 @@ h3 {
 .when > input {
   flex: 1;
   min-width: 0;
+}
+
+.icon-gear {
+  flex: none;
+  padding: 4px 6px;
+  font-size: 12px;
+  line-height: 1;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+}
+
+.icon-gear:hover {
+  color: var(--accent);
 }
 
 .label-text {

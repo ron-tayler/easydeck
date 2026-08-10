@@ -33,6 +33,12 @@ writes an expression anywhere.
 </svg>
 ```
 
+Every field: `name` is the custom property without its dashes, `label` and
+`description` are what the settings window shows, `type` is `number` (the
+default), `color` or `text`, `from`/`to` are the range the parameter means in
+its own units, `unit` is what those units are — `deg`, `px`, `%` or nothing —
+and `default` is what the picture shows before it is wired to anything.
+
 `<metadata>` is a standard element every rasterizer ignores, so the file stays
 a plain SVG. The defaults in `:root` are not decoration — they are what the
 icon looks like before it is wired to anything.
@@ -115,9 +121,10 @@ class that sets a fill draws black, a transform in a rule moves nothing. A
 machine where the native module will not load falls back to it and loses the
 CSS rather than the ability to draw a key.
 
-Still to come: the gear beside a parametric icon in the key editor, where the
-parameters it declares are wired to variables or to fixed values. Until that
-exists the bindings can only be written into the profile by hand.
+The gear beside a parametric icon in the key editor is there too: it lists
+what the picture declared and wires each one to a variable or to a fixed
+value. It appears only where the picture asks for it, so an ordinary key never
+shows it.
 
 ## What is supported
 

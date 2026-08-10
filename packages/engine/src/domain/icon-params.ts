@@ -31,6 +31,14 @@ export interface IconParam {
   /** For `number`: the range this parameter means, in its own units. */
   readonly from?: number;
   readonly to?: number;
+  /**
+   * What the number is measured in: `deg`, `px`, `%`, or nothing at all.
+   *
+   * Appended to whatever the arithmetic produces, because CSS is particular
+   * about it — `rotate(35)` is not an angle and `rotate(35deg)` is. A ratio
+   * for `scaleX` has no unit and says so by leaving this out.
+   */
+  readonly unit?: string;
   /** What the icon looks like before it is wired to anything. */
   readonly default?: string | number;
 }
@@ -181,7 +189,7 @@ export function resolveIconParams(
     const binding = bindings?.[param.name];
 
     if (binding === undefined) {
-      if (param.default !== undefined) resolved[param.name] = String(param.default);
+      if (param.default !== undefined) resolved[param.name] = withUnit(param);
       continue;
     }
 
@@ -192,14 +200,14 @@ export function resolveIconParams(
 
     const value = variables[binding.variable];
     if (value === undefined) {
-      if (param.default !== undefined) resolved[param.name] = String(param.default);
+      if (param.default !== undefined) resolved[param.name] = withUnit(param);
       continue;
     }
 
     if (binding.map) {
       const mapped = binding.map[String(value)];
       if (mapped !== undefined) resolved[param.name] = mapped;
-      else if (param.default !== undefined) resolved[param.name] = String(param.default);
+      else if (param.default !== undefined) resolved[param.name] = withUnit(param);
       continue;
     }
 
@@ -208,10 +216,23 @@ export function resolveIconParams(
       continue;
     }
 
-    resolved[param.name] = String(scale(Number(value), binding, param));
+    resolved[param.name] = `${scale(Number(value), binding, param)}${param.unit ?? ''}`;
   }
 
   return resolved;
+}
+
+/**
+ * The default with its unit, unless the icon already wrote one.
+ *
+ * `"default": 0` and `"unit": "deg"` mean `0deg`, and `"default": "0deg"`
+ * means the same — an icon may say it either way, and neither should come out
+ * as `0degdeg`.
+ */
+function withUnit(param: IconParam): string {
+  const value = String(param.default);
+  if (typeof param.default !== 'number' || !param.unit) return value;
+  return `${value}${param.unit}`;
 }
 
 /**

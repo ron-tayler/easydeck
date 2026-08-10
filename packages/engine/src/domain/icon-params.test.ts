@@ -7,7 +7,7 @@ import { applyIconParams, readIconParams, resolveIconParams } from './icon-param
 const NEEDLE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
   <metadata id="easydeck">
     {"params":[
-      {"name":"angle","label":{"en":"Needle"},"from":-120,"to":120,"default":"-120deg"},
+      {"name":"angle","label":{"en":"Needle"},"from":-120,"to":120,"unit":"deg","default":0},
       {"name":"colour","type":"color","default":"#e2483d"}
     ]}
   </metadata>
@@ -49,14 +49,14 @@ describe('working out what a parameter comes to', () => {
       { 'hw.cpu': 50 },
     );
 
-    assert.equal(values['angle'], '0', 'halfway along −120…120');
+    assert.equal(values['angle'], '0deg', 'halfway along −120…120, in the unit it asked for');
   });
 
   it('clamps at both ends, because the ends are what the picture was drawn against', () => {
     const binding = { angle: { variable: 'hw.cpu', from: 0, to: 100 } };
 
-    assert.equal(resolveIconParams(params, binding, { 'hw.cpu': -20 })['angle'], '-120');
-    assert.equal(resolveIconParams(params, binding, { 'hw.cpu': 250 })['angle'], '120');
+    assert.equal(resolveIconParams(params, binding, { 'hw.cpu': -20 })['angle'], '-120deg');
+    assert.equal(resolveIconParams(params, binding, { 'hw.cpu': 250 })['angle'], '120deg');
   });
 
   it('takes a constant as it is, which is how a colour is chosen once', () => {
@@ -75,7 +75,7 @@ describe('working out what a parameter comes to', () => {
     // What an icon looks like before it is wired to anything, and what it
     // goes back to when the plugin behind it stops publishing.
     const values = resolveIconParams(params, { angle: { variable: 'gone' } }, {});
-    assert.equal(values['angle'], '-120deg');
+    assert.equal(values['angle'], '0deg', 'the default, wearing the unit');
   });
 });
 
