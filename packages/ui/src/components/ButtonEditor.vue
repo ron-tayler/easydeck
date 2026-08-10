@@ -214,9 +214,23 @@ function onKeydown(event: KeyboardEvent): void {
 onMounted(() => window.addEventListener('keydown', onKeydown));
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 const renameField = ref<HTMLInputElement[] | HTMLInputElement>();
+/**
+ * The name as it is being typed, held here rather than read off the draft.
+ *
+ * Bound straight to the state, the field was rewritten with the stored name
+ * on every repaint — and the editor repaints whenever a variable ticks over,
+ * which with a gauge on the deck is every couple of seconds. It looked like
+ * the field undoing what you typed, letter by letter.
+ *
+ * The same shape the condition boxes already use, and for the same reason:
+ * these commit when you leave them, so between the first keystroke and that
+ * moment the field is the only place the new name exists.
+ */
+const renameDraft = ref('');
 
 async function startRename(index: number): Promise<void> {
   renaming.value = index;
+  renameDraft.value = draft.value.states[index]?.id ?? '';
   await nextTick();
 
   // `v-for` gives an array of refs even when only one is rendered.
@@ -444,10 +458,11 @@ const preview = computed(() => {
             ref="renameField"
             type="text"
             class="rename"
-            :value="item.id"
+            :value="renameDraft"
+            @input="renameDraft = ($event.target as HTMLInputElement).value"
             @keydown.enter="($event.target as HTMLInputElement).blur()"
             @keydown.esc="renaming = undefined"
-            @blur="renameState(($event.target as HTMLInputElement).value); renaming = undefined"
+            @blur="renameState(renameDraft); renaming = undefined"
           />
           <template v-else>
             <button type="button" class="name" :title="t('editor.reorderStates')" @click="stateIndex = index">
