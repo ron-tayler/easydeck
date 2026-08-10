@@ -103,7 +103,7 @@ describe('FileProfileRepository', () => {
     // that loads but fails on the first press is worse than one that refuses.
     assert.deepEqual(
       loaded.root.pages[0]!.buttons[0]!.states[0]!.actions?.press?.map((action) => action.type),
-      ['system.open', 'easydeck.increment-variable'],
+      ['system.open', 'vars.increment-variable'],
     );
     assert.equal(
       loaded.root.pages[0]!.buttons[0]!.states[0]!.actions?.press?.[0]!.params?.['target'],
@@ -164,6 +164,63 @@ describe('FileProfileRepository', () => {
       'the old down actions must still run before the old up ones',
     );
     assert.deepEqual(actions?.longPress?.map((action) => action.type), ['easydeck.go-home']);
+
+    await rm(isolated, { recursive: true, force: true });
+  });
+
+  it('renames the actions that changed plugin in version 5', async () => {
+    // A plugin owns every type starting with its id, so an action left under
+    // its old name would load and then be refused on the first press.
+    const isolated = await mkdtemp(join(tmpdir(), 'easydeck-v4-'));
+    const store = new FileProfileRepository(isolated);
+
+    const legacy = {
+      formatVersion: 4,
+      id: 'v4',
+      name: 'V4',
+      layout: { rows: 1, cols: 1 },
+      root: {
+        id: 'root',
+        name: 'Root',
+        pages: [
+          {
+            id: 'main',
+            buttons: [
+              {
+                id: 'b',
+                key: 0,
+                states: [
+                  {
+                    id: 'default',
+                    visual: {},
+                    actions: {
+                      press: [
+                        { type: 'easydeck.toggle-variable', params: { name: 'mic' } },
+                        { type: 'keyboard.hotkey', params: { keys: 'ctrl+m' } },
+                        { type: 'easydeck.delay', params: { ms: 100 } },
+                        { type: 'easydeck.go-home' },
+                      ],
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    await writeFile(join(isolated, 'v4.json'), JSON.stringify(legacy), 'utf8');
+
+    const loaded = await store.load('v4');
+    const actions = loaded.root.pages[0]!.buttons[0]!.states[0]!.actions;
+
+    assert.equal(loaded.formatVersion, PROFILE_FORMAT_VERSION);
+    assert.deepEqual(
+      actions?.press?.map((action) => action.type),
+      // Navigation never moved, so its name is left alone.
+      ['vars.toggle-variable', 'system.hotkey', 'system.delay', 'easydeck.go-home'],
+    );
+    assert.equal(actions?.press?.[1]!.params?.['keys'], 'ctrl+m');
 
     await rm(isolated, { recursive: true, force: true });
   });

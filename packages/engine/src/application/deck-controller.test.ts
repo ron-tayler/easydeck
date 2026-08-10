@@ -70,14 +70,14 @@ const testProfile: ProfileDefinition = {
                 id: 'on',
                 visual: { background: '#0f0', label: { text: 'Мик вкл' } },
                 actions: {
-                  press: [{ type: 'easydeck.set-variable', params: { name: 'micOn', value: 'off' } }],
+                  press: [{ type: 'vars.set-variable', params: { name: 'micOn', value: 'off' } }],
                 },
               },
               {
                 id: 'off',
                 visual: { background: '#f00', label: { text: 'Мик выкл' } },
                 actions: {
-                  press: [{ type: 'easydeck.set-variable', params: { name: 'micOn', value: 'on' } }],
+                  press: [{ type: 'vars.set-variable', params: { name: 'micOn', value: 'on' } }],
                 },
               },
             ],
@@ -90,9 +90,9 @@ const testProfile: ProfileDefinition = {
                 id: 'default',
                 visual: { background: '#222', label: { text: 'Зрителей: {{viewers}}' } },
                 actions: {
-                  press: [{ type: 'easydeck.increment-variable', params: { name: 'viewers' } }],
+                  press: [{ type: 'vars.increment-variable', params: { name: 'viewers' } }],
                   longPress: [
-                    { type: 'easydeck.set-variable', params: { name: 'viewers', value: 0 } },
+                    { type: 'vars.set-variable', params: { name: 'viewers', value: 0 } },
                   ],
                 },
               },

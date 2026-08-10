@@ -94,9 +94,9 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
                     label: { text: '{{clicks}}', fontSize: 40, color: '#ffd166' },
                   },
                   actions: {
-                    press: [{ type: 'easydeck.increment-variable', params: { name: 'clicks' } }],
+                    press: [{ type: 'vars.increment-variable', params: { name: 'clicks' } }],
                     longPress: [
-                      { type: 'easydeck.set-variable', params: { name: 'clicks', value: 0 } },
+                      { type: 'vars.set-variable', params: { name: 'clicks', value: 0 } },
                     ],
                   },
                 },
@@ -113,7 +113,7 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
                   actions: {
                     press: [
                       { type: 'deck.set-brightness', params: { percent: 100 } },
-                      { type: 'easydeck.set-variable', params: { name: 'bright', value: 'high' } },
+                      { type: 'vars.set-variable', params: { name: 'bright', value: 'high' } },
                     ],
                   },
                 },
@@ -123,7 +123,7 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
                   actions: {
                     press: [
                       { type: 'deck.set-brightness', params: { percent: 40 } },
-                      { type: 'easydeck.set-variable', params: { name: 'bright', value: 'normal' } },
+                      { type: 'vars.set-variable', params: { name: 'bright', value: 'normal' } },
                     ],
                   },
                 },

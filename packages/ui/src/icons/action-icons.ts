@@ -41,6 +41,15 @@ export const ACTION_ICONS: Readonly<Record<string, string>> = {
   text: 'M4 5h16v3h-6v11h-4V8H4z',
   keyboard: 'M3 7h18v10H3zm3 2v2h2V9zm4 0v2h2V9zm4 0v2h2V9zM6 13v2h12v-2z',
 
+  // Sound and playback
+  'play-pause': 'M4 5l7 7-7 7zM14 5h2v14h-2zm4 0h2v14h-2z',
+  stop: 'M6 6h12v12H6z',
+  previous: 'M6 5h2v14H6zm13 0v14l-10-7z',
+  next: 'M16 5h2v14h-2zM5 5l10 7-10 7z',
+  'volume-up': 'M3 9h3l4-4v14l-4-4H3zM13 12h8v2h-8zM16 9h2v8h-2z',
+  'volume-down': 'M3 9h3l4-4v14l-4-4H3zM13 12h8v2h-8z',
+  mute: 'M3 9h3l4-4v14l-4-4H3zm11.6.2L13.2 10.6 15.6 13l-2.4 2.4 1.4 1.4L17 14.4l2.4 2.4 1.4-1.4L18.4 13l2.4-2.4-1.4-1.4L17 11.6z',
+
   // Programs and the world outside
   app: 'M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z',
   link: 'M10 6h4a5 5 0 010 10h-4v-2h4a3 3 0 000-6h-4zm-1 4h6v2H9zm-3-4h4v2H6a3 3 0 000 6h4v2H6A5 5 0 016 6z',

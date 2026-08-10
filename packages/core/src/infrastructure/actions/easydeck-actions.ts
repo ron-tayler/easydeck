@@ -1,17 +1,16 @@
 import { mkdir } from 'node:fs/promises';
 
-import { EASYDECK_PLUGIN_ID } from '@easydeck/engine';
 import type { ActionDefinition, ActionRegistry } from '@easydeck/engine';
 
 import { configDir, iconsDir, pluginsDir, profilesDir } from '../config-paths.js';
 import { openTarget } from './system-actions.js';
 
 /**
- * The parts of the EasyDeck plugin that need the filesystem.
+ * Opening EasyDeck's own folders, contributed to the system plugin.
  *
- * The rest of the plugin — navigation, variables, button state — is pure and
- * lives in the engine. These are contributed by the host instead, because
- * only the host knows where EasyDeck keeps its files.
+ * They live with "run a program" and "open a link" because that is what they
+ * are — the only difference is that the path is one the program knows and the
+ * user should not have to.
  *
  * They exist because "open the folder my profiles are in" is something people
  * want constantly and should never have to answer with a path. A generic
@@ -19,25 +18,25 @@ import { openTarget } from './system-actions.js';
  */
 const folderActions: readonly ActionDefinition[] = [
   {
-    type: 'easydeck.open-config-folder',
+    type: 'system.open-config-folder',
     icon: 'folder-open',
     label: { en: 'Open config folder', ru: 'Открыть папку настроек' },
     group: { en: 'Folders', ru: 'Папки' },
   },
   {
-    type: 'easydeck.open-profiles-folder',
+    type: 'system.open-profiles-folder',
     icon: 'folder-open',
     label: { en: 'Open profiles folder', ru: 'Открыть папку профилей' },
     group: { en: 'Folders', ru: 'Папки' },
   },
   {
-    type: 'easydeck.open-plugins-folder',
+    type: 'system.open-plugins-folder',
     icon: 'folder-open',
     label: { en: 'Open plugins folder', ru: 'Открыть папку плагинов' },
     group: { en: 'Folders', ru: 'Папки' },
   },
   {
-    type: 'easydeck.open-icons-folder',
+    type: 'system.open-icons-folder',
     icon: 'folder-open',
     label: { en: 'Open icons folder', ru: 'Открыть папку иконок' },
     group: { en: 'Folders', ru: 'Папки' },
@@ -52,10 +51,10 @@ export function registerEasyDeckFolderActions(registry: ActionRegistry): ActionR
     openTarget(directory);
   };
 
-  return registry.extendPlugin(EASYDECK_PLUGIN_ID, folderActions, {
-    'easydeck.open-config-folder': () => openDirectory(configDir()),
-    'easydeck.open-profiles-folder': () => openDirectory(profilesDir()),
-    'easydeck.open-plugins-folder': () => openDirectory(pluginsDir()),
-    'easydeck.open-icons-folder': () => openDirectory(iconsDir()),
+  return registry.extendPlugin('system', folderActions, {
+    'system.open-config-folder': () => openDirectory(configDir()),
+    'system.open-profiles-folder': () => openDirectory(profilesDir()),
+    'system.open-plugins-folder': () => openDirectory(pluginsDir()),
+    'system.open-icons-folder': () => openDirectory(iconsDir()),
   });
 }

@@ -11,6 +11,7 @@ import type { DaemonSettings } from './domain/settings.js';
 import { registerDeviceActions } from './infrastructure/actions/device-actions.js';
 import { registerEasyDeckFolderActions } from './infrastructure/actions/easydeck-actions.js';
 import { registerKeyboardActions } from './infrastructure/actions/keyboard-actions.js';
+import { registerMediaActions } from './infrastructure/actions/media-actions.js';
 import { registerSystemActions } from './infrastructure/actions/system-actions.js';
 import { FileProfileRepository } from './infrastructure/file-profile-repository.js';
 import { FileSettingsRepository } from './infrastructure/file-settings-repository.js';
@@ -98,6 +99,8 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
       registerDeviceActions(actions, (deckId) => registry?.get(deckId)?.surface, brightness);
       const keyboard = await registerKeyboardActions(actions);
       if (keyboard.reason) warnings.push(keyboard.reason);
+      const media = await registerMediaActions(actions);
+      if (media.reason) warnings.push(media.reason);
     }
 
     registry = new DeckRegistry(actions);

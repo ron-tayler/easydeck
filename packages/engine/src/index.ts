@@ -75,7 +75,9 @@ export { ActionRegistry } from './application/action-registry.js';
 export {
   registerBuiltinActions,
   EASYDECK_PLUGIN_ID,
-  easydeckManifest,
+  VARIABLES_PLUGIN_ID,
+  navigationManifest,
+  variablesManifest,
 } from './application/builtin-actions.js';
 export type {
   PluginManifest,

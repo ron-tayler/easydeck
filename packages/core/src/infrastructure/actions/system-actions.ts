@@ -25,8 +25,8 @@ export const systemManifest: PluginManifest = {
   id: 'system',
   name: { en: 'System', ru: 'Система' },
   description: {
-    en: 'Launches programs and opens files, folders and links',
-    ru: 'Запуск программ и открытие файлов, папок и ссылок',
+    en: 'Programs, files and links, the keyboard, and waiting',
+    ru: 'Программы, файлы и ссылки, клавиатура и паузы',
   },
   version: '1.0.0',
   apiVersion: PLUGIN_API_VERSION,
@@ -114,9 +114,9 @@ export const httpManifest: PluginManifest = {
   ],
 };
 
-export const easydeckTimingActions = [
+export const timingActions = [
   {
-    type: 'easydeck.delay',
+    type: 'system.delay',
     icon: 'clock',
     label: { en: 'Wait', ru: 'Подождать' },
     description: {
@@ -181,8 +181,8 @@ export function registerSystemActions(registry: ActionRegistry): ActionRegistry 
     },
   });
 
-  registry.extendPlugin('easydeck', easydeckTimingActions, {
-    'easydeck.delay': async (params) => {
+  registry.extendPlugin('system', timingActions, {
+    'system.delay': async (params) => {
       const ms = numberParam(params, 'ms', 100);
       await new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
     },

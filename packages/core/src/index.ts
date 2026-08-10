@@ -90,6 +90,8 @@ export { registerDeviceActions } from './infrastructure/actions/device-actions.j
 export type { BrightnessControl } from './infrastructure/actions/device-actions.js';
 export { registerKeyboardActions } from './infrastructure/actions/keyboard-actions.js';
 export type { KeyboardActionsResult } from './infrastructure/actions/keyboard-actions.js';
+export { registerMediaActions } from './infrastructure/actions/media-actions.js';
+export type { MediaActionsResult } from './infrastructure/actions/media-actions.js';
 export { toComposerPort } from './infrastructure/composer-adapter.js';
 export {
   toEncoderPort,

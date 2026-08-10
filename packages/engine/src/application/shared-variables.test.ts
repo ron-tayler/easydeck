@@ -39,7 +39,7 @@ function profileWith(id: string): ProfileDefinition {
                   id: 'default',
                   visual: { label: { text: 'toggle' } },
                   actions: {
-                    press: [{ type: 'easydeck.toggle-variable', params: { name: 'micOn' } }],
+                    press: [{ type: 'vars.toggle-variable', params: { name: 'micOn' } }],
                   },
                 },
               ],

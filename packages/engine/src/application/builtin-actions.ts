@@ -4,26 +4,33 @@ import type { PluginManifest } from '../domain/plugin.js';
 import type { ActionRegistry } from './action-registry.js';
 
 /**
- * The EasyDeck plugin: navigation, variables and button state.
+ * The two plugins that come with the engine: getting about, and remembering
+ * things.
  *
- * Everything is a plugin, including this one — it simply ships in the box and
- * runs in-process. A profile cannot tell the difference between its actions
+ * Everything is a plugin, including these — they simply ship in the box and
+ * run in-process. A profile cannot tell the difference between their actions
  * and a third party's, and neither can the configurator, which is the point:
  * whatever built-ins can do, plugins can do.
  *
+ * Two rather than one because they answer different questions. "Where am I"
+ * and "what does this key remember" are not the same job, and a palette that
+ * files them together makes the user read a list of nine to find either. The
+ * split is also what the sections in the palette are for.
+ *
  * Nothing here touches the outside world, which is what keeps the engine
- * testable without mocking an operating system. The parts of this same plugin
- * that need the filesystem live in the host — a plugin is a namespace and a
- * manifest, not necessarily one module.
+ * testable without mocking an operating system. The parts that need a
+ * filesystem live in the host — a plugin is a namespace and a manifest, not
+ * necessarily one module.
  */
 export const EASYDECK_PLUGIN_ID = 'easydeck';
+export const VARIABLES_PLUGIN_ID = 'vars';
 
-export const easydeckManifest: PluginManifest = {
+export const navigationManifest: PluginManifest = {
   id: EASYDECK_PLUGIN_ID,
-  name: { en: 'EasyDeck', ru: 'EasyDeck' },
+  name: { en: 'Navigation', ru: 'Навигация' },
   description: {
-    en: 'Navigation, variables and button states',
-    ru: 'Навигация, переменные и состояния кнопок',
+    en: 'Moving between scenes and pages',
+    ru: 'Переходы между сценами и страницами',
   },
   version: '1.0.0',
   apiVersion: PLUGIN_API_VERSION,
@@ -85,9 +92,22 @@ export const easydeckManifest: PluginManifest = {
       },
       group: { en: 'Navigation', ru: 'Навигация' },
     },
+  ],
+};
 
+export const variablesManifest: PluginManifest = {
+  id: VARIABLES_PLUGIN_ID,
+  name: { en: 'Variables', ru: 'Переменные' },
+  description: {
+    en: 'Values a deck remembers, and the states that follow them',
+    ru: 'Значения, которые дека помнит, и состояния кнопок',
+  },
+  version: '1.0.0',
+  apiVersion: PLUGIN_API_VERSION,
+  builtIn: true,
+  actions: [
     {
-      type: 'easydeck.set-variable',
+      type: 'vars.set-variable',
       icon: 'variable',
       label: { en: 'Set variable', ru: 'Задать переменную' },
       group: { en: 'Variables', ru: 'Переменные' },
@@ -97,14 +117,14 @@ export const easydeckManifest: PluginManifest = {
       ],
     },
     {
-      type: 'easydeck.toggle-variable',
+      type: 'vars.toggle-variable',
       icon: 'toggle',
       label: { en: 'Toggle variable', ru: 'Переключить переменную' },
       group: { en: 'Variables', ru: 'Переменные' },
       params: [{ name: 'name', type: 'variable', label: { en: 'Variable', ru: 'Переменная' } }],
     },
     {
-      type: 'easydeck.increment-variable',
+      type: 'vars.increment-variable',
       icon: 'increment',
       label: { en: 'Add to variable', ru: 'Прибавить к переменной' },
       group: { en: 'Variables', ru: 'Переменные' },
@@ -120,7 +140,7 @@ export const easydeckManifest: PluginManifest = {
       ],
     },
     {
-      type: 'easydeck.cycle-variable',
+      type: 'vars.cycle-variable',
       icon: 'cycle',
       label: { en: 'Cycle variable', ru: 'Перебрать значения' },
       description: {
@@ -140,7 +160,7 @@ export const easydeckManifest: PluginManifest = {
     },
 
     {
-      type: 'easydeck.set-button-state',
+      type: 'vars.set-button-state',
       icon: 'state',
       label: { en: 'Set button state', ru: 'Задать состояние кнопки' },
       group: { en: 'Buttons', ru: 'Кнопки' },
@@ -164,21 +184,23 @@ export const easydeckManifest: PluginManifest = {
 };
 
 export function registerBuiltinActions(registry: ActionRegistry): ActionRegistry {
-  return registry.installPlugin(easydeckManifest, {
-    // Navigation. Nothing moves on its own; a user places these on buttons.
+  // Navigation. Nothing moves on its own; a user places these on buttons.
+  registry.installPlugin(navigationManifest, {
     'easydeck.open-folder': (params, ctx) => ctx.openFolder(stringParam(params, 'folderId')),
     'easydeck.go-to-page': (params, ctx) => ctx.goToPage(stringParam(params, 'pageId')),
     'easydeck.go-up': (_params, ctx) => ctx.goUp(),
     'easydeck.go-home': (_params, ctx) => ctx.goHome(),
     'easydeck.go-back': (_params, ctx) => ctx.goBack(),
+  });
 
-    'easydeck.set-variable': (params, ctx) =>
+  return registry.installPlugin(variablesManifest, {
+    'vars.set-variable': (params, ctx) =>
       ctx.variables.set(stringParam(params, 'name'), valueParam(params, 'value')),
-    'easydeck.toggle-variable': (params, ctx) => ctx.variables.toggle(stringParam(params, 'name')),
-    'easydeck.increment-variable': (params, ctx) =>
+    'vars.toggle-variable': (params, ctx) => ctx.variables.toggle(stringParam(params, 'name')),
+    'vars.increment-variable': (params, ctx) =>
       ctx.variables.increment(stringParam(params, 'name'), numberParam(params, 'by', 1)),
 
-    'easydeck.cycle-variable': (params, ctx) => {
+    'vars.cycle-variable': (params, ctx) => {
       const name = stringParam(params, 'name');
       const values = toList(params['values']);
       if (values.length === 0) throw new TypeError("Parameter 'values' must not be empty");
@@ -188,7 +210,7 @@ export function registerBuiltinActions(registry: ActionRegistry): ActionRegistry
       ctx.variables.set(name, values[(index + 1) % values.length]!);
     },
 
-    'easydeck.set-button-state': (params, ctx) => {
+    'vars.set-button-state': (params, ctx) => {
       // Defaulting to the pressed button makes the common self-toggle case a
       // one-parameter action.
       const buttonId = typeof params['buttonId'] === 'string' && params['buttonId'].length > 0

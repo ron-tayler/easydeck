@@ -1,5 +1,5 @@
-import { PLUGIN_API_VERSION, stringParam } from '@easydeck/engine';
-import type { ActionRegistry, PluginManifest } from '@easydeck/engine';
+import { stringParam } from '@easydeck/engine';
+import type { ActionDefinition, ActionRegistry } from '@easydeck/engine';
 
 import { loadUnicodeTyper } from './win32-typing.js';
 
@@ -14,14 +14,14 @@ import { loadUnicodeTyper } from './win32-typing.js';
  * fully working daemon, minus these two actions.
  */
 
-interface NutKeyboard {
+export interface NutKeyboard {
   pressKey(...keys: number[]): Promise<unknown>;
   releaseKey(...keys: number[]): Promise<unknown>;
   type(text: string): Promise<unknown>;
   config: { autoDelayMs: number };
 }
 
-interface NutModule {
+export interface NutModule {
   keyboard: NutKeyboard;
   Key: Record<string, number>;
 }
@@ -58,8 +58,13 @@ const KEY_HOLD_MS = 25;
 
 let cached: NutModule | null | undefined;
 
-/** Loads the native backend once; null means it is unavailable. */
-async function loadBackend(): Promise<NutModule | null> {
+/**
+ * Loads the native backend once; null means it is unavailable.
+ *
+ * Exported because the media actions press keys too, and loading the module
+ * twice would mean two copies of a native addon and two chances to fail.
+ */
+export async function loadKeyboardBackend(): Promise<NutModule | null> {
   if (cached !== undefined) return cached;
 
   try {
@@ -96,19 +101,17 @@ export function resolveKey(module: NutModule, token: string): number {
   throw new Error(`Unknown key '${token}' in hotkey`);
 }
 
-export const keyboardManifest: PluginManifest = {
-  id: 'keyboard',
-  name: { en: 'Keyboard', ru: 'Клавиатура' },
-  description: {
-    en: 'Sends key combinations and types text',
-    ru: 'Отправляет сочетания клавиш и печатает текст',
-  },
-  version: '1.0.0',
-  apiVersion: PLUGIN_API_VERSION,
-  builtIn: true,
-  actions: [
+/**
+ * Typing and key combinations, contributed to the system plugin.
+ *
+ * Not a plugin of their own any more: "press ctrl+S" and "run this program"
+ * are the same kind of errand — telling the computer to do something a person
+ * would otherwise do by hand — and two plugins of two actions each made the
+ * palette longer without making anything easier to find.
+ */
+export const keyboardActions: ActionDefinition[] = [
     {
-      type: 'keyboard.hotkey',
+      type: 'system.hotkey',
       icon: 'keyboard',
       label: { en: 'Press hotkey', ru: 'Нажать сочетание' },
       params: [
@@ -121,13 +124,12 @@ export const keyboardManifest: PluginManifest = {
       ],
     },
     {
-      type: 'keyboard.type-text',
+      type: 'system.type-text',
       icon: 'text',
       label: { en: 'Type text', ru: 'Напечатать текст' },
       params: [{ name: 'text', type: 'text', label: { en: 'Text', ru: 'Текст' } }],
     },
-  ],
-};
+];
 
 export interface KeyboardActionsResult {
   readonly available: boolean;
@@ -137,7 +139,7 @@ export interface KeyboardActionsResult {
 export async function registerKeyboardActions(
   registry: ActionRegistry,
 ): Promise<KeyboardActionsResult> {
-  const backend = await loadBackend();
+  const backend = await loadKeyboardBackend();
   const unicode = await loadUnicodeTyper();
 
   if (!backend) {
@@ -149,8 +151,8 @@ export async function registerKeyboardActions(
     };
   }
 
-  registry.installPlugin(keyboardManifest, {
-    'keyboard.hotkey': async (params) => {
+  registry.extendPlugin('system', keyboardActions, {
+    'system.hotkey': async (params) => {
       const combo = stringParam(params, 'keys');
       const keys = combo.split('+').map((token) => resolveKey(backend, token));
 
@@ -168,7 +170,7 @@ export async function registerKeyboardActions(
      * different text depending on what the user last switched to. Where
      * Windows can be told the character directly, it is.
      */
-    'keyboard.type-text': async (params) => {
+    'system.type-text': async (params) => {
       const text = stringParam(params, 'text');
       if (unicode) unicode.type(text);
       else await backend.keyboard.type(text);

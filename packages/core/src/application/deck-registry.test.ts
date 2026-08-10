@@ -67,7 +67,7 @@ function profileWith(id: string, variable: string): ProfileDefinition {
                   id: 'default',
                   visual: { label: { text: '+' } },
                   actions: {
-                    press: [{ type: 'easydeck.increment-variable', params: { name: variable } }],
+                    press: [{ type: 'vars.increment-variable', params: { name: variable } }],
                   },
                 },
               ],

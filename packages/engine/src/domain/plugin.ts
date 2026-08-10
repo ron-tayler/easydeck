@@ -84,7 +84,7 @@ export interface ParamDefinition {
 }
 
 export interface ActionDefinition {
-  /** Fully qualified and namespaced by plugin, e.g. `easydeck.set-variable`. */
+  /** Fully qualified and namespaced by plugin, e.g. `vars.set-variable`. */
   readonly type: string;
   readonly label: LocalizedText;
   readonly description?: LocalizedText;

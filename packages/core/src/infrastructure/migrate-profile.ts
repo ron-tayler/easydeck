@@ -24,8 +24,42 @@ export function migrateProfile(raw: unknown): ProfileDefinition {
   const v2 = version < 2 ? migrateV1ToV2(document) : (document as unknown as ProfileDefinition);
   const v3 =
     version < 3 ? migrateV2ToV3(v2 as unknown as Record<string, unknown>) : (v2 as ProfileDefinition);
-  return migrateV3ToV4(v3);
+  const v4 = version < 4 ? migrateV3ToV4(v3) : v3;
+  return migrateV4ToV5(v4);
 }
+
+/**
+ * Version 4 kept variables, waiting and the keyboard in whichever plugin they
+ * were first written into; version 5 puts them where a person would look.
+ *
+ * Only names change, and only the ones that moved — navigation keeps its
+ * `easydeck.` prefix because it never left. A rename is not cosmetic here: a
+ * plugin owns every action type beginning with its id, so an action stored
+ * under a plugin that no longer claims it would load and then fail on the
+ * first press.
+ */
+function migrateV4ToV5(profile: ProfileDefinition): ProfileDefinition {
+  return {
+    ...(renameActions(profile, V4_ACTION_TYPES) as ProfileDefinition),
+    formatVersion: PROFILE_FORMAT_VERSION,
+  };
+}
+
+/** What moved between version 4 and version 5, old name to new. */
+const V4_ACTION_TYPES: Readonly<Record<string, string>> = {
+  'easydeck.set-variable': 'vars.set-variable',
+  'easydeck.toggle-variable': 'vars.toggle-variable',
+  'easydeck.increment-variable': 'vars.increment-variable',
+  'easydeck.cycle-variable': 'vars.cycle-variable',
+  'easydeck.set-button-state': 'vars.set-button-state',
+  'easydeck.delay': 'system.delay',
+  'easydeck.open-config-folder': 'system.open-config-folder',
+  'easydeck.open-profiles-folder': 'system.open-profiles-folder',
+  'easydeck.open-plugins-folder': 'system.open-plugins-folder',
+  'easydeck.open-icons-folder': 'system.open-icons-folder',
+  'keyboard.hotkey': 'system.hotkey',
+  'keyboard.type-text': 'system.type-text',
+};
 
 /**
  * Version 3 bound actions to the raw press and release; version 4 binds them
@@ -151,20 +185,20 @@ function migrateV1ToV2(document: Record<string, unknown>): ProfileDefinition {
     root: {
       id: 'root',
       name: typeof document['name'] === 'string' ? document['name'] : 'Root',
-      pages: renameActions(pages) as ProfileDefinition['root']['pages'],
+      pages: renameActions(pages, V1_ACTION_TYPES) as ProfileDefinition['root']['pages'],
     },
     initialPageId: typeof initialPageId === 'string' ? initialPageId : undefined,
   };
 }
 
 /** Rewrites every action type in place, leaving unknown ones untouched. */
-function renameActions(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(renameActions);
+function renameActions(value: unknown, table: Readonly<Record<string, string>>): unknown {
+  if (Array.isArray(value)) return value.map((item) => renameActions(item, table));
   if (typeof value !== 'object' || value === null) return value;
 
   const entries = Object.entries(value as Record<string, unknown>).map(([key, item]) => {
-    if (key === 'type' && typeof item === 'string') return [key, V1_ACTION_TYPES[item] ?? item];
-    return [key, renameActions(item)];
+    if (key === 'type' && typeof item === 'string') return [key, table[item] ?? item];
+    return [key, renameActions(item, table)];
   });
 
   return Object.fromEntries(entries);
