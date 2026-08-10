@@ -36,6 +36,32 @@ export function pluginsDir(): string {
 }
 
 /**
+ * What each plugin has been configured with — a file per plugin.
+ *
+ * Beside the installed plugins rather than inside them: a plugin folder is
+ * something the user drops in and may replace wholesale, and settings that
+ * vanish when a plugin is updated would be a poor surprise. Beside the
+ * profiles rather than inside them for a bigger reason — a profile is meant
+ * to be copied to another machine and shared, while the port OBS listens on
+ * belongs to this machine alone.
+ */
+export function pluginSettingsDir(): string {
+  return join(configDir(), 'plugin-settings');
+}
+
+/**
+ * Tokens, passwords and keys, kept apart from everything else.
+ *
+ * A separate folder so that "send me your settings" stays a safe thing to
+ * ask. The contents are sealed where the platform offers a way to do it and
+ * are readable otherwise, which is stated in the file itself rather than
+ * being left for the user to discover.
+ */
+export function secretsDir(): string {
+  return join(configDir(), 'secrets');
+}
+
+/**
  * Pictures the user has collected, to be offered alongside the built-in set.
  *
  * A folder rather than an import step: dropping files in is how people already

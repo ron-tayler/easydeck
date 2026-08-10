@@ -25,6 +25,7 @@ import { localAddresses } from '../infrastructure/api/network-addresses.js';
 import { DEFAULT_PORT } from '../infrastructure/api/websocket-server.js';
 import { NetworkDeck } from '../infrastructure/network-deck.js';
 import type { DeckEntry, DeckRegistry } from './deck-registry.js';
+import type { PluginRuntime } from './plugin-runtime.js';
 import { openTarget } from '../infrastructure/actions/system-actions.js';
 import type { DeviceDirectory } from './device-directory.js';
 import type { DeckEvents } from './ports/deck-events.js';
@@ -74,6 +75,14 @@ export interface DeckServiceOptions {
   readonly applyNetwork?: () => Promise<{ port: number; networkAccess: boolean } | undefined>;
   /** Directory to watch for externally edited profiles. */
   readonly watchDirectory?: string;
+  /**
+   * The plugins that have a life of their own, if any are running.
+   *
+   * Optional because a deck runs perfectly well without one: the built-in
+   * navigation, system and media plugins are actions and nothing else. It
+   * appears the moment a plugin needs to hold a connection open.
+   */
+  readonly plugins?: PluginRuntime;
 }
 
 /** Debounce for filesystem events: editors save in several bursts. */
@@ -208,6 +217,11 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
 
   async plugins(): Promise<readonly PluginManifest[]> {
     return this.options.actions.plugins();
+  }
+
+  /** The running plugins, for whoever configures them. */
+  get pluginRuntime(): PluginRuntime | undefined {
+    return this.options.plugins;
   }
 
   /**
@@ -490,6 +504,9 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     if (this.reloadTimer) clearTimeout(this.reloadTimer);
     this.watcher?.close();
 
+    // Before the decks: a plugin clears its variables on the way out, and it
+    // should do that while there is still something to repaint.
+    await this.options.plugins?.stopAll();
     await this.options.decks.stop();
   }
 

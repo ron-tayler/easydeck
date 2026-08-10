@@ -81,12 +81,21 @@ export {
 } from './application/builtin-actions.js';
 export type {
   PluginManifest,
+  PluginCommand,
   ActionDefinition,
   ParamDefinition,
   ParamOption,
   ParamType,
   LocalizedText,
 } from './domain/plugin.js';
+export type {
+  Plugin,
+  PluginHost,
+  PluginStatus,
+  RouteHandler,
+  RouteRequest,
+  RouteResponse,
+} from './domain/plugin-host.js';
 export { PLUGIN_API_VERSION, localized } from './domain/plugin.js';
 export { DeckController } from './application/deck-controller.js';
 export type {

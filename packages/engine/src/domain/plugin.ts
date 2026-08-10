@@ -77,6 +77,28 @@ export interface ParamDefinition {
   readonly placeholder?: LocalizedText;
   /** For `select`. */
   readonly options?: readonly ParamOption[];
+  /**
+   * Where the choices come from when only the plugin can know them.
+   *
+   * A name the plugin registers at run time — `'scenes'`, `'sources'` — and
+   * the host qualifies with the plugin's id. Static `options` cannot express
+   * a list that only exists while OBS is running, and asking the user to type
+   * a scene name exactly is a guess dressed up as a field.
+   *
+   * The configurator must still let the name be typed by hand: the moment
+   * somebody sets up their buttons is precisely the moment the program those
+   * choices come from is likely to be closed.
+   */
+  readonly optionsFrom?: string;
+  /**
+   * A password, token or key: stored apart and never sent to a client.
+   *
+   * The configurator is told the field exists and whether it is filled, never
+   * what is in it. A form that round-trips a token through a browser in order
+   * to save an unrelated field is a token in a browser's memory, its logs and
+   * possibly its history.
+   */
+  readonly secret?: boolean;
   /** For `number`. */
   readonly min?: number;
   readonly max?: number;
@@ -102,6 +124,25 @@ export interface ActionDefinition {
   readonly icon?: string;
 }
 
+/**
+ * Something a plugin does from its own settings window rather than a key.
+ *
+ * Authorising with Twitch, reconnecting to OBS, testing a token: real work,
+ * but not work anybody wants on a button. Keeping them out of the action
+ * palette is the point — a palette listing "Authorise" next to "Switch scene"
+ * invites somebody to bind the one that opens a browser to a key they press
+ * by accident.
+ */
+export interface PluginCommand {
+  /** Unique within the plugin; not namespaced, since it is never stored. */
+  readonly name: string;
+  readonly label: LocalizedText;
+  readonly description?: LocalizedText;
+  readonly icon?: string;
+  /** Asked before running it, for commands that throw away access. */
+  readonly confirm?: LocalizedText;
+}
+
 export interface PluginManifest {
   /** Short and stable; the prefix of every action type the plugin declares. */
   readonly id: string;
@@ -124,6 +165,16 @@ export interface PluginManifest {
    * after it first happens to change, which is impossible to design against.
    */
   readonly variables?: readonly VariableDeclaration[];
+  /**
+   * What the plugin needs to know before it can do anything.
+   *
+   * Described with the same parameter definitions as an action, so the
+   * configurator draws this form with the machinery it already has, and a
+   * plugin still ships no UI of its own.
+   */
+  readonly settings?: readonly ParamDefinition[];
+  /** Buttons at the foot of the settings window. */
+  readonly commands?: readonly PluginCommand[];
 }
 
 /** Picks the best translation available, falling back to English. */

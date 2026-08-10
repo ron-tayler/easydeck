@@ -16,7 +16,11 @@ import { registerSystemActions } from './infrastructure/actions/system-actions.j
 import { FileProfileRepository } from './infrastructure/file-profile-repository.js';
 import { FileSettingsRepository } from './infrastructure/file-settings-repository.js';
 import { DeckRegistry } from './application/deck-registry.js';
+import { PluginRuntime } from './application/plugin-runtime.js';
+import { PluginSettingsStore } from './infrastructure/plugins/plugin-settings-store.js';
+import { openTarget } from './infrastructure/actions/system-actions.js';
 import type { DeviceDirectory } from './application/device-directory.js';
+import type { SecretVault } from './application/ports/secret-vault.js';
 import { deckIdFor } from './infrastructure/deck-id.js';
 import { createPhysicalDeck } from './infrastructure/physical-deck.js';
 
@@ -38,6 +42,13 @@ export interface StartDeckOptions {
   readonly devices?: DeviceDirectory;
   /** Brings the API server in line with the stored settings. */
   readonly applyNetwork?: () => Promise<{ port: number; networkAccess: boolean } | undefined>;
+  /**
+   * How a plugin's tokens are sealed on disk.
+   *
+   * Supplied by the desktop app, which has the platform key store; without
+   * one they are written as they are, and the file says so.
+   */
+  readonly secrets?: SecretVault;
 }
 
 /**
@@ -121,6 +132,23 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
       await registry.add(deck, await profileForDeck(profiles, binding?.profileId, profile));
     }
 
+    /*
+     * Plugins with a life of their own, as opposed to a list of actions.
+     *
+     * Nothing is installed here yet — the built-ins are actions and nothing
+     * more. It exists from the start so that a plugin which does hold a
+     * connection has somewhere to hold it, and so its variables land in the
+     * store every deck reads.
+     */
+    const plugins = new PluginRuntime({
+      settings: new PluginSettingsStore(options.secrets),
+      variables: registry.variables,
+      openExternal: (url) => openTarget(url),
+      log: (pluginId, level, message) => {
+        if (level === 'error') warnings.push(`${pluginId}: ${message}`);
+      },
+    });
+
     const watchDirectory =
       options.watchProfiles !== false && profiles instanceof FileProfileRepository
         ? profiles.path
@@ -131,6 +159,7 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
       ...(options.devices ? { devices: options.devices } : {}),
       ...(options.applyNetwork ? { applyNetwork: options.applyNetwork } : {}),
       actions,
+      plugins,
       profiles,
       settings: settingsRepository,
       settingsValue: { ...settings, brightness: initialBrightness },

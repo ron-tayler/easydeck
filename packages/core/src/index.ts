@@ -82,6 +82,16 @@ export {
 } from './infrastructure/config-paths.js';
 export type { Library, LibraryImage } from './infrastructure/icon-library.js';
 export { registerEasyDeckFolderActions } from './infrastructure/actions/folder-actions.js';
+export { PluginRuntime } from './application/plugin-runtime.js';
+export type {
+  PluginState,
+  PluginRuntimeEvents,
+  PluginRuntimeOptions,
+} from './application/plugin-runtime.js';
+export { PluginSettingsStore } from './infrastructure/plugins/plugin-settings-store.js';
+export { plainSecretVault } from './application/ports/secret-vault.js';
+export type { SecretVault } from './application/ports/secret-vault.js';
+export { pluginSettingsDir, secretsDir } from './infrastructure/config-paths.js';
 export { migrateProfile } from './infrastructure/migrate-profile.js';
 export { FileProfileRepository, assertSafeProfileId } from './infrastructure/file-profile-repository.js';
 export { FileSettingsRepository } from './infrastructure/file-settings-repository.js';

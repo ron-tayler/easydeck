@@ -11,6 +11,7 @@ import {
   findUiDirectory,
   startApiServer,
 } from '@easydeck/core';
+import { electronSecretVault } from './secret-vault.js';
 import type { ApiSource, AppFolder, DeckEvents, DeckService, DeckState, InstalledPluginSummary, KeyView, Library, LibraryImage, PluginManifest, ProfileDefinition, ProfileSummary, RunningApiServer, VariableValue } from '@easydeck/core';
 
 export type HostStatus =
@@ -338,6 +339,7 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
         settings,
         devices: this.devices,
         applyNetwork: this.applyNetwork,
+        secrets: electronSecretVault(),
       });
       this.deck = deck;
       this.forward(deck);
