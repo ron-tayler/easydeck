@@ -146,16 +146,20 @@ const merged = computed(() => (draft.value.colSpan ?? 1) > 1 || (draft.value.row
 const trigger = ref<'press' | 'longPress' | 'doublePress'>('press');
 
 const ACTION_MIME = 'application/x-easydeck-action';
+/** A step carried out of the sequence below, with enough of it to rebuild. */
+const STEP_PAYLOAD_MIME = 'application/x-easydeck-step-payload';
 
 /**
- * A state tab accepts two things: another tab, and an action.
+ * A state tab accepts three things: another tab, a new action, and a step
+ * being carried out of the sequence below.
  *
  * The tab used to light up for an action and then drop it on the floor —
  * it only ever looked at what it was told about reordering.
  */
 function onStateDragOver(index: number, event: DragEvent): void {
   const types = event.dataTransfer?.types ?? [];
-  if (dragState.value === undefined && !types.includes(ACTION_MIME)) return;
+  const carried = types.includes(ACTION_MIME) || types.includes(STEP_PAYLOAD_MIME);
+  if (dragState.value === undefined && !carried) return;
 
   event.preventDefault();
   dropState.value = index;
@@ -169,10 +173,16 @@ function onStateDragOver(index: number, event: DragEvent): void {
  */
 function onStateDrop(index: number, event: DragEvent): void {
   const dropped = event.dataTransfer?.getData(ACTION_MIME);
+  const carried = event.dataTransfer?.getData(STEP_PAYLOAD_MIME);
   const from = dragState.value;
 
   dragState.value = undefined;
   dropState.value = undefined;
+
+  if (carried) {
+    moveStep(index, carried);
+    return;
+  }
 
   if (!dropped) {
     if (from !== undefined) moveState(from, index);
@@ -242,6 +252,51 @@ async function startRename(index: number): Promise<void> {
   // `v-for` gives an array of refs even when only one is rendered.
   const field = Array.isArray(renameField.value) ? renameField.value[0] : renameField.value;
   field?.select();
+}
+
+/**
+ * Carries a step from the state being edited to another one.
+ *
+ * A move rather than a copy: dragging a step onto a tab is the gesture for
+ * "it belongs over there", and leaving it behind as well would mean pressing
+ * the key runs it twice, once per state, with nothing on screen to say why.
+ *
+ * It lands at the end of the same gesture it came from. A tab is a place, not
+ * a position, and that state's sequence already has an order somebody chose.
+ */
+function moveStep(target: number, payload: string): void {
+  let carried: { trigger: string; index: number; action: Record<string, unknown> };
+  try {
+    carried = JSON.parse(payload) as typeof carried;
+  } catch {
+    return;
+  }
+
+  const source = stateIndex.value;
+  if (target === source) return;
+
+  const gesture = carried.trigger as 'press' | 'longPress' | 'doublePress';
+
+  const states = draft.value.states.map((item, position) => {
+    const actions = item.actions ?? {};
+
+    if (position === source) {
+      const remaining = (actions[gesture] ?? []).filter((_, at) => at !== carried.index);
+      return { ...item, actions: { ...actions, [gesture]: remaining } };
+    }
+
+    if (position === target) {
+      const sequence = actions[gesture] ?? [];
+      return {
+        ...item,
+        actions: { ...actions, [gesture]: [...sequence, carried.action as never] },
+      };
+    }
+
+    return item;
+  });
+
+  draft.value = { ...draft.value, states };
 }
 
 /**
@@ -1068,7 +1123,24 @@ h3 {
   font-weight: 400;
 }
 
-.behaviour { padding: 14px 18px; overflow-y: auto; }
+/*
+ * A column, so the macro editor can fill it.
+ *
+ * The drop zone under the last step is "the rest of the space", and there is
+ * no rest of the space unless something claims the column's height.
+ */
+.behaviour {
+  padding: 14px 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.behaviour > :deep(.macro) {
+  flex: 1;
+  min-height: 0;
+}
 
 .when {
   display: flex;

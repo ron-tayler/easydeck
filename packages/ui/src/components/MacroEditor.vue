@@ -22,6 +22,8 @@ const TRIGGERS: readonly Trigger[] = ['press', 'longPress', 'doublePress'];
 const STEP_MIME = 'application/x-easydeck-step';
 /** What the palette puts on the clipboard, same as the grid already accepts. */
 const ACTION_MIME = 'application/x-easydeck-action';
+/** A step being carried out of this list, with enough of it to rebuild. */
+const STEP_PAYLOAD_MIME = 'application/x-easydeck-step-payload';
 
 const props = defineProps<{
   /** Which gesture is open; owned above so a state tab can add to it. */
@@ -261,6 +263,22 @@ function onDragStart(index: number, event: DragEvent): void {
   dragIndex.value = index;
   open.value = null;
   event.dataTransfer?.setData(STEP_MIME, String(index));
+
+  /*
+   * The step itself travels with its index.
+   *
+   * Reordering needs only "which one"; dropping onto another state's tab
+   * needs "what it was", because that state is a different list in a
+   * different sequence and the index means nothing there.
+   */
+  const action = list.value[index];
+  if (action) {
+    event.dataTransfer?.setData(
+      STEP_PAYLOAD_MIME,
+      JSON.stringify({ trigger: trigger.value, index, action }),
+    );
+  }
+
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
 }
 
@@ -459,11 +477,26 @@ function onTabDrop(which: Trigger): void {
     </ol>
 
 
-    <p v-if="list.length > 1" class="muted hint">{{ t('editor.orderHint') }}</p>
+    <!-- The room below the last step: dropping anywhere in it means "at the
+         end", which is what aiming at empty space under a list is asking for.
 
-    <!-- The room below the last step: dropping there means "at the end",
-         which is what aiming at empty space under a list is asking for. -->
-    <div class="tail" :class="{ over: tailOver }" @dragover="onTailDragOver" @dragleave="tailOver = false" @drop.prevent="onTailDrop" />
+         The whole of it takes the drop; only a band at the top shows it.
+         Lighting up the entire remaining height made a gap of two hundred
+         pixels flash, which reads as the panel rather than the list gaining
+         a step. -->
+    <div
+      class="tail"
+      @dragover="onTailDragOver"
+      @dragleave="tailOver = false"
+      @drop.prevent="onTailDrop"
+    >
+      <div class="tail-mark" :class="{ over: tailOver }" />
+    </div>
+
+    <!-- Under the drop zone rather than above it: between the list and the
+         zone it read as a gap, and the space below the last step is what
+         somebody aims at when they mean "add another". -->
+    <p v-if="list.length > 1" class="muted hint">{{ t('editor.orderHint') }}</p>
   </section>
 </template>
 
@@ -672,12 +705,19 @@ li.dragging {
 .tail {
   flex: 1;
   min-height: 40px;
-  border: 1px dashed transparent;
-  border-radius: 8px;
-  margin-top: 6px;
+  /* Flush with the last step. The section spaces its children apart, which is
+     right between a list and a heading and wrong here: a gap read as the end
+     of the list, with the space below belonging to something else. */
+  margin-top: -10px;
 }
 
-.tail.over {
+.tail-mark {
+  height: 40px;
+  border: 1px dashed transparent;
+  border-radius: 8px;
+}
+
+.tail-mark.over {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
