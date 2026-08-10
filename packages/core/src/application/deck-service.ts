@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { watch } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
 import type { FSWatcher } from 'node:fs';
 
 import type { Surface } from '@easydeck/device';
@@ -15,7 +16,7 @@ import type {
 
 import type { DeckState, NetworkState } from '../domain/api-messages.js';
 import { NoProfilesError, ProfileNotFoundError } from '../domain/errors.js';
-import { iconsDir } from '../infrastructure/config-paths.js';
+import { configDir, iconsDir, pluginsDir, profilesDir } from '../infrastructure/config-paths.js';
 import { listLibraryImages } from '../infrastructure/icon-library.js';
 import type { LibraryImage } from '../infrastructure/icon-library.js';
 import type { DaemonSettings, DeckBinding } from '../domain/settings.js';
@@ -23,9 +24,10 @@ import { localAddresses } from '../infrastructure/api/network-addresses.js';
 import { DEFAULT_PORT } from '../infrastructure/api/websocket-server.js';
 import { NetworkDeck } from '../infrastructure/network-deck.js';
 import type { DeckEntry, DeckRegistry } from './deck-registry.js';
+import { openTarget } from '../infrastructure/actions/system-actions.js';
 import type { DeviceDirectory } from './device-directory.js';
 import type { DeckEvents } from './ports/deck-events.js';
-import type { DeckFacade } from './ports/deck-facade.js';
+import type { AppFolder, DeckFacade } from './ports/deck-facade.js';
 import type { ProfileRepository, ProfileSummary, SettingsRepository } from './ports/repositories.js';
 
 /** Alias kept for readability at the call sites; see DeckEvents. */
@@ -359,6 +361,25 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
   /** What the panel is set to now, for anything computing a change from it. */
   get currentBrightness(): number {
     return this.brightness;
+  }
+
+  /**
+   * Shows the user one of EasyDeck's folders.
+   *
+   * Created first, because a folder that has never been used does not exist
+   * yet — and opening nothing is a confusing way to learn that plugins go in
+   * a directory you were about to be shown.
+   */
+  async openAppFolder(folder: AppFolder): Promise<void> {
+    const directory = {
+      config: configDir,
+      profiles: profilesDir,
+      plugins: pluginsDir,
+      icons: iconsDir,
+    }[folder]();
+
+    await mkdir(directory, { recursive: true });
+    openTarget(directory);
   }
 
   async setBrightness(percent: number): Promise<void> {

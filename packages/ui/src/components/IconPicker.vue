@@ -3,9 +3,19 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { IconSpec, LibraryImage } from '@easydeck/core';
 
-import { ICON_LIBRARY, iconSvg } from '../icons/library.js';
-import type { LibraryIcon } from '../icons/library.js';
-import { LARGE_IMAGE_BYTES, fileIconSource, isAnimated, libraryIconSource } from '../icons/rasterize.js';
+import IconLibrary from './IconLibrary.vue';
+import { LARGE_IMAGE_BYTES, isAnimated } from '../icons/rasterize.js';
+
+/**
+ * The button's picture: what it is now, and one way to change it.
+ *
+ * This used to be the library itself — a column of tiles three wide, wedged
+ * into the editor beside everything else a button has. It was the wrong shape
+ * for the job twice over: too narrow to browse several hundred pictures, and
+ * always present whether or not anyone was choosing one. The collection now
+ * opens in a window with room for it, and what stays here is the answer to
+ * "what does this key show" plus the button that changes it.
+ */
 
 const props = defineProps<{
   icon?: IconSpec;
@@ -19,69 +29,21 @@ const emit = defineEmits<{ update: [icon: IconSpec | undefined] }>();
 
 const { t } = useI18n();
 
-const search = ref('');
-const busy = ref(false);
-const problem = ref('');
-
-const matches = computed<readonly LibraryIcon[]>(() => {
-  const query = search.value.trim().toLowerCase();
-  if (query === '') return ICON_LIBRARY;
-
-  return ICON_LIBRARY.filter(
-    (icon) =>
-      icon.id.includes(query) || icon.keywords.some((word) => word.toLowerCase().includes(query)),
-  );
-});
-
-const userMatches = computed<readonly LibraryImage[]>(() => {
-  const query = search.value.trim().toLowerCase();
-  if (query === '') return props.userIcons;
-  return props.userIcons.filter((image) => image.name.toLowerCase().includes(query));
-});
-
-/** Rendered inline so the grid needs no network and no build-time sprite. */
-const preview = (icon: LibraryIcon): string =>
-  `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(iconSvg(icon, 'currentColor'))))}`;
+const browsing = ref(false);
 
 const animated = computed(() => Boolean(props.icon && isAnimated(props.icon.source)));
-
-const heavy = computed(
-  () => Boolean(props.icon && props.icon.source.length > LARGE_IMAGE_BYTES),
-);
+const heavy = computed(() => Boolean(props.icon && props.icon.source.length > LARGE_IMAGE_BYTES));
 
 function patch(change: Partial<IconSpec>): void {
   if (!props.icon) return;
   emit('update', { ...props.icon, ...change });
 }
 
-async function chooseLibrary(icon: LibraryIcon): Promise<void> {
-  problem.value = '';
-  busy.value = true;
-  try {
-    emit('update', { ...props.icon, source: await libraryIconSource(icon, props.color) });
-  } catch (error) {
-    problem.value = error instanceof Error ? error.message : String(error);
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function chooseFile(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  // Cleared straight away, so picking the same file twice in a row still fires.
-  input.value = '';
-  if (!file) return;
-
-  problem.value = '';
-  busy.value = true;
-  try {
-    emit('update', { ...props.icon, source: await fileIconSource(file) });
-  } catch (error) {
-    problem.value = error instanceof Error ? error.message : String(error);
-  } finally {
-    busy.value = false;
-  }
+function chosen(source: string): void {
+  // Keeps whatever else was set — the fit, above all — so picking a different
+  // picture does not quietly undo how the last one was framed.
+  emit('update', { ...props.icon, source });
+  browsing.value = false;
 }
 </script>
 
@@ -94,71 +56,40 @@ async function chooseFile(event: Event): Promise<void> {
       </button>
     </div>
 
-    <div v-if="icon" class="current">
-      <img :src="icon.source" alt="" />
-      <div class="facts">
-        <span v-if="animated" class="badge">GIF</span>
-        <span class="muted size">{{ Math.round(icon.source.length / 1024) }} KB</span>
-      </div>
-    </div>
+    <button type="button" class="choose" @click="browsing = true">
+      <img v-if="icon" :src="icon.source" alt="" />
+      <span v-else class="none">＋</span>
+      <span class="what">
+        <span>{{ icon ? t('editor.iconChange') : t('editor.iconChoose') }}</span>
+        <span v-if="icon" class="facts muted">
+          <span v-if="animated" class="badge">GIF</span>
+          {{ Math.round(icon.source.length / 1024) }} KB
+        </span>
+      </span>
+    </button>
 
     <p v-if="heavy" class="warn">{{ t('editor.iconHeavy') }}</p>
-    <p v-if="problem" class="warn">{{ problem }}</p>
 
     <div v-if="icon" class="pair">
       <label class="field">
         <span>{{ t('editor.iconFit') }}</span>
-        <select :value="icon.fit ?? 'cover'" @change="patch({ fit: ($event.target as HTMLSelectElement).value as 'contain' | 'cover' })">
+        <select
+          :value="icon.fit ?? 'cover'"
+          @change="patch({ fit: ($event.target as HTMLSelectElement).value as 'contain' | 'cover' })"
+        >
           <option value="cover">{{ t('editor.iconFits.cover') }}</option>
           <option value="contain">{{ t('editor.iconFits.contain') }}</option>
         </select>
       </label>
     </div>
 
-    <input v-model="search" type="text" class="search" :placeholder="t('editor.iconSearch')" />
-
-    <!-- The user's own folder first: someone who put a file there is looking
-         for that file, not for one of ours. -->
-    <template v-if="userMatches.length > 0">
-      <span class="group muted">{{ t('editor.iconMine') }}</span>
-      <div class="grid">
-        <button
-          v-for="item in userMatches"
-          :key="item.name"
-          type="button"
-          class="tile"
-          :title="item.name"
-          :disabled="busy"
-          @click="emit('update', { ...icon, source: item.source })"
-        >
-          <img :src="item.source" alt="" />
-        </button>
-      </div>
-    </template>
-
-    <span v-if="userIcons.length > 0" class="group muted">{{ t('editor.iconBuiltIn') }}</span>
-
-    <div class="grid">
-      <button
-        v-for="item in matches"
-        :key="item.id"
-        type="button"
-        class="tile"
-        :title="item.id"
-        :disabled="busy"
-        @click="chooseLibrary(item)"
-      >
-        <img :src="preview(item)" alt="" />
-      </button>
-      <p v-if="matches.length === 0 && userMatches.length === 0" class="muted none">
-        {{ t('editor.iconNone') }}
-      </p>
-    </div>
-
-    <label class="upload">
-      <input type="file" accept="image/*,.gif" @change="chooseFile" />
-      <span>{{ t('editor.iconFile') }}</span>
-    </label>
+    <IconLibrary
+      v-if="browsing"
+      :color="color"
+      :user-icons="userIcons"
+      @pick="chosen"
+      @close="browsing = false"
+    />
   </div>
 </template>
 
@@ -184,83 +115,81 @@ async function chooseFile(event: Event): Promise<void> {
   padding: 2px 4px;
 }
 
-.clear:hover { color: var(--danger); }
+.clear:hover {
+  color: var(--danger);
+}
 
-.current {
+.choose {
   display: flex;
   align-items: center;
-  gap: 9px;
-}
-
-.current img {
-  width: 48px;
-  height: 48px;
-  object-fit: contain;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-}
-
-.facts { display: flex; flex-direction: column; gap: 3px; }
-
-.badge {
-  align-self: flex-start;
-  padding: 0 5px;
-  border-radius: 7px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 10px;
-}
-
-.size { font-size: 11px; }
-
-.field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
-.field span { color: var(--text-muted); }
-.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
-
-.search { width: 100%; }
-
-.group { font-size: 11px; margin-top: 2px; }
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
-  gap: 4px;
-  max-height: 132px;
-  overflow-y: auto;
-  padding: 4px;
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-}
-
-.tile {
-  display: grid;
-  place-items: center;
-  aspect-ratio: 1;
-  padding: 4px;
-  background: none;
-  border: 1px solid transparent;
-  color: var(--text);
-}
-
-.tile:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
-.tile img { width: 100%; height: 100%; }
-
-.upload input { display: none; }
-
-.upload span {
-  display: inline-block;
-  padding: 4px 10px;
-  font-size: 12px;
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 7px;
+  color: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
-.upload span:hover { border-color: var(--border-strong); }
+.choose:hover {
+  border-color: var(--accent);
+}
 
-.warn { margin: 0; font-size: 11px; color: var(--danger); line-height: 1.35; }
-.none { font-size: 11px; margin: 4px; grid-column: 1 / -1; }
+.choose img,
+.choose .none {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  object-fit: contain;
+  display: grid;
+  place-items: center;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 20px;
+}
+
+.what {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.facts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.badge {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  font-size: 10px;
+}
+
+.pair {
+  display: flex;
+  gap: 8px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  font-size: 12px;
+}
+
+.warn {
+  margin: 0;
+  font-size: 11px;
+  color: var(--danger);
+}
 </style>

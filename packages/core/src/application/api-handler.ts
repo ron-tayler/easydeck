@@ -3,7 +3,7 @@ import type { KeyView, ProfileDefinition, VariableValue } from '@easydeck/engine
 
 import type { RequestMessage, ResponseMessage } from '../domain/api-messages.js';
 import { isRequestMessage } from '../domain/api-messages.js';
-import type { DeckFacade } from './ports/deck-facade.js';
+import type { AppFolder, DeckFacade } from './ports/deck-facade.js';
 
 /**
  * Turns protocol messages into calls on the deck, and results back into
@@ -28,6 +28,9 @@ export interface ApiHandlerOptions {
    */
   readonly assets?: AssetLinker;
 }
+
+/** Checked here as well as typed: the name arrives as a string off a socket. */
+const APP_FOLDERS: readonly AppFolder[] = ['config', 'profiles', 'plugins', 'icons'];
 
 export class ApiHandler {
   private readonly assets?: AssetLinker;
@@ -173,6 +176,16 @@ export class ApiHandler {
 
         await this.deck.setNetworkSettings(patch);
         return { ok: true };
+      }
+
+      case 'openAppFolder': {
+        const folder = text(params, 'folder');
+        if (!APP_FOLDERS.includes(folder as AppFolder)) {
+          throw new TypeError(`Unknown folder '${folder}'`);
+        }
+
+        await this.deck.openAppFolder(folder as AppFolder);
+        return { opened: folder };
       }
 
       case 'setBrightness':

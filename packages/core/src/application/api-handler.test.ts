@@ -102,7 +102,7 @@ class FakeDeck implements DeckFacade {
 
   async listIcons(): Promise<readonly LibraryImage[]> {
     this.calls.push('listIcons');
-    return [{ name: 'mic', source: 'data:image/png;base64,AA==', bytes: 1 }];
+    return [{ name: 'mic', source: 'data:image/png;base64,AA==', bytes: 1, group: '' }];
   }
 
   async getProfile(id: string): Promise<ProfileDefinition> {
@@ -150,6 +150,14 @@ class FakeDeck implements DeckFacade {
 
   goBack(): void {
     this.calls.push('goBack');
+  }
+
+  /** Records which folder the window asked to see. */
+  opened?: string;
+
+  async openAppFolder(folder: string): Promise<void> {
+    this.calls.push(`openAppFolder:${folder}`);
+    this.opened = folder;
   }
 
   async setBrightness(percent: number): Promise<void> {

@@ -20,7 +20,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: [];
-  openFolder: [action: string];
+  openFolder: [folder: 'config' | 'profiles' | 'plugins' | 'icons'];
   network: [patch: Record<string, unknown>];
   approveDevice: [deviceId: string];
   revokeDevice: [deviceId: string];
@@ -314,7 +314,7 @@ const alsoWaiting = computed(() => Math.max(0, (props.pendingDevices?.length ?? 
             </li>
           </ul>
 
-          <button type="button" @click="emit('openFolder', 'easydeck.open-plugins-folder')">
+          <button type="button" @click="emit('openFolder', 'plugins')">
             {{ t('settings.plugins.openFolder') }}
           </button>
         </section>
@@ -324,7 +324,7 @@ const alsoWaiting = computed(() => Math.max(0, (props.pendingDevices?.length ?? 
           <p class="muted">{{ t('settings.icons.explanation') }}</p>
           <p class="muted small">{{ t('settings.icons.formats') }}</p>
 
-          <button type="button" @click="emit('openFolder', 'easydeck.open-icons-folder')">
+          <button type="button" @click="emit('openFolder', 'icons')">
             {{ t('settings.icons.openFolder') }}
           </button>
         </section>
@@ -360,7 +360,7 @@ const alsoWaiting = computed(() => Math.max(0, (props.pendingDevices?.length ?? 
         <section v-else>
           <h2>{{ t('settings.about.title') }}</h2>
           <p>{{ t('settings.about.text') }}</p>
-          <button type="button" @click="emit('openFolder', 'easydeck.open-config-folder')">
+          <button type="button" @click="emit('openFolder', 'config')">
             {{ t('settings.about.openConfig') }}
           </button>
         </section>

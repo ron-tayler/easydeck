@@ -975,6 +975,7 @@ onBeforeUnmount(() => {
       @network="void deck.setNetworkSettings($event)"
       @approve-device="void deck.approveDevice($event)"
       @revoke-device="void deck.revokeDevice($event)"
+      @open-folder="void deck.openAppFolder($event)"
     />
   </div>
 </template>

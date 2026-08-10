@@ -12,6 +12,9 @@ import type { ProfileSummary } from './repositories.js';
  * whole protocol layer can be tested against a few lines of fake — no device,
  * no renderer, no sockets.
  */
+/** The folders a configurator may ask to have opened. */
+export type AppFolder = 'config' | 'profiles' | 'plugins' | 'icons';
+
 export interface DeckFacade {
   state(): Promise<DeckState>;
   /** The current page, resolved — what each key is showing right now. */
@@ -121,6 +124,16 @@ export interface DeckFacade {
   goUp(deckId?: string): void;
   goHome(deckId?: string): void;
   goBack(deckId?: string): void;
+
+  /**
+   * Opens one of EasyDeck's own folders in the system file manager.
+   *
+   * Named rather than given as a path: the caller is a window that must not
+   * be able to ask for an arbitrary directory, and only the daemon knows
+   * where these live anyway — they move with the platform, and with
+   * `EASYDECK_CONFIG_DIR` during development.
+   */
+  openAppFolder(folder: AppFolder): Promise<void>;
 
   setBrightness(percent: number): Promise<void>;
   /** Runs a key's actions as if it had been pressed, for testing from a UI. */

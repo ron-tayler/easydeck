@@ -280,6 +280,9 @@ export function useDeck() {
       await refreshAll();
     },
     openFolder: (folderId: string) => client.call('openFolder', { folderId, ...deckParam() }),
+    /** Shows one of EasyDeck's own folders in the system file manager. */
+    openAppFolder: (folder: 'config' | 'profiles' | 'plugins' | 'icons') =>
+      client.call('openAppFolder', { folder }),
     goToPage: (pageId: string) => client.call('goToPage', { pageId, ...deckParam() }),
     goUp: () => client.call('goUp', deckParam()),
     activateProfile: (id: string) => client.call('activateProfile', { id, ...deckParam() }),

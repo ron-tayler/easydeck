@@ -435,6 +435,22 @@ export async function startApiServer(options: ApiServerOptions): Promise<Running
         // on whether extensions are allowed.
         return false;
 
+      case 'openAppFolder':
+        /*
+         * Never, not even with the extensions API on.
+         *
+         * This opens a window on the machine running the daemon, in front of
+         * whoever is sitting at it. A tablet across the room has no business
+         * doing that, and no reason to: it cannot see the result.
+         */
+        send(ws, {
+          type: 'response',
+          id: parsed.id,
+          ok: false,
+          error: { message: 'A device may not open folders on this machine' },
+        });
+        return true;
+
       default: {
         /*
          * A deck needs none of the rest of the API, so a device gets it only
