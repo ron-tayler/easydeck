@@ -142,28 +142,46 @@ ${description}` : say(item.label);
 }
 
 /**
- * Actions a preset of the same plugin already puts on a key.
+ * Actions a preset of the same plugin makes redundant beside the grid.
  *
- * Beside the grid, "Start / stop recording" and the Record preset are the
- * same key — one plain, one dressed — and offering both makes the palette
- * longer while making the choice harder. So the plain one steps aside where
- * there is a preset that does its job, and stays in the key editor, where a
- * preset means nothing and a step is what is wanted.
+ * "Start / stop recording" and the Record preset are the same key — one
+ * plain, one dressed — and offering both makes the palette longer while
+ * making the choice harder. The plain one steps aside, and keeps its place in
+ * the key editor, where a preset means nothing and a step is what is wanted.
  *
- * Read out of the presets rather than declared: a flag on the action would be
- * a second place to keep the truth, and the day somebody removes a preset and
- * forgets the flag, the action disappears from the palette with no way to
- * work out why.
+ * Read out of the presets rather than declared on the action. A flag would be
+ * a second place to keep one truth, and the day somebody deletes a preset and
+ * forgets the flag, an action vanishes from the palette with nothing to
+ * explain why.
+ *
+ * A preset only stands in for an action when it *is* that action wearing a
+ * coat: one action type across all its states and gestures, with nothing
+ * filled in. Two conditions, and each earns its place:
+ *
+ * - **One type.** A preset that starts the stream *and* switches scene is a
+ *   sequence, not a dressed-up command; hiding both of its ingredients would
+ *   leave somebody unable to build anything else out of them.
+ * - **No parameters.** A preset that switches to "Intro" has already answered
+ *   the question the general action asks, so it cannot replace it — the
+ *   action is how you get a key for any other scene.
  */
 function actionsCoveredByPresets(plugin: PluginManifest): Set<string> {
   const covered = new Set<string>();
 
   for (const preset of plugin.presets ?? []) {
+    const used = new Set<string>();
+    let configured = false;
+
     for (const state of preset.button.states) {
       for (const sequence of Object.values(state.actions ?? {})) {
-        for (const action of sequence ?? []) covered.add(action.type);
+        for (const action of sequence ?? []) {
+          used.add(action.type);
+          if (Object.keys(action.params ?? {}).length > 0) configured = true;
+        }
       }
     }
+
+    if (used.size === 1 && !configured) covered.add([...used][0]!);
   }
 
   return covered;
