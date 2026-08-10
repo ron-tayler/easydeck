@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   KeyView,
   LocalizedText,
   ParamOption,
@@ -17,7 +17,7 @@ import type { ProfileSummary } from './repositories.js';
  * Everything the API is allowed to do, as one interface.
  *
  * The request handler talks to this rather than to the live deck, so the
- * whole protocol layer can be tested against a few lines of fake вЂ” no device,
+ * whole protocol layer can be tested against a few lines of fake — no device,
  * no renderer, no sockets.
  */
 /** One installed plugin, as a window needs to describe it. */
@@ -51,7 +51,7 @@ export type AppFolder = 'config' | 'profiles' | 'plugins' | 'icons';
 
 export interface DeckFacade {
   state(): Promise<DeckState>;
-  /** The current page, resolved вЂ” what each key is showing right now. */
+  /** The current page, resolved — what each key is showing right now. */
   pageView(deckId?: string): Promise<readonly KeyView[]>;
   /**
    * Installed plugins with their action declarations.
@@ -73,7 +73,7 @@ export interface DeckFacade {
   /**
    * What a plugin's settings window needs to draw itself.
    *
-   * Never the secrets themselves вЂ” only which of them are filled in. A
+   * Never the secrets themselves — only which of them are filled in. A
    * configurator that cannot receive a token cannot leak one, and it has no
    * use for the value: the control it draws is a password box.
    */
@@ -95,8 +95,8 @@ export interface DeckFacade {
   /**
    * The choices behind a parameter declared with `optionsFrom`.
    *
-   * Empty where the plugin cannot answer вЂ” it is not running, or whatever it
-   * talks to is closed вЂ” which is what lets a key be set up before the
+   * Empty where the plugin cannot answer — it is not running, or whatever it
+   * talks to is closed — which is what lets a key be set up before the
    * program it drives is even started.
    */
   pluginOptions(pluginId: string, source: string): Promise<readonly ParamOption[]>;
@@ -104,7 +104,7 @@ export interface DeckFacade {
   /**
    * Pictures from the user's icon folder, for the configurator to offer.
    *
-   * Served by the daemon because only it can read that folder вЂ” a browser
+   * Served by the daemon because only it can read that folder — a browser
    * talking over the API certainly cannot.
    */
   /**
@@ -139,7 +139,7 @@ export interface DeckFacade {
    * Devices allowed in, and devices asking to be.
    *
    * Ordinary facade methods rather than something the socket handles, so the
-   * desktop window вЂ” which talks over IPC вЂ” can show the queue and answer it.
+   * desktop window — which talks over IPC — can show the queue and answer it.
    */
   listDevices(): Promise<{
     readonly devices: readonly { id: string; name: string; approvedAt?: string; online: boolean }[];
@@ -152,7 +152,7 @@ export interface DeckFacade {
    * Devices allowed in, and devices asking to be.
    *
    * Ordinary facade methods rather than something the socket handles, so the
-   * desktop window вЂ” which talks over IPC вЂ” can show the queue and answer it.
+   * desktop window — which talks over IPC — can show the queue and answer it.
    */
   listDevices(): Promise<{
     readonly devices: readonly { id: string; name: string; approvedAt?: string; online: boolean }[];
@@ -167,7 +167,7 @@ export interface DeckFacade {
   /**
    * Registers a deck that lives on another device and draws for itself.
    *
-   * It gets a profile, a page and a history like any other deck вЂ” the only
+   * It gets a profile, a page and a history like any other deck — the only
    * difference is that scenes go out over the wire instead of to a compositor.
    */
   attachNetworkDeck(options: {
@@ -210,7 +210,7 @@ export interface DeckFacade {
    *
    * Named rather than given as a path: the caller is a window that must not
    * be able to ask for an arbitrary directory, and only the daemon knows
-   * where these live anyway вЂ” they move with the platform, and with
+   * where these live anyway — they move with the platform, and with
    * `EASYDECK_CONFIG_DIR` during development.
    */
   openAppFolder(folder: AppFolder): Promise<void>;

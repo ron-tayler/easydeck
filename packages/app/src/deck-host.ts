@@ -1,4 +1,4 @@
-﻿import { EventEmitter } from 'node:events';
+import { EventEmitter } from 'node:events';
 
 import {
   ApiHandler,
@@ -34,7 +34,7 @@ export interface DeckHostEvents extends DeckEvents {
  * Owns the deck inside the Electron main process.
  *
  * The deck itself is disposable: it is fully released when the workstation
- * locks and rebuilt when it unlocks. The host is what stays вЂ” so the API is
+ * locks and rebuilt when it unlocks. The host is what stays — so the API is
  * bound here rather than to a deck instance, and clients survive a lock cycle
  * without noticing anything but a status change.
  *
@@ -60,7 +60,7 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
 
     /*
      * Announced by the host, not by the deck: a device may knock while the
-     * deck is closed вЂ” the workstation locked вЂ” and the window still has to
+     * deck is closed — the workstation locked — and the window still has to
      * learn about it.
      */
     this.devices.on('changed', () => this.emit('devicesChanged'));
@@ -144,7 +144,7 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
    * USB handle closed, so as far as the device is concerned EasyDeck is gone.
    *
    * Merely blanking the screen would not do. The device keeps reporting key
-   * presses, and EasyDeck actions launch programs and press hotkeys вЂ” so a
+   * presses, and EasyDeck actions launch programs and press hotkeys — so a
    * locked machine with a live deck is a machine anyone walking past can
    * start things on. Letting go of the device entirely is the honest answer.
    */
@@ -285,7 +285,7 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
 
   /*
    * Answered by the host rather than delegated: a device may be waiting while
-   * the deck is closed вЂ” the workstation locked, the panel unplugged вЂ” and
+   * the deck is closed — the workstation locked, the panel unplugged — and
    * the queue has to be visible and answerable regardless.
    */
   async listDevices(): Promise<{
@@ -379,7 +379,7 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
       // every successful start is what brings it back in line.
       this.emit('state', state);
     } catch (error) {
-      // No device, a busy device, a broken profile вЂ” all are states to show,
+      // No device, a busy device, a broken profile — all are states to show,
       // never reasons for the app to fail to open.
       this.setStatus({ state: 'error', message: describe(error) });
     }
