@@ -71,7 +71,6 @@
    * on the deck. One constant, used everywhere a key is previewed, so it can
    * be tuned in a single place rather than in each component.
    */
-  --key-label-scale: 0.8;
 }
 
 * {

@@ -24,6 +24,7 @@
     "alignment": "tsc -p tsconfig.json && node dist/examples/alignment.js"
   },
   "dependencies": {
+    "@easydeck/engine": "workspace:*",
     "@julusian/jpeg-turbo": "^3.0.1",
     "@napi-rs/canvas": "^1.0.2",
     "dejavu-fonts-ttf": "^2.37.3",

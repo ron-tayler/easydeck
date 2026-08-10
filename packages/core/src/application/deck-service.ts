@@ -18,6 +18,7 @@ import type { DeckState, NetworkState } from '../domain/api-messages.js';
 import { NoProfilesError, ProfileNotFoundError } from '../domain/errors.js';
 import { configDir, iconsDir, pluginsDir, profilesDir } from '../infrastructure/config-paths.js';
 import { readLibrary } from '../infrastructure/icon-library.js';
+import { readInstalledPlugins } from '../infrastructure/plugins/installed-plugins.js';
 import type { Library, LibraryImage } from '../infrastructure/icon-library.js';
 import type { DaemonSettings, DeckBinding } from '../domain/settings.js';
 import { localAddresses } from '../infrastructure/api/network-addresses.js';
@@ -27,7 +28,7 @@ import type { DeckEntry, DeckRegistry } from './deck-registry.js';
 import { openTarget } from '../infrastructure/actions/system-actions.js';
 import type { DeviceDirectory } from './device-directory.js';
 import type { DeckEvents } from './ports/deck-events.js';
-import type { AppFolder, DeckFacade } from './ports/deck-facade.js';
+import type { AppFolder, DeckFacade, InstalledPluginSummary } from './ports/deck-facade.js';
 import type { ProfileRepository, ProfileSummary, SettingsRepository } from './ports/repositories.js';
 
 /** Alias kept for readability at the call sites; see DeckEvents. */
@@ -85,6 +86,27 @@ const RELOAD_DEBOUNCE_MS = 200;
  * profile management, live reload when a profile changes on disk, and a
  * single event stream describing what the deck is doing.
  */
+/**
+ * Merges one message tree over another, branch by branch.
+ *
+ * A plugin translating `actions.mine.label` must not wipe out the rest of
+ * `actions`, which a plain object spread at the top level would do.
+ */
+function merge(base: unknown, extra: unknown): unknown {
+  if (!isTree(base) || !isTree(extra)) return extra;
+
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(extra)) {
+    merged[key] = key in merged ? merge(merged[key], value) : value;
+  }
+
+  return merged;
+}
+
+function isTree(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export class DeckService extends EventEmitter<DeckServiceEvents> implements DeckFacade {
   private readonly warnings: string[];
   private brightness: number;
@@ -188,14 +210,61 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     return this.options.actions.plugins();
   }
 
+  /**
+   * What is installed in the plugins folder, with its translations.
+   *
+   * Read on every call, like the icon folder and for the same reason: a plugin
+   * is a thing you drop in and expect to see, not a thing you restart for.
+   */
+  async installedPlugins(): Promise<InstalledPluginSummary> {
+    const { plugins, broken } = await readInstalledPlugins(pluginsDir());
+
+    const messages: Record<string, unknown> = {};
+    for (const plugin of plugins) {
+      for (const [locale, tree] of Object.entries(plugin.messages)) {
+        // Later plugins win over earlier ones, and every plugin wins over the
+        // built-in text: a pack that names its own actions has to be able to.
+        messages[locale] = merge(messages[locale], tree);
+      }
+    }
+
+    return {
+      plugins: plugins.map((plugin) => ({
+        id: plugin.id,
+        name: plugin.name,
+        ...(plugin.version ? { version: plugin.version } : {}),
+        ...(plugin.description ? { description: plugin.description } : {}),
+        kind: plugin.kind,
+        icons: plugin.icons.length,
+        locales: Object.keys(plugin.messages).sort(),
+      })),
+      broken,
+      messages,
+    };
+  }
+
   listProfiles(): Promise<ProfileSummary[]> {
     return this.options.profiles.list();
   }
 
-  /** Read on every call: the point of a folder is that you can drop a file in
-      it and see it appear without restarting anything. */
-  listIcons(): Promise<Library> {
-    return readLibrary(iconsDir());
+  /**
+   * The icon folder and every plugin's pictures, as one library.
+   *
+   * Read on every call: the point of a folder is that you can drop a file in
+   * it and see it appear without restarting anything.
+   *
+   * Plugins come after the loose folder, and each under its own name, so a
+   * pack someone installed never quietly shadows a file they put there
+   * themselves.
+   */
+  async listIcons(): Promise<Library> {
+    const [own, installed] = await Promise.all([
+      readLibrary(iconsDir()),
+      readInstalledPlugins(pluginsDir()),
+    ]);
+
+    const fromPlugins = installed.plugins.flatMap((plugin) => plugin.icons);
+    return { images: [...own.images, ...fromPlugins], omitted: own.omitted };
   }
 
   getProfile(id: string): Promise<ProfileDefinition> {

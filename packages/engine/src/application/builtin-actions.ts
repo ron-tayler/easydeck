@@ -31,6 +31,7 @@ export const easydeckManifest: PluginManifest = {
   actions: [
     {
       type: 'easydeck.open-folder',
+      icon: 'folder',
       label: { en: 'Open folder', ru: 'Открыть папку' },
       description: {
         en: 'Enters a scene, landing on its first page',
@@ -47,6 +48,7 @@ export const easydeckManifest: PluginManifest = {
     },
     {
       type: 'easydeck.go-to-page',
+      icon: 'page',
       label: { en: 'Go to page', ru: 'Перейти на страницу' },
       group: { en: 'Navigation', ru: 'Навигация' },
       params: [
@@ -59,6 +61,7 @@ export const easydeckManifest: PluginManifest = {
     },
     {
       type: 'easydeck.go-up',
+      icon: 'up',
       label: { en: 'Go up', ru: 'На уровень вверх' },
       description: {
         en: 'Leaves for the parent folder. Does nothing at the top level',
@@ -68,11 +71,13 @@ export const easydeckManifest: PluginManifest = {
     },
     {
       type: 'easydeck.go-home',
+      icon: 'home',
       label: { en: 'Go home', ru: 'В начало' },
       group: { en: 'Navigation', ru: 'Навигация' },
     },
     {
       type: 'easydeck.go-back',
+      icon: 'back',
       label: { en: 'Go back', ru: 'Назад' },
       description: {
         en: 'Returns to the previous location',
@@ -83,6 +88,7 @@ export const easydeckManifest: PluginManifest = {
 
     {
       type: 'easydeck.set-variable',
+      icon: 'variable',
       label: { en: 'Set variable', ru: 'Задать переменную' },
       group: { en: 'Variables', ru: 'Переменные' },
       params: [
@@ -92,12 +98,14 @@ export const easydeckManifest: PluginManifest = {
     },
     {
       type: 'easydeck.toggle-variable',
+      icon: 'toggle',
       label: { en: 'Toggle variable', ru: 'Переключить переменную' },
       group: { en: 'Variables', ru: 'Переменные' },
       params: [{ name: 'name', type: 'variable', label: { en: 'Variable', ru: 'Переменная' } }],
     },
     {
       type: 'easydeck.increment-variable',
+      icon: 'increment',
       label: { en: 'Add to variable', ru: 'Прибавить к переменной' },
       group: { en: 'Variables', ru: 'Переменные' },
       params: [
@@ -113,6 +121,7 @@ export const easydeckManifest: PluginManifest = {
     },
     {
       type: 'easydeck.cycle-variable',
+      icon: 'cycle',
       label: { en: 'Cycle variable', ru: 'Перебрать значения' },
       description: {
         en: 'Steps through a list of values, wrapping around',
@@ -132,6 +141,7 @@ export const easydeckManifest: PluginManifest = {
 
     {
       type: 'easydeck.set-button-state',
+      icon: 'state',
       label: { en: 'Set button state', ru: 'Задать состояние кнопки' },
       group: { en: 'Buttons', ru: 'Кнопки' },
       params: [

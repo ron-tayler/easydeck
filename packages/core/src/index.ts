@@ -61,7 +61,13 @@ export type {
   ProfileSummary,
   SettingsRepository,
 } from './application/ports/repositories.js';
-export type { AppFolder, DeckFacade, ApiSource } from './application/ports/deck-facade.js';
+export type {
+  AppFolder,
+  DeckFacade,
+  ApiSource,
+  InstalledPluginInfo,
+  InstalledPluginSummary,
+} from './application/ports/deck-facade.js';
 export type { DeckEvents } from './application/ports/deck-events.js';
 export { ApiHandler } from './application/api-handler.js';
 export { DeckService } from './application/deck-service.js';

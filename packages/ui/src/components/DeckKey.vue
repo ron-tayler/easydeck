@@ -3,6 +3,8 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { KeyView } from '@easydeck/core';
 
+import KeyLabel from './KeyLabel.vue';
+
 const { t } = useI18n();
 
 /**
@@ -23,14 +25,18 @@ const props = defineProps<{
   /** Whether this key owns a button, and so can have its picture stretched. */
   resizable?: boolean;
   /**
-   * Whether this key can be dragged onto another.
+   * Whether this key stays put.
    *
-   * True in the configurator, where keys are rearranged by hand. False on a
-   * deck: there a long press is a gesture, and a browser that decides it was
-   * the start of a drag keeps the release for itself — leaving the key held
-   * down and the deck deaf to everything after it.
+   * Set on a deck, where a long press is a gesture and a browser that decides
+   * it was the start of a drag keeps the release for itself — leaving the key
+   * held down and the deck deaf to everything after it.
+   *
+   * Phrased as "fixed" rather than "movable" on purpose: an absent boolean
+   * prop arrives as `false`, so the default has to be the configurator's
+   * behaviour. As `movable` it silently turned dragging off for the whole
+   * grid the moment the prop was added.
    */
-  movable?: boolean;
+  fixed?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -69,24 +75,6 @@ const corners = computed(() => {
     round(slice.col === 0 && slice.row === slice.rows - 1),
   ].join(' ');
 });
-const labelColor = computed(() => label.value?.color ?? '#ffffff');
-
-const justify = computed(() => {
-  const position = label.value?.position ?? (props.view?.visual.icon ? 'bottom' : 'center');
-  if (position === 'top') return 'flex-start';
-  if (position === 'bottom') return 'flex-end';
-  return 'center';
-});
-
-/**
- * Label sizes are authored against a 100px key, exactly as the device
- * renderer treats them. Container query units reproduce that: `1cqw` is one
- * percent of the key's width, so an authored size lands at the same relative
- * scale here as it does on the panel.
- */
-const fontSize = computed(
-  () => `calc(${label.value?.fontSize ?? 22} * 1cqw * var(--key-label-scale))`,
-);
 
 function onDragStart(event: DragEvent): void {
   if (!props.view) return;
@@ -125,7 +113,7 @@ function onDrop(event: DragEvent): void {
     :class="{ pressed, empty: !view, selected, over }"
     :style="{ background, borderRadius: corners }"
     type="button"
-    :draggable="movable !== false && Boolean(view)"
+    :draggable="!fixed && Boolean(view)"
     @click="emit('select', index)"
     @contextmenu.prevent="emit('menu', { key: index, x: $event.clientX, y: $event.clientY })"
     @dragstart="onDragStart"
@@ -151,7 +139,6 @@ function onDrop(event: DragEvent): void {
         height: `calc(${backdrop.rows * 100}% + ${(backdrop.rows - 1) * KEY_GAP}px)`,
         left: `calc(${-backdrop.col * 100}% - ${backdrop.col * KEY_GAP}px)`,
         top: `calc(${-backdrop.row * 100}% - ${backdrop.row * KEY_GAP}px)`,
-        objectFit: backdrop.fit ?? 'cover',
       }"
       alt=""
     />
@@ -164,7 +151,6 @@ function onDrop(event: DragEvent): void {
       class="icon"
       draggable="false"
       :src="icon.source"
-      :style="{ objectFit: icon.fit ?? 'cover' }"
       alt=""
     />
     <!-- The same mark the panel draws, for the same reason: a press that
@@ -175,9 +161,11 @@ function onDrop(event: DragEvent): void {
       <circle cx="12" cy="18" r="1.3" fill="#1a1a1a" />
     </svg>
 
-    <span v-if="label" class="label" :style="{ color: labelColor, justifyContent: justify, fontSize }">
-      {{ label.text }}
-    </span>
+    <KeyLabel
+      v-if="label"
+      :label="label"
+      :has-picture="Boolean(view?.visual.icon ?? view?.visual.backdrop)"
+    />
 
     <!--
       Grips on the right and bottom edges, appearing on hover. Dragging one
@@ -304,8 +292,12 @@ function onDrop(event: DragEvent): void {
 .icon {
   position: absolute;
   inset: 0;
+  /* Both dimensions, or `object-fit` has nothing to fit against: with only a
+     width the picture kept its own proportions and spilled past the key
+     instead of being cropped to it. */
   width: 100%;
-  margin: auto;
+  height: 100%;
+  object-fit: cover;
   pointer-events: none;
 }
 
@@ -318,21 +310,4 @@ function onDrop(event: DragEvent): void {
   pointer-events: none;
 }
 
-.label {
-  flex: 1;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 14cqw 5cqw 6cqw;
-  text-align: center;
-  line-height: 1.15;
-  word-break: break-word;
-  flex-direction: column;
-  /* The device's own font at its own weight; anything else makes the same
-     nominal size read as a different size. */
-  font-family: 'EasyDeck Sans', system-ui, sans-serif;
-  font-weight: 400;
-  pointer-events: none;
-}
 </style>

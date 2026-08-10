@@ -606,7 +606,19 @@ function onDropAction(payload: { key: number; actionType: string; label: string 
 
 function onDropKey(payload: { from: number; to: number }): void {
   selectedKey.value = payload.to;
-  void edit((profile) => swapKeys(profile, currentPageId.value!, payload.from, payload.to));
+
+  const shown = deck.deck.value;
+  void edit((profile) =>
+    swapKeys(
+      profile,
+      currentPageId.value!,
+      payload.from,
+      payload.to,
+      // The grid's own shape, so a stretched button landing near an edge is
+      // trimmed to what fits rather than hanging off it.
+      shown ? { rows: shown.rows, cols: shown.cols } : undefined,
+    ),
+  );
 }
 
 /**
@@ -977,6 +989,8 @@ onBeforeUnmount(() => {
       :transport-kind="deck.transportKind"
       :devices="deck.devices.value"
       :pending-devices="deck.pendingDevices.value"
+      :installed-plugins="deck.installedPlugins.value"
+      :broken-plugins="deck.brokenPlugins.value"
       @close="settingsOpen = false"
       @network="void deck.setNetworkSettings($event)"
       @approve-device="void deck.approveDevice($event)"
@@ -1074,7 +1088,11 @@ header {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 260px;
+  /* The palette holds three 60px tiles across; anything wider would be spent
+     on the squares rather than on the deck, which is what people look at. */
+  /* Fixed, so the column never shifts as the palette's contents change;
+     the tiles take their size from what is left after padding. */
+  grid-template-columns: 220px minmax(0, 1fr) 320px;
 }
 
 .left,

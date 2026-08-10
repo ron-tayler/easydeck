@@ -144,12 +144,9 @@ export class NapiCanvasRasterizer implements Rasterizer {
     const regionW = w * backdrop.cols + gap * (backdrop.cols - 1);
     const regionH = h * backdrop.rows + gap * (backdrop.rows - 1);
 
-    // `cover` is the default here, unlike an icon: a picture spread over six
-    // keys is meant to fill them, and letterboxing it defeats the point.
-    const scale =
-      (backdrop.fit ?? 'cover') === 'contain'
-        ? Math.min(regionW / image.width, regionH / image.height)
-        : Math.max(regionW / image.width, regionH / image.height);
+    // Cropped to the region: a picture spread over six keys is meant to fill
+    // them, and letterboxing it defeats the point.
+    const scale = Math.max(regionW / image.width, regionH / image.height);
 
     const dw = image.width * scale;
     const dh = image.height * scale;
@@ -179,10 +176,7 @@ export class NapiCanvasRasterizer implements Rasterizer {
       throw new RenderError('Could not load icon image', { cause });
     }
 
-    const scale =
-      (icon.fit ?? 'cover') === 'contain'
-        ? Math.min(w / image.width, h / image.height)
-        : Math.max(w / image.width, h / image.height);
+    const scale = Math.max(w / image.width, h / image.height);
     const dw = image.width * scale;
     const dh = image.height * scale;
 

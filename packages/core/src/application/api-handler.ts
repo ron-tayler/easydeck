@@ -95,6 +95,9 @@ export class ApiHandler {
       case 'getPlugins':
         return { plugins: await this.deck.plugins() };
 
+      case 'getInstalledPlugins':
+        return this.deck.installedPlugins();
+
       case 'listIcons': {
         const library = await this.deck.listIcons();
         return { icons: library.images, omitted: library.omitted };

@@ -11,7 +11,7 @@ import {
   findUiDirectory,
   startApiServer,
 } from '@easydeck/core';
-import type { ApiSource, AppFolder, DeckEvents, DeckService, DeckState, KeyView, Library, LibraryImage, PluginManifest, ProfileDefinition, ProfileSummary, RunningApiServer, VariableValue } from '@easydeck/core';
+import type { ApiSource, AppFolder, DeckEvents, DeckService, DeckState, InstalledPluginSummary, KeyView, Library, LibraryImage, PluginManifest, ProfileDefinition, ProfileSummary, RunningApiServer, VariableValue } from '@easydeck/core';
 
 export type HostStatus =
   | { readonly state: 'starting' }
@@ -244,6 +244,10 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
 
   setBrightness(percent: number): Promise<void> {
     return this.require().setBrightness(percent);
+  }
+
+  installedPlugins(): Promise<InstalledPluginSummary> {
+    return this.require().installedPlugins();
   }
 
   openAppFolder(folder: AppFolder): Promise<void> {

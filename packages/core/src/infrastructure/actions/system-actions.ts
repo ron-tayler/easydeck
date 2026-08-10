@@ -34,6 +34,7 @@ export const systemManifest: PluginManifest = {
   actions: [
     {
       type: 'system.run-program',
+      icon: 'app',
       label: { en: 'Run program', ru: 'Запустить программу' },
       params: [
         { name: 'command', type: 'file', label: { en: 'Program', ru: 'Программа' } },
@@ -54,6 +55,7 @@ export const systemManifest: PluginManifest = {
     },
     {
       type: 'system.open',
+      icon: 'link',
       label: { en: 'Open file, folder or link', ru: 'Открыть файл, папку или ссылку' },
       params: [
         {
@@ -80,6 +82,7 @@ export const httpManifest: PluginManifest = {
   actions: [
     {
       type: 'http.request',
+      icon: 'globe',
       label: { en: 'HTTP request', ru: 'HTTP-запрос' },
       params: [
         { name: 'url', type: 'string', label: { en: 'URL', ru: 'Адрес' } },
@@ -114,6 +117,7 @@ export const httpManifest: PluginManifest = {
 export const easydeckTimingActions = [
   {
     type: 'easydeck.delay',
+    icon: 'clock',
     label: { en: 'Wait', ru: 'Подождать' },
     description: {
       en: 'Pauses before the next action of the same button',

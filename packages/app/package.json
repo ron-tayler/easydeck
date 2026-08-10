@@ -11,8 +11,8 @@
     "icons": "node scripts/make-icons.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "rebuild-native": "electron-rebuild -f",
-    "start": "tsc -p tsconfig.json && electron .",
-    "dev": "tsc -p tsconfig.json && node scripts/dev.mjs"
+    "start": "pnpm --filter @easydeck/ui build && tsc -p tsconfig.json && electron .",
+    "dev": "pnpm --filter @easydeck/ui build && tsc -p tsconfig.json && node scripts/dev.mjs"
   },
   "dependencies": {
     "@easydeck/core": "workspace:*",

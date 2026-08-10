@@ -60,7 +60,21 @@ export function toEncoderPort(encoder: TileEncoder): EncoderPort {
  */
 export function toPresenterPort(surface: Surface, compositor: PanelCompositor): PresenterPort {
   const listeners = new Set<(key: number, gesture: ButtonEvent) => void>();
+  /** Keys where holding does something; told to us by the engine. */
+  let holdable: ReadonlySet<number> = new Set();
+
   const recognizer = new GestureRecognizer((key, gesture) => {
+    /*
+     * A hold that fired has been acknowledged by firing.
+     *
+     * The key came down to say "I felt that", and once the hold has actually
+     * run there is nothing left to say — so the key returns to size with the
+     * finger still on it, which is also how you can tell a hold happened
+     * without lifting off. Where nothing is bound to holding, the shrink is
+     * the only feedback there is and it stays until release.
+     */
+    if (gesture === 'longPress' && holdable.has(key)) void compositor.setPressed(key, false);
+
     for (const listener of listeners) listener(key, gesture);
   });
 
@@ -87,6 +101,9 @@ export function toPresenterPort(surface: Surface, compositor: PanelCompositor): 
     },
 
     setDoublePressKeys: (keys) => recognizer.setDoublePressKeys(keys),
+    setLongPressKeys: (keys) => {
+      holdable = new Set(keys);
+    },
 
     present: (scene: Scene) => compositor.present(scene),
   };

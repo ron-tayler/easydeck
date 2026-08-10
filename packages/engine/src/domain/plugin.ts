@@ -91,6 +91,15 @@ export interface ActionDefinition {
   readonly params?: readonly ParamDefinition[];
   /** Groups actions inside a plugin when it has many. */
   readonly group?: LocalizedText;
+  /**
+   * The mark shown in the palette.
+   *
+   * Either a name from the host's set of action icons — `home`, `variable`,
+   * `keyboard` and so on — or a plugin's own drawing as a `data:` URL. A name
+   * the host does not know draws a neutral mark rather than a hole, so a
+   * plugin written against a newer set still has a usable palette.
+   */
+  readonly icon?: string;
 }
 
 export interface PluginManifest {

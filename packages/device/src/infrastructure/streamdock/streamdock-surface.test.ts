@@ -62,6 +62,18 @@ describe('StreamDockSurface', () => {
     assert.ok(connection.writes.every((w) => w.length === 513));
   });
 
+  it('commits a single-key clear, or the key keeps what it had', async () => {
+    // The clear-all path has always sent this; the one-key path did not, and
+    // on v2+ firmwares the command alone changes nothing — the key went on
+    // showing a frame from a page the deck had already left.
+    const { connection, surface } = await openSurface();
+    connection.writes = [];
+
+    await surface.clearKey(3);
+
+    assert.deepEqual(connection.writes.map(opcode), ['CLE', 'STP']);
+  });
+
   it('adopts the packet size reported by the HID stack (512 -> 1024 revisions)', async () => {
     const connection = new FakeConnection();
     connection.reportLength = 1025;

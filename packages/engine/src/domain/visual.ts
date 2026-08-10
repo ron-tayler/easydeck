@@ -13,13 +13,15 @@
  */
 
 export interface IconSpec {
-  /** Path or data URL. Resolved to bytes by whoever rasterizes the visual. */
-  readonly source: string;
   /**
-   * Defaults to 'cover'. The picture always fills the key edge to edge — a
-   * single key included — and the label is drawn over it.
+   * Path or data URL. Resolved to bytes by whoever rasterizes the visual.
+   *
+   * The picture always fills the key edge to edge, cropped to do it — a single
+   * key included — and the label is drawn over it. There is no fit setting:
+   * one that changed how a picture met the key's edge was offered on every
+   * icon, where what people wanted was for the picture to fill the key.
    */
-  readonly fit?: 'contain' | 'cover';
+  readonly source: string;
 }
 
 export interface LabelSpec {
@@ -46,7 +48,6 @@ export interface BackdropSlice {
   /** The size of the whole region, in keys. */
   readonly cols: number;
   readonly rows: number;
-  readonly fit?: 'contain' | 'cover';
 }
 
 export interface ButtonVisual {

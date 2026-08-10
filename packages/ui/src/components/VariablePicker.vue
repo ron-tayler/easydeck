@@ -89,11 +89,20 @@ function choose(name: string): void {
 
 .row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 5px;
 }
 
-.row > :first-child {
+/*
+ * The field grows; whatever else shares the row does not.
+ *
+ * It used to be "the first child fills the space", which held only while the
+ * field was the first thing in the row. A colour swatch now sits before it,
+ * and the rule would have stretched the swatch across the row instead.
+ */
+.row > :deep(.grow),
+.row > :deep(input:not([type='color'])),
+.row > :deep(textarea) {
   flex: 1;
   min-width: 0;
 }

@@ -3,6 +3,8 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ActionDefinition, LocalizedText, PluginManifest } from '@easydeck/core';
 
+import { actionIconPath, isDrawnIcon } from '../icons/action-icons.js';
+
 const props = defineProps<{ plugins: readonly PluginManifest[] }>();
 
 const { t, locale } = useI18n();
@@ -100,15 +102,31 @@ const groups = computed<Group[]>(() => {
           <li v-for="action in group.actions" :key="action.type">
             <!-- The label travels with the type so a freshly created button
                  says what it does without the drop handler knowing any
-                 particular action. -->
+                 particular action.
+
+                 A mark above a word rather than a paragraph beside it: at this
+                 size the description was two lines of small text nobody read
+                 while looking for something, and it cost the row the width
+                 that now holds three actions. It still lives in the manifest,
+                 for wherever there is room to say more. -->
+            <!-- No hover text of its own: the name is written under the mark,
+                 and the action's type — `easydeck.go-home` — reads as an
+                 untranslated string to anyone who is not writing plugins. -->
             <div
               class="action"
-              :title="action.type"
               draggable="true"
               @dragstart="onDragStart($event, action)"
             >
+              <!-- Only where there is something to tell: a question mark on
+                   every tile would be a row of marks that mostly say nothing,
+                   and the ones worth hovering would stop standing out. -->
+              <span v-if="say(action.description)" class="why" :title="say(action.description)">?</span>
+
+              <img v-if="isDrawnIcon(action.icon)" class="mark" :src="action.icon" alt="" />
+              <svg v-else class="mark" viewBox="0 0 24 24" aria-hidden="true">
+                <path :d="actionIconPath(action.icon)" fill="currentColor" />
+              </svg>
               <span class="label">{{ say(action.label) }}</span>
-              <span v-if="action.description" class="desc">{{ say(action.description) }}</span>
             </div>
           </li>
         </ul>
@@ -125,14 +143,27 @@ const groups = computed<Group[]>(() => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  /* The grid decides how wide this is; nothing here may stretch it further. */
+  min-width: 0;
 }
 
 .search {
   margin: 0 12px 10px;
+  min-width: 0;
 }
 
 .scroll {
-  overflow-y: auto;
+  /* The full height of the panel, whatever is in it.
+     Sized by its contents, the scrolling area shrank as groups were collapsed
+     and the bar came and went with it — the height has to belong to the panel,
+     not to how much happens to be showing. */
+  flex: 1;
+  min-height: 0;
+  /* Always shown, and always taking its space: a bar that appears when a
+     group is opened shifts every tile a few pixels sideways, which reads as
+     the palette twitching. */
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
   padding: 0 12px 12px;
   display: flex;
   flex-direction: column;
@@ -188,35 +219,81 @@ const groups = computed<Group[]>(() => {
 ul {
   list-style: none;
   margin: 2px 0 6px;
-  padding: 0 0 0 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  /* Flush with the group's heading: an indent here only made the tiles look
+     misaligned against everything else in the column. */
+  padding: 0;
+  display: grid;
+  /*
+   * Three across, whatever the panel's width makes of them.
+   *
+   * About ninety pixels at the width the palette is given, and a few either
+   * way is no matter — what counts is that the row always holds three, so the
+   * grid never reflows into a different shape as groups open and close.
+   */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
 }
 
 .action {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 7px 9px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  aspect-ratio: 1;
+  padding: 8px 5px;
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: grab;
+  text-align: center;
 }
 
 .action:hover {
   border-color: var(--accent);
 }
 
-.label {
-  font-size: 13px;
+.why {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  width: 13px;
+  height: 13px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  cursor: help;
 }
 
-.desc {
-  font-size: 11px;
+.why:hover {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+.mark {
+  width: 26px;
+  height: 26px;
+  flex: none;
   color: var(--text-muted);
-  line-height: 1.3;
+}
+
+.action:hover .mark {
+  color: var(--accent);
+}
+
+.label {
+  font-size: 11px;
+  line-height: 1.2;
+  /* Two lines at most: a third would push the mark out of the square. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .empty {

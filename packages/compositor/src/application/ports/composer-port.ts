@@ -54,6 +54,8 @@ export interface CutTileRequest {
   readonly cornerRadius?: number;
   /** Draws a warning sign on this key: its last press failed. */
   readonly alert?: boolean;
+  /** Whether the region has a picture, which moves an unpositioned label. */
+  readonly hasPicture?: boolean;
 }
 
 /**
@@ -80,7 +82,6 @@ export interface FrameSource {
 export interface OpenRequest {
   /** Absent means a region with no picture: just the background. */
   readonly asset?: AssetRef;
-  readonly fit?: 'cover' | 'contain';
   readonly background?: string;
   readonly geometry: RegionGeometry;
 }

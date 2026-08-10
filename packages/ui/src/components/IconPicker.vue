@@ -4,17 +4,16 @@ import { useI18n } from 'vue-i18n';
 import type { IconSpec, LibraryImage } from '@easydeck/core';
 
 import IconLibrary from './IconLibrary.vue';
-import { LARGE_IMAGE_BYTES, isAnimated } from '../icons/rasterize.js';
+import { isAnimated } from '../icons/rasterize.js';
 
 /**
- * The button's picture: what it is now, and one way to change it.
+ * The key's picture, as one control in a row.
  *
- * This used to be the library itself — a column of tiles three wide, wedged
- * into the editor beside everything else a button has. It was the wrong shape
- * for the job twice over: too narrow to browse several hundred pictures, and
- * always present whether or not anyone was choosing one. The collection now
- * opens in a window with room for it, and what stays here is the answer to
- * "what does this key show" plus the button that changes it.
+ * It used to be the library itself — a column of tiles three wide, wedged into
+ * the editor beside everything else a button has, and present whether or not
+ * anyone was choosing a picture. The collection now opens in a window with
+ * room for it, and what remains here belongs beside the background colour: a
+ * button saying whether there is a picture, and a way to take it off again.
  */
 
 const props = defineProps<{
@@ -34,56 +33,35 @@ const { t } = useI18n();
 const browsing = ref(false);
 
 const animated = computed(() => Boolean(props.icon && isAnimated(props.icon.source)));
-const heavy = computed(() => Boolean(props.icon && props.icon.source.length > LARGE_IMAGE_BYTES));
-
-function patch(change: Partial<IconSpec>): void {
-  if (!props.icon) return;
-  emit('update', { ...props.icon, ...change });
-}
 
 function chosen(source: string): void {
-  // Keeps whatever else was set — the fit, above all — so picking a different
-  // picture does not quietly undo how the last one was framed.
-  emit('update', { ...props.icon, source });
+  emit('update', { source });
   browsing.value = false;
 }
 </script>
 
 <template>
-  <div class="picker">
-    <div class="head">
-      <span class="muted">{{ t('editor.icon') }}</span>
-      <button v-if="icon" type="button" class="clear" @click="emit('update', undefined)">
-        {{ t('editor.iconClear') }}
-      </button>
-    </div>
-
-    <button type="button" class="choose" @click="browsing = true">
+  <span class="picture">
+    <button
+      type="button"
+      class="choose"
+      :title="icon ? t('editor.iconChange') : t('editor.iconChoose')"
+      @click="browsing = true"
+    >
       <img v-if="icon" :src="icon.source" alt="" />
-      <span v-else class="none">＋</span>
-      <span class="what">
-        <span>{{ icon ? t('editor.iconChange') : t('editor.iconChoose') }}</span>
-        <span v-if="icon" class="facts muted">
-          <span v-if="animated" class="badge">GIF</span>
-          {{ Math.round(icon.source.length / 1024) }} KB
-        </span>
-      </span>
+      <span v-else class="empty">{{ t('editor.iconChoose') }}</span>
+      <span v-if="animated" class="badge">GIF</span>
     </button>
 
-    <p v-if="heavy" class="warn">{{ t('editor.iconHeavy') }}</p>
-
-    <div v-if="icon" class="pair">
-      <label class="field">
-        <span>{{ t('editor.iconFit') }}</span>
-        <select
-          :value="icon.fit ?? 'cover'"
-          @change="patch({ fit: ($event.target as HTMLSelectElement).value as 'contain' | 'cover' })"
-        >
-          <option value="cover">{{ t('editor.iconFits.cover') }}</option>
-          <option value="contain">{{ t('editor.iconFits.contain') }}</option>
-        </select>
-      </label>
-    </div>
+    <button
+      v-if="icon"
+      type="button"
+      class="clear"
+      :title="t('editor.iconClear')"
+      @click="emit('update', undefined)"
+    >
+      ✕
+    </button>
 
     <IconLibrary
       v-if="browsing"
@@ -93,46 +71,29 @@ function chosen(source: string): void {
       @pick="chosen"
       @close="browsing = false"
     />
-  </div>
+  </span>
 </template>
 
 <style scoped>
-.picker {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-.head {
+.picture {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  font-size: 12px;
-}
-
-.clear {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 11px;
-  padding: 2px 4px;
-}
-
-.clear:hover {
-  color: var(--danger);
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .choose {
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px;
+  gap: 8px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px 0 4px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--surface-2);
   color: inherit;
-  text-align: left;
   cursor: pointer;
 }
 
@@ -140,59 +101,39 @@ function chosen(source: string): void {
   border-color: var(--accent);
 }
 
-.choose img,
-.choose .none {
-  width: 48px;
-  height: 48px;
-  flex-shrink: 0;
-  object-fit: contain;
-  display: grid;
-  place-items: center;
+.choose img {
+  width: 22px;
+  height: 22px;
+  object-fit: cover;
+  border-radius: 4px;
   background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-muted);
-  font-size: 20px;
 }
 
-.what {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.facts {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
+.empty {
+  font-size: 12px;
+  padding-left: 4px;
+  white-space: nowrap;
 }
 
 .badge {
-  padding: 1px 5px;
+  padding: 1px 4px;
   border-radius: 4px;
   background: var(--surface-1);
   border: 1px solid var(--border);
   font-size: 10px;
 }
 
-.pair {
-  display: flex;
-  gap: 8px;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  flex: 1;
+.clear {
+  border: none;
+  background: none;
+  color: var(--text-muted);
   font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
 }
 
-.warn {
-  margin: 0;
-  font-size: 11px;
+.clear:hover {
   color: var(--danger);
 }
+
 </style>

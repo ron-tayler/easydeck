@@ -12,6 +12,32 @@ import type { ProfileSummary } from './repositories.js';
  * whole protocol layer can be tested against a few lines of fake — no device,
  * no renderer, no sockets.
  */
+/** One installed plugin, as a window needs to describe it. */
+export interface InstalledPluginInfo {
+  readonly id: string;
+  readonly name: string;
+  readonly version?: string;
+  readonly description?: string;
+  readonly kind: 'easydeck' | 'stream-deck-icons';
+  /** How many pictures it contributes, which is most of what a pack is. */
+  readonly icons: number;
+  /** Locale codes it translates, so the window can say what it covers. */
+  readonly locales: readonly string[];
+}
+
+export interface InstalledPluginSummary {
+  readonly plugins: readonly InstalledPluginInfo[];
+  /** Plugins that could not be read, named so the user can find them. */
+  readonly broken: readonly { readonly id: string; readonly problem: string }[];
+  /**
+   * Translations to lay over the built-in text, by locale code.
+   *
+   * Sent with the list rather than fetched separately: the window needs them
+   * before it draws anything a plugin named.
+   */
+  readonly messages: Readonly<Record<string, unknown>>;
+}
+
 /** The folders a configurator may ask to have opened. */
 export type AppFolder = 'config' | 'profiles' | 'plugins' | 'icons';
 
@@ -26,6 +52,15 @@ export interface DeckFacade {
    * these, which is why a plugin describes its parameters as data.
    */
   plugins(): Promise<readonly PluginManifest[]>;
+
+  /**
+   * What is installed in the plugins folder, and what it brings with it.
+   *
+   * Separate from `plugins()`, which lists what can run actions. A plugin may
+   * carry only pictures and text and still be something the user installed,
+   * expects to see listed, and expects to be able to remove.
+   */
+  installedPlugins(): Promise<InstalledPluginSummary>;
 
   /**
    * Pictures from the user's icon folder, for the configurator to offer.

@@ -401,7 +401,7 @@ function rename(): void {
         :view="byKey.get(index)"
         :pressed="pressed.has(index)"
         :selected="false"
-        :movable="false"
+        :fixed="true"
         @pointerdown="press(index, $event)"
         @pointerup="release(index)"
         @pointercancel="release(index)"

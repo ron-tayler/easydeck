@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { DeckState, LocalizedText, PluginManifest } from '@easydeck/core';
+import type {
+  DeckState,
+  InstalledPluginInfo,
+  LocalizedText,
+  PluginManifest,
+} from '@easydeck/core';
 
 import { SUPPORTED_LOCALES, setLocale } from '../i18n/index.js';
 import type { Locale } from '../i18n/index.js';
@@ -16,6 +21,9 @@ const props = defineProps<{
   devices?: readonly { id: string; name: string; approvedAt?: string; online?: boolean }[];
   /** Devices knocking right now, so approving has a predictable home. */
   pendingDevices?: readonly { id: string; name: string; code: string; address?: string }[];
+  /** What the plugins folder holds, including plugins that run nothing. */
+  installedPlugins?: readonly InstalledPluginInfo[];
+  brokenPlugins?: readonly { id: string; problem: string }[];
 }>();
 
 const emit = defineEmits<{
@@ -311,6 +319,39 @@ const alsoWaiting = computed(() => Math.max(0, (props.pendingDevices?.length ?? 
                 <p v-if="plugin.description" class="muted small">{{ say(plugin.description) }}</p>
               </div>
               <span class="muted small">{{ plugin.actions.length }}</span>
+            </li>
+          </ul>
+
+          <!-- What the folder holds, which is not the same list: a plugin may
+               carry only pictures and text and still be something the user
+               installed and expects to see. -->
+          <h3>{{ t('settings.plugins.installed') }}</h3>
+          <ul v-if="installedPlugins && installedPlugins.length > 0" class="list">
+            <li v-for="plugin in installedPlugins" :key="plugin.id">
+              <div>
+                <strong>{{ plugin.name }}</strong>
+                <span class="muted"> · {{ plugin.id }}</span>
+                <span v-if="plugin.version" class="muted"> · v{{ plugin.version }}</span>
+                <p v-if="plugin.description" class="muted small">{{ plugin.description }}</p>
+              </div>
+              <span class="muted small">
+                {{ t('settings.plugins.carries', { icons: plugin.icons }) }}
+                <template v-if="plugin.locales.length > 0"> · {{ plugin.locales.join(', ') }}</template>
+              </span>
+            </li>
+          </ul>
+          <p v-else class="muted">{{ t('settings.plugins.noneInstalled') }}</p>
+
+          <!-- Named rather than skipped: the pictures are missing either way,
+               and silence leaves the user hunting through a folder that looks
+               perfectly fine. -->
+          <ul v-if="brokenPlugins && brokenPlugins.length > 0" class="list">
+            <li v-for="plugin in brokenPlugins" :key="plugin.id">
+              <div>
+                <strong>{{ plugin.id }}</strong>
+                <p class="muted small">{{ plugin.problem }}</p>
+              </div>
+              <span class="muted small">{{ t('settings.plugins.broken') }}</span>
             </li>
           </ul>
 

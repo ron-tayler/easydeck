@@ -75,20 +75,22 @@ test('a picture fills a single key edge to edge', async () => {
   }
 });
 
-test('contain letterboxes against the background', async () => {
+test('a wide picture is cropped, never letterboxed', async () => {
+  // There is one behaviour and no setting for it: a picture on a key fills the
+  // key. A twice-as-wide picture loses its sides rather than gaining bars.
   const composer = new CanvasPanelComposer();
 
   const source = await composer.open({
     source: stripes(TILE * 2, TILE),
-    fit: 'contain',
     background: '#00ff00',
     width: TILE,
     height: TILE,
   });
   const tile = composer.cutTile(source.composeFrame(0), { ...SQUARE, x: 0, y: 0 });
 
-  assert.deepEqual(pixel(tile, 50, 2), [0, 255, 0]);
-  assert.deepEqual(pixel(tile, 50, 97), [0, 255, 0]);
+  // Top and bottom rows are picture, not background.
+  assert.notDeepEqual(pixel(tile, 50, 2), [0, 255, 0]);
+  assert.notDeepEqual(pixel(tile, 50, 97), [0, 255, 0]);
 });
 
 test('a region with no picture is just its background', async () => {
@@ -186,4 +188,64 @@ test('a failed press puts a warning sign in the corner, over the picture', async
 
   // And nothing else moved: the opposite corner is the picture, untouched.
   assert.deepEqual(pixel(flagged, 10, TILE - 10), pixel(quiet, 10, TILE - 10));
+});
+
+/** Rows of the tile holding any text pixel, as bands of consecutive rows. */
+function textBands(bitmap: RgbaBitmap): { from: number; to: number }[] {
+  const bands: { from: number; to: number }[] = [];
+
+  for (let y = 0; y < bitmap.height; y++) {
+    let lit = false;
+    for (let x = 0; x < bitmap.width && !lit; x++) {
+      // The background is black; the label is white.
+      lit = pixel(bitmap, x, y)[0] > 120;
+    }
+
+    const last = bands[bands.length - 1];
+    if (!lit) continue;
+    if (last && y - last.to <= 1) last.to = y;
+    else bands.push({ from: y, to: y });
+  }
+
+  return bands;
+}
+
+test('a label too wide for the key wraps rather than shrinking away', async () => {
+  // The panel used to drop the type to nine pixels rather than use the room
+  // below, which is how the same label read fine in the window and tiny on the
+  // device. Both surfaces now follow the same layout.
+  const composer = new CanvasPanelComposer();
+  const source = await composer.open({ background: '#000000', width: TILE, height: TILE });
+
+  const tile = composer.cutTile(source.composeFrame(0), {
+    ...SQUARE,
+    x: 0,
+    y: 0,
+    label: { text: 'Open browser', fontSize: 22 },
+  });
+
+  assert.equal(textBands(tile).length, 2, 'expected two lines of text');
+});
+
+test('a label with no position of its own sits where the window puts it', async () => {
+  // Middle on a plain key, bottom over a picture: the two surfaces disagreed
+  // about exactly this.
+  const composer = new CanvasPanelComposer();
+  const source = await composer.open({ background: '#000000', width: TILE, height: TILE });
+  const region = source.composeFrame(0);
+
+  const plain = composer.cutTile(region, { ...SQUARE, x: 0, y: 0, label: { text: 'Hi' } });
+  const over = composer.cutTile(region, {
+    ...SQUARE,
+    x: 0,
+    y: 0,
+    label: { text: 'Hi' },
+    hasPicture: true,
+  });
+
+  const middle = textBands(plain)[0]!;
+  const low = textBands(over)[0]!;
+
+  assert.ok(middle.from > TILE * 0.3 && middle.to < TILE * 0.7, `centred, got ${middle.from}..${middle.to}`);
+  assert.ok(low.from > TILE * 0.6, `expected the bottom, got ${low.from}..${low.to}`);
 });

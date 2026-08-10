@@ -592,7 +592,6 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
               row: span.row,
               cols: span.parent.colSpan ?? 1,
               rows: span.parent.rowSpan ?? 1,
-              ...(parent.icon.fit ? { fit: parent.icon.fit } : {}),
             } satisfies BackdropSlice,
           }
         : {}),
@@ -619,11 +618,28 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    * stale answer would either delay a key for nothing or miss a second tap.
    */
   private doublePressKeys(): number[] {
+    return this.keysBoundTo('doublePress');
+  }
+
+  /**
+   * Keys whose current appearance has something bound to holding them.
+   *
+   * Told to the surface for the same reason the double-press keys are: the
+   * shrink-while-held is an acknowledgement, and once a hold has fired there
+   * is nothing left to acknowledge — the key can come back up while the
+   * finger is still down. On a key with nothing bound to holding, it stays
+   * down, because there the shrink is all the feedback there is.
+   */
+  private longPressKeys(): number[] {
+    return this.keysBoundTo('longPress');
+  }
+
+  private keysBoundTo(event: ButtonEvent): number[] {
     const page = this.currentPage;
     if (!page) return [];
 
     return page.buttons
-      .filter((button) => (this.resolveState(button).actions?.doublePress?.length ?? 0) > 0)
+      .filter((button) => (this.resolveState(button).actions?.[event]?.length ?? 0) > 0)
       .map((button) => button.key);
   }
 
@@ -727,6 +743,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     this.lastScene = signature;
 
     this.surface.setDoublePressKeys?.(this.doublePressKeys());
+    this.surface.setLongPressKeys?.(this.longPressKeys());
     await this.surface.present(scene);
     this.emit('painted', sceneKeys(scene, this.surface.layout.cols));
   }
@@ -827,7 +844,6 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
         ? {
             image: {
               asset: { id: this.assets.id(visual.icon.source), source: visual.icon.source },
-              ...(visual.icon.fit ? { fit: visual.icon.fit } : {}),
             },
           }
         : {}),

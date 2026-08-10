@@ -20,21 +20,25 @@ import { openTarget } from './system-actions.js';
 const folderActions: readonly ActionDefinition[] = [
   {
     type: 'easydeck.open-config-folder',
+    icon: 'folder-open',
     label: { en: 'Open config folder', ru: 'Открыть папку настроек' },
     group: { en: 'Folders', ru: 'Папки' },
   },
   {
     type: 'easydeck.open-profiles-folder',
+    icon: 'folder-open',
     label: { en: 'Open profiles folder', ru: 'Открыть папку профилей' },
     group: { en: 'Folders', ru: 'Папки' },
   },
   {
     type: 'easydeck.open-plugins-folder',
+    icon: 'folder-open',
     label: { en: 'Open plugins folder', ru: 'Открыть папку плагинов' },
     group: { en: 'Folders', ru: 'Папки' },
   },
   {
     type: 'easydeck.open-icons-folder',
+    icon: 'folder-open',
     label: { en: 'Open icons folder', ru: 'Открыть папку иконок' },
     group: { en: 'Folders', ru: 'Папки' },
   },

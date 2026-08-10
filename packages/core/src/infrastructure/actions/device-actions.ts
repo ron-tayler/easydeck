@@ -38,6 +38,7 @@ export const deckManifest: PluginManifest = {
   actions: [
     {
       type: 'deck.set-brightness',
+      icon: 'brightness',
       label: { en: 'Brightness', ru: 'Яркость' },
       params: [
         /*
@@ -72,6 +73,7 @@ export const deckManifest: PluginManifest = {
     },
     {
       type: 'deck.sleep-panel',
+      icon: 'sleep',
       label: { en: 'Sleep', ru: 'Усыпить' },
       description: {
         en: 'Turns the panel off. Any key press wakes it',
@@ -80,6 +82,7 @@ export const deckManifest: PluginManifest = {
     },
     {
       type: 'deck.wake-panel',
+      icon: 'wake',
       label: { en: 'Wake', ru: 'Разбудить' },
     },
   ],

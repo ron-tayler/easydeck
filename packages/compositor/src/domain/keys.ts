@@ -28,9 +28,7 @@ const NONE = '-';
  */
 export function regionKey(format: PanelFormat, region: SceneRegion): string {
   const panel = `${format.tileWidth}x${format.tileHeight}+${format.gap}@${format.rotationDegrees}<${format.maxTileBytes}`;
-  const image = region.image
-    ? `${region.image.asset.id}:${region.image.fit ?? 'cover'}`
-    : NONE;
+  const image = region.image ? region.image.asset.id : NONE;
 
   return [
     panel,

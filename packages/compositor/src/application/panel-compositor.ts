@@ -23,6 +23,15 @@ export interface PanelCompositorOptions {
   /** Images a second the panel can swallow; refined from measurement. */
   readonly writesPerSecond?: number;
   readonly animationCacheBytes?: number;
+  /**
+   * Where to write a line about what happened to a key, if anywhere.
+   *
+   * Only the rare, decisive events — a finger arriving or leaving, a scene
+   * clearing a key, a smaller copy drawn or discarded. Animation frames are
+   * deliberately absent: at thirty a second they would bury the one line that
+   * explains why a key is showing the wrong thing.
+   */
+  readonly trace?: (event: string, detail?: Readonly<Record<string, unknown>>) => void;
 }
 
 export interface PanelCompositorEvents {
@@ -70,7 +79,33 @@ export class PanelCompositor extends EventEmitter<PanelCompositorEvents> {
   /** Sources held open while their remaining frames are prepared. */
   private readonly sources = new Map<string, FrameSource>();
   /** Keys currently held down, and what they would show if they were not. */
-  private readonly pressed = new Map<number, Uint8Array>();
+  /**
+   * Keys with a finger on them.
+   *
+   * `resting` is what goes back on release, and it moves with the world: a
+   * scene change or an animation frame that lands on a held key is recorded
+   * here instead of being drawn. `drawnFrom` is the picture the smaller copy
+   * currently on the panel was made from — the two differing is exactly what
+   * "this key is showing something out of date" means.
+   */
+  private readonly pressed = new Map<number, { resting: Uint8Array; drawnFrom?: Uint8Array }>();
+
+  /**
+   * Keys the last scene change cleared.
+   *
+   * Kept only so a write that lands on one can be reported. A key that has
+   * been cleared and then written to is the difference between "the panel
+   * ignored the clear" and "something painted over it afterwards", and from
+   * the outside the two look identical.
+   */
+  private clearedRecently = new Set<number>();
+  /** An encoded empty key, made once on the first clear and reused. */
+  private blank?: Uint8Array;
+
+  /** Says what happened to a key, where anyone is listening. */
+  private trace(event: string, detail?: Readonly<Record<string, unknown>>): void {
+    this.options.trace?.(event, detail);
+  }
 
   private readonly budget: WriteBudget;
   private readonly clock: ClockPort;
@@ -85,7 +120,7 @@ export class PanelCompositor extends EventEmitter<PanelCompositorEvents> {
     private readonly composer: ComposerPort,
     private readonly encoder: EncoderPort,
     private readonly format: PanelFormat,
-    options: PanelCompositorOptions = {},
+    private readonly options: PanelCompositorOptions = {},
   ) {
     super();
     this.clock = options.clock ?? systemClock;
@@ -122,8 +157,31 @@ export class PanelCompositor extends EventEmitter<PanelCompositorEvents> {
     await this.enqueue(async () => {
       const written: number[] = [];
 
+      this.trace('present', {
+        cleared: plan.cleared,
+        regions: [...wanted.values()].map((planned) => planned.region.key),
+        pressed: [...this.pressed.keys()],
+      });
+
+      // Only the keys this pass emptied; anything the new scene covers is no
+      // longer "cleared", and reporting writes to it would be noise.
+      this.clearedRecently = new Set(plan.cleared);
+
+      const blank = plan.cleared.length > 0 ? await this.blankTile() : undefined;
+
       for (const key of plan.cleared) {
-        await this.panel.clearKey(key);
+        /*
+         * Painted black rather than cleared.
+         *
+         * The panel has a clear-one-key command and it does not take: a key
+         * emptied that way went on showing whatever it had — the frame a GIF
+         * had reached, the smaller copy drawn under a finger — for as long as
+         * the deck stayed on. Writing black is a few kilobytes over the bus
+         * against a picture that outlives the page it belonged to.
+         */
+        if (blank) await this.panel.writeKey(key, blank);
+        else await this.panel.clearKey(key);
+
         this.state.clear(key);
       }
 
@@ -134,6 +192,8 @@ export class PanelCompositor extends EventEmitter<PanelCompositorEvents> {
       if (written.length > 0 || plan.cleared.length > 0) {
         this.emit('painted', [...plan.cleared, ...written]);
       }
+
+      await this.refreshPressed();
     });
 
     for (const identity of wanted.keys()) this.continuePreparing(identity);
@@ -170,35 +230,125 @@ export class PanelCompositor extends EventEmitter<PanelCompositorEvents> {
     if (pressed === this.pressed.has(key)) return;
 
     if (!pressed) {
-      const resting = this.pressed.get(key);
+      const entry = this.pressed.get(key);
       this.pressed.delete(key);
-      if (resting) await this.enqueue(() => this.writeTile(key, resting));
+      this.trace('release', { key, restored: Boolean(entry) });
+      if (entry) await this.enqueue(() => this.writeTile(key, entry.resting));
       return;
     }
 
     const held = this.state.get(key);
+    this.trace('press', { key, hasTile: Boolean(held) });
     if (!held) return;
 
-    this.pressed.set(key, held.bytes);
-    await this.enqueue(async () => {
+    this.pressed.set(key, { resting: held.bytes });
+    await this.enqueue(() => this.drawPressed(key, held.bytes));
+  }
+
+  /**
+   * Draws one key smaller, as the acknowledgement of a finger on it.
+   *
+   * Checked against the finger twice, before and after the work. Shrinking and
+   * encoding take a moment, and a quick tap is over inside it: without the
+   * second check this wrote the smaller copy *after* the release had already
+   * put the key back, and — worse — recorded the key as held again. Nothing
+   * would ever release it after that, so it sat there wearing the frozen
+   * picture through every page that followed.
+   */
+  private async drawPressed(key: number, resting: Uint8Array): Promise<void> {
+    if (!this.pressed.has(key)) {
+      this.trace('shrink-skipped', { key, when: 'before' });
+      return;
+    }
+
+    try {
+      const bitmap = await this.composer.shrinkTile(resting, {
+        width: this.format.tileWidth,
+        height: this.format.tileHeight,
+        scale: PRESSED_SCALE,
+      });
+      const encoded = await this.encoder.encode(bitmap, { maxBytes: this.format.maxTileBytes });
+
+      if (!this.pressed.has(key)) {
+        this.trace('shrink-skipped', { key, when: 'after' });
+        return;
+      }
+
+      this.pressed.set(key, { resting, drawnFrom: resting });
+      this.trace('shrink-written', { key });
+      await this.writeTile(key, encoded.bytes);
+    } catch (error) {
+      // Feedback is a courtesy: failing to shrink a key must not disturb what
+      // it shows, and certainly must not take the panel down.
+      this.emit('error', error as Error);
+    }
+  }
+
+  /**
+   * Brings held keys up to date with what the scene now says.
+   *
+   * A pressed key is frozen: the picture behind it is remembered so releasing
+   * can put it back. When the scene changes underneath that — a page turn, a
+   * button switching state — the remembered picture is the *old* one, and
+   * releasing pasted it back over the new page. A GIF made it worse: whatever
+   * frame it had reached was remembered too, and surfaced on a page it never
+   * belonged to.
+   *
+   * So the memory follows the scene. A key still on screen is redrawn held
+   * down from its new picture — which is also the answer to a state changing
+   * under a finger, where the key used to sit unchanged until released. A key
+   * the new scene has nothing for is simply forgotten.
+   */
+  private async refreshPressed(): Promise<void> {
+    for (const [key, entry] of [...this.pressed]) {
+      if (!this.state.get(key)) {
+        this.pressed.delete(key);
+        this.trace('pressed-forgotten', { key });
+        continue;
+      }
+
+      if (entry.drawnFrom && sameBytes(entry.drawnFrom, entry.resting)) continue;
+
+      this.trace('pressed-refreshed', { key });
+      await this.drawPressed(key, entry.resting);
+    }
+  }
+
+  /**
+   * A key with nothing on it, encoded once and kept.
+   *
+   * Composed exactly as a region with no picture would be — the background the
+   * renderer falls back to — so an emptied key looks like an empty key rather
+   * than like something this file invented.
+   */
+  private async blankTile(): Promise<Uint8Array | undefined> {
+    if (this.blank) return this.blank;
+
+    try {
+      const source = await this.composer.open({ geometry: regionGeometry(this.format, 1, 1) });
       try {
-        const bitmap = await this.composer.shrinkTile(held.bytes, {
-          width: this.format.tileWidth,
-          height: this.format.tileHeight,
-          scale: PRESSED_SCALE,
+        const bitmap = await this.composer.cutTile(await source.composeFrame(0), {
+          col: 0,
+          row: 0,
+          corners: { topLeft: true, topRight: true, bottomRight: true, bottomLeft: true },
         });
         const encoded = await this.encoder.encode(bitmap, { maxBytes: this.format.maxTileBytes });
-        await this.writeTile(key, encoded.bytes);
-      } catch (error) {
-        // Feedback is a courtesy: failing to shrink a key must not disturb
-        // what it shows, and certainly must not take the panel down.
-        this.emit('error', error as Error);
+        this.blank = encoded.bytes;
+      } finally {
+        source.close();
       }
-    });
+    } catch (error) {
+      // Falls back to the panel's own clear, which is better than nothing.
+      this.emit('error', error as Error);
+    }
+
+    return this.blank;
   }
 
   /** Puts bytes on a key without disturbing what the scene thinks is there. */
   private async writeTile(key: number, bytes: Uint8Array): Promise<void> {
+    if (this.clearedRecently.has(key)) this.trace('write-after-clear', { key });
+
     const held = this.state.get(key);
     await this.panel.writeKey(key, bytes);
     if (held) this.state.set(key, { ...held, bytes });
@@ -279,7 +429,6 @@ export class PanelCompositor extends EventEmitter<PanelCompositorEvents> {
     try {
       source = await this.composer.open({
         ...(planned.region.image ? { asset: planned.region.image.asset } : {}),
-        ...(planned.region.image?.fit ? { fit: planned.region.image.fit } : {}),
         ...(planned.region.background === undefined
           ? {}
           : { background: planned.region.background }),
@@ -384,6 +533,8 @@ export class PanelCompositor extends EventEmitter<PanelCompositorEvents> {
           ? {}
           : { cornerRadius: planned.region.cornerRadius }),
         ...(label ? { label } : {}),
+        // Where an unpositioned label goes depends on what is under it.
+        ...(planned.region.image ? { hasPicture: true } : {}),
         ...(alertAt(planned.region, tile.col, tile.row) ? { alert: true } : {}),
       });
 
@@ -430,8 +581,10 @@ export class PanelCompositor extends EventEmitter<PanelCompositorEvents> {
        * The frame is remembered instead, so releasing shows where the
        * animation actually got to.
        */
-      if (this.pressed.has(key)) {
-        this.pressed.set(key, bytes);
+      const pressed = this.pressed.get(key);
+      if (pressed) {
+        this.trace('frame-held-back', { key, frame: index });
+        this.pressed.set(key, { ...pressed, resting: bytes });
         const held = this.state.get(key);
         if (held) this.state.set(key, { ...held, tileKey, frameIndex: index });
         continue;
@@ -448,6 +601,8 @@ export class PanelCompositor extends EventEmitter<PanelCompositorEvents> {
         this.state.set(key, { tileKey, frameIndex: index, bytes });
         continue;
       }
+
+      if (this.clearedRecently.has(key)) this.trace('frame-after-clear', { key, frame: index });
 
       await this.panel.writeKey(key, bytes);
       this.state.set(key, { tileKey, frameIndex: index, bytes });

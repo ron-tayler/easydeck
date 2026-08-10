@@ -27,7 +27,9 @@ const host = new DeckHost();
 
 function createWindow(): BrowserWindow {
   const created = new BrowserWindow({
-    width: 1100,
+    // Wide enough for the deck grid, the editor's columns and the action
+    // palette beside them, which is three squares across now.
+    width: 1300,
     height: 720,
     minWidth: 800,
     minHeight: 560,

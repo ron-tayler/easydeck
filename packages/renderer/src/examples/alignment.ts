@@ -37,7 +37,7 @@ async function main(): Promise<void> {
   const pattern = alignmentPattern(size);
   for (let key = 0; key < surface.layout.rows * surface.layout.cols; key++) {
     const jpeg = await renderer.render(
-      { background: '#000000', cornerRadius: 0, icon: { source: pattern, fit: 'cover' } },
+      { background: '#000000', cornerRadius: 0, icon: { source: pattern } },
       target,
     );
     await surface.setKeyImage(key, Buffer.from(jpeg));

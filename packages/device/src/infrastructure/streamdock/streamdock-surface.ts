@@ -111,7 +111,15 @@ export class StreamDockSurface extends EventEmitter<SurfaceEventMap> implements 
 
   async clearKey(key: number): Promise<void> {
     const imageKeyId = this.imageKeyId(key);
-    await this.enqueue(() => this.sendCommand(commands.clearKey(imageKeyId)));
+
+    await this.enqueue(async () => {
+      await this.sendCommand(commands.clearKey(imageKeyId));
+      // The same commit `clearAllKeys` sends, and for the same reason: on v2+
+      // firmwares the clear does not take effect without it, so the key went
+      // on showing whatever it had — a frame of a GIF from a page the deck had
+      // already left. Harmless on v1.
+      await this.sendCommand(commands.commit());
+    });
   }
 
   async clearAllKeys(): Promise<void> {

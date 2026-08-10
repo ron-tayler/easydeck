@@ -6,6 +6,7 @@ import { CanvasPanelComposer, TileEncoder, createJpegEncoder } from '@easydeck/r
 
 import { toComposerPort } from './composer-adapter.js';
 import { toEncoderPort, toPanelFormat, toPanelPort, toPresenterPort } from './panel-adapter.js';
+import { openPanelTrace } from './panel-trace.js';
 
 export interface PhysicalDeckOptions {
   readonly surface: Surface;
@@ -35,11 +36,15 @@ export async function createPhysicalDeck(options: PhysicalDeckOptions): Promise<
   const format = toPanelFormat(options.surface);
   const encoder = new TileEncoder(await createJpegEncoder());
 
+  const trace = openPanelTrace();
+  if (trace) console.log(`Панель: трассировка пишется в ${trace.path}`);
+
   const compositor = new PanelCompositor(
     toPanelPort(options.surface),
     toComposerPort(new CanvasPanelComposer(), format),
     toEncoderPort(encoder),
     format,
+    trace ? { trace: trace.write } : {},
   );
 
   const controller = new DeckController(

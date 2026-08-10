@@ -25,7 +25,6 @@ export function toComposerPort(composer: PanelComposer, format: PanelFormat): Co
     async open(request: OpenRequest): Promise<FrameSource> {
       const source = await composer.open({
         ...(request.asset ? { source: request.asset.source } : {}),
-        ...(request.fit ? { fit: request.fit } : {}),
         ...(request.background === undefined ? {} : { background: request.background }),
         width: request.geometry.width,
         height: request.geometry.height,
@@ -51,6 +50,7 @@ export function toComposerPort(composer: PanelComposer, format: PanelFormat): Co
         corners: request.corners,
         ...(request.cornerRadius === undefined ? {} : { cornerRadius: request.cornerRadius }),
         ...(request.label ? { label: request.label } : {}),
+        ...(request.hasPicture ? { hasPicture: true } : {}),
         ...(request.alert ? { alert: true } : {}),
       });
     },

@@ -46,7 +46,10 @@ test('everything that changes the composed pixels changes the region key', () =>
   assert.notEqual(base, regionKey(FORMAT, region({ rows: 3 })));
   assert.notEqual(base, regionKey(FORMAT, region({ background: '#ff0000' })));
   assert.notEqual(base, regionKey(FORMAT, region({ cornerRadius: 0 })));
-  assert.notEqual(base, regionKey(FORMAT, region({ image: { asset: ASSET, fit: 'contain' } })));
+  assert.notEqual(
+    base,
+    regionKey(FORMAT, region({ image: { asset: { ...ASSET, id: 'other' } } })),
+  );
   assert.notEqual(base, regionKey(FORMAT, region({ image: undefined })));
 });
 

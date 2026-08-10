@@ -20,8 +20,12 @@ const TRIGGERS: readonly Trigger[] = ['press', 'longPress', 'doublePress'];
 
 /** Ours alone, so a key being dragged in the grid can never land in a macro. */
 const STEP_MIME = 'application/x-easydeck-step';
+/** What the palette puts on the clipboard, same as the grid already accepts. */
+const ACTION_MIME = 'application/x-easydeck-action';
 
 const props = defineProps<{
+  /** Which gesture is open; owned above so a state tab can add to it. */
+  trigger?: 'press' | 'longPress' | 'doublePress';
   actions: ActionMap;
   plugins: readonly PluginManifest[];
   /** Live values and their declarations, for the variable picker. */
@@ -33,7 +37,11 @@ const props = defineProps<{
   ownStates: readonly string[];
 }>();
 
-const emit = defineEmits<{ update: [actions: ActionMap] }>();
+const emit = defineEmits<{
+ update: [actions: ActionMap]
+  /** The gesture tab the user switched to. */
+  trigger: [which: Trigger];
+}>();
 
 const { t, locale } = useI18n();
 
@@ -47,7 +55,17 @@ const say = (text: LocalizedText | undefined): string =>
  * not editing to reach the one you were. A macro is read as an ordered list,
  * so the list is what gets the room.
  */
-const trigger = ref<Trigger>('press');
+/**
+ * Which gesture is being edited.
+ *
+ * Held by the editor above rather than here, because dropping an action onto
+ * another *state's* tab has to know it — the answer to "where does this land"
+ * is the gesture currently open, whichever state it goes to.
+ */
+const trigger = computed<Trigger>({
+  get: () => props.trigger ?? 'press',
+  set: (value) => emit('trigger', value),
+});
 const list = computed<readonly ActionDescriptor[]>(() => props.actions[trigger.value] ?? []);
 const countOf = (which: Trigger): number => (props.actions[which] ?? []).length;
 
@@ -130,21 +148,20 @@ function setList(which: Trigger, next: ActionDescriptor[]): void {
 }
 
 /**
- * The picker chooses; it does not hold a value.
+ * Adds a step at a given place in the sequence.
  *
- * A select keeps its selection and fires nothing when the same option is
- * picked again — so adding one action twice would silently do nothing the
- * second time.
+ * There used to be a dropdown for this, which asked people to find an action
+ * by name in a list of every action installed, then read where it landed. The
+ * palette beside the editor shows what each one does and drops it exactly
+ * where it is wanted, so the dropdown had nothing left to offer.
  */
-function onAdd(event: Event): void {
-  const select = event.target as HTMLSelectElement;
-  const type = select.value;
-  select.value = '';
-  if (!type) return;
+function insert(type: string, at: number): void {
+  const next = [...list.value];
+  const position = Math.max(0, Math.min(at, next.length));
 
-  const next = [...list.value, { type }];
+  next.splice(position, 0, { type });
   setList(trigger.value, next);
-  open.value = next.length - 1;
+  open.value = position;
 }
 
 function duplicate(index: number): void {
@@ -181,6 +198,7 @@ const dropIndex = ref<number | null>(null);
 const tabOver = ref<Trigger | null>(null);
 
 function reset(): void {
+  tailOver.value = false;
   dragIndex.value = null;
   armed.value = null;
   dropIndex.value = null;
@@ -195,23 +213,60 @@ function onDragStart(index: number, event: DragEvent): void {
 }
 
 function onDragOver(index: number, event: DragEvent): void {
-  if (!event.dataTransfer?.types.includes(STEP_MIME)) return;
+  const types = event.dataTransfer?.types ?? [];
+  if (!types.includes(STEP_MIME) && !types.includes(ACTION_MIME)) return;
   event.preventDefault();
 
   const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
   dropIndex.value = event.clientY < box.top + box.height / 2 ? index : index + 1;
 }
 
-function onDrop(): void {
+function onDrop(event: DragEvent): void {
   const from = dragIndex.value;
   const to = dropIndex.value;
+  const dropped = event.dataTransfer?.getData(ACTION_MIME);
   reset();
+
+  // From the palette: a new step, at the point the line was showing.
+  if (dropped) {
+    try {
+      const { type } = JSON.parse(dropped) as { type: string };
+      if (type) insert(type, to ?? list.value.length);
+    } catch {
+      // Something else's drag data wearing our type; nothing to add.
+    }
+    return;
+  }
+
   if (from === null || to === null) return;
 
   const next = [...list.value];
   const [moved] = next.splice(from, 1);
   next.splice(to > from ? to - 1 : to, 0, moved!);
   setList(trigger.value, next);
+}
+
+const tailOver = ref(false);
+
+function onTailDragOver(event: DragEvent): void {
+  const types = event.dataTransfer?.types ?? [];
+  if (!types.includes(ACTION_MIME) && !types.includes(STEP_MIME)) return;
+
+  event.preventDefault();
+  tailOver.value = true;
+  dropIndex.value = list.value.length;
+}
+
+function onTailDrop(event: DragEvent): void {
+  tailOver.value = false;
+  onDrop(event);
+}
+
+/** The empty list is a target too, or a first step could never be dropped. */
+function onEmptyDragOver(event: DragEvent): void {
+  if (!event.dataTransfer?.types.includes(ACTION_MIME)) return;
+  event.preventDefault();
+  dropIndex.value = 0;
 }
 
 /** Dropping on another trigger's tab moves the step there — the usual fix
@@ -258,7 +313,16 @@ function onTabDrop(which: Trigger): void {
       </button>
     </div>
 
-    <p v-if="list.length === 0" class="muted empty">{{ t('editor.noActions') }}</p>
+    <p
+      v-if="list.length === 0"
+      class="muted empty"
+      :class="{ over: dropIndex === 0 }"
+      @dragover="onEmptyDragOver"
+      @dragleave="dropIndex = null"
+      @drop.prevent="onDrop"
+    >
+      {{ t('editor.noActions') }}
+    </p>
 
     <ol v-else @dragend="reset">
       <li
@@ -272,7 +336,7 @@ function onTabDrop(which: Trigger): void {
         }"
         @dragstart="onDragStart(index, $event)"
         @dragover="onDragOver(index, $event)"
-        @drop.prevent="onDrop"
+        @drop.prevent="onDrop($event)"
       >
         <div class="head">
           <span
@@ -328,16 +392,12 @@ function onTabDrop(which: Trigger): void {
       </li>
     </ol>
 
-    <select class="add" value="" @change="onAdd">
-      <option value="">{{ t('editor.addAction') }}</option>
-      <optgroup v-for="plugin in plugins" :key="plugin.id" :label="say(plugin.name)">
-        <option v-for="action in plugin.actions" :key="action.type" :value="action.type">
-          {{ say(action.label) }}
-        </option>
-      </optgroup>
-    </select>
 
     <p v-if="list.length > 1" class="muted hint">{{ t('editor.orderHint') }}</p>
+
+    <!-- The room below the last step: dropping there means "at the end",
+         which is what aiming at empty space under a list is asking for. -->
+    <div class="tail" :class="{ over: tailOver }" @dragover="onTailDragOver" @dragleave="tailOver = false" @drop.prevent="onTailDrop" />
   </section>
 </template>
 
@@ -346,6 +406,10 @@ function onTabDrop(which: Trigger): void {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* Full height, so the area below the last step is real estate a drop can
+     land on rather than nothing at all. */
+  flex: 1;
+  min-height: 0;
 }
 
 .tabs {
@@ -512,5 +576,21 @@ li.dragging {
 .hint {
   font-size: 11px;
   margin: 0;
+}
+.empty.over {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tail {
+  flex: 1;
+  min-height: 40px;
+  border: 1px dashed transparent;
+  border-radius: 8px;
+  margin-top: 6px;
+}
+
+.tail.over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 </style>

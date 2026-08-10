@@ -18,16 +18,30 @@ const app = resolve(here, '..');
 
 const configDir = process.env['EASYDECK_CONFIG_DIR'];
 
+/*
+ * `pnpm dev --trace` rather than an environment variable.
+ *
+ * Setting one differs between PowerShell, cmd and a shell, and getting it
+ * wrong fails silently — the program starts, writes nothing, and looks like
+ * the tracing is broken. A flag reads the same everywhere.
+ */
+const tracing = process.argv.includes('--trace');
+
 if (!existsSync(join(app, 'dist', 'main.js'))) {
   console.error('Собери приложение сначала: pnpm --filter @easydeck/app build');
   process.exit(1);
 }
 
 console.log(configDir ? `Данные: ${configDir}` : 'Данные: как у собранной программы');
+if (tracing) console.log('Трассировка панели включена');
 
 const electron = spawn('electron', ['.'], {
   cwd: app,
-  env: { ...process.env, ...(configDir ? { EASYDECK_CONFIG_DIR: configDir } : {}) },
+  env: {
+    ...process.env,
+    ...(configDir ? { EASYDECK_CONFIG_DIR: configDir } : {}),
+    ...(tracing ? { EASYDECK_TRACE: '1' } : {}),
+  },
   stdio: 'inherit',
   shell: process.platform === 'win32',
 });

@@ -12,6 +12,7 @@
     "build": "pnpm -r run build",
     "dev": "pnpm --filter @easydeck/app dev",
     "test": "pnpm -r run test",
-    "typecheck": "pnpm -r run typecheck"
+    "typecheck": "pnpm -r run typecheck",
+    "trace-dev": "pnpm dev -- --trace"
   }
 }

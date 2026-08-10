@@ -37,4 +37,12 @@ export interface PresenterPort {
    * mirror — simply leaves it out.
    */
   setDoublePressKeys?(keys: readonly number[]): void;
+  /**
+   * Which keys have something bound to being held.
+   *
+   * A surface that shows a key as pressed uses this to decide when to stop:
+   * once a hold has fired on such a key, the acknowledgement has served its
+   * purpose and the key returns to size with the finger still on it.
+   */
+  setLongPressKeys?(keys: readonly number[]): void;
 }

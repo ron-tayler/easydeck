@@ -326,22 +326,56 @@ export function setButtonSpan(
   }));
 }
 
+/**
+ * Moves a button to another key, trading places with whatever was there.
+ *
+ * A stretched button carries its rectangle with it, and the rectangle may not
+ * fit where it lands — three columns wide dropped on the last column has
+ * nowhere to go. It is trimmed to what fits rather than refused: the move is
+ * what was asked for, and a button quietly not moving is harder to understand
+ * than one that arrives smaller.
+ *
+ * The old size is not remembered. Dragging back gives a button of the size it
+ * has now, which is visible and easy to correct — a size that springs back
+ * would be a rule nobody can see.
+ */
 export function swapKeys(
   profile: ProfileDefinition,
   pageId: string,
   from: number,
   to: number,
+  layout?: { readonly rows: number; readonly cols: number },
 ): ProfileDefinition {
   if (from === to) return profile;
 
   return updatePage(profile, pageId, (page) => ({
     ...page,
     buttons: page.buttons.map((button) => {
-      if (button.key === from) return { ...button, key: to };
-      if (button.key === to) return { ...button, key: from };
+      if (button.key === from) return trimToGrid({ ...button, key: to }, layout);
+      if (button.key === to) return trimToGrid({ ...button, key: from }, layout);
       return button;
     }),
   }));
+}
+
+/** Cuts a button's rectangle down to what the grid can hold from its new key. */
+function trimToGrid(
+  button: ButtonDefinition,
+  layout: { readonly rows: number; readonly cols: number } | undefined,
+): ButtonDefinition {
+  if (!layout) return button;
+
+  const column = button.key % layout.cols;
+  const row = Math.floor(button.key / layout.cols);
+
+  const colSpan = Math.min(button.colSpan ?? 1, layout.cols - column);
+  const rowSpan = Math.min(button.rowSpan ?? 1, layout.rows - row);
+
+  return {
+    ...button,
+    colSpan: colSpan > 1 ? colSpan : undefined,
+    rowSpan: rowSpan > 1 ? rowSpan : undefined,
+  };
 }
 
 export function removeKey(

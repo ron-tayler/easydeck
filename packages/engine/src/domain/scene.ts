@@ -21,7 +21,6 @@ export interface SceneAsset {
 
 export interface SceneImage {
   readonly asset: SceneAsset;
-  readonly fit?: 'cover' | 'contain';
 }
 
 export interface SceneLabel {
@@ -73,7 +72,7 @@ export function sceneSignature(scene: Scene): string {
   for (const region of scene.regions) {
     parts.push(
       `${region.key}:${region.cols}x${region.rows}`,
-      region.image ? `${region.image.asset.id}/${region.image.fit ?? ''}` : '',
+      region.image ? region.image.asset.id : '',
       region.background ?? '',
       region.cornerRadius === undefined ? '' : String(region.cornerRadius),
     );

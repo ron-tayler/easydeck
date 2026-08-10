@@ -6,6 +6,7 @@ import type { KeyView, PluginManifest, ProfileDefinition, VariableValue } from '
 
 import type { DeckState } from '../domain/api-messages.js';
 import type { Library, LibraryImage } from '../infrastructure/icon-library.js';
+import type { InstalledPluginSummary } from './ports/deck-facade.js';
 import { ApiHandler } from './api-handler.js';
 import type { DeckFacade } from './ports/deck-facade.js';
 import type { ProfileSummary } from './ports/repositories.js';
@@ -80,6 +81,17 @@ class FakeDeck implements DeckFacade {
       : { label: { text: 'Hi' } };
 
     return [{ key: 0, buttonId: 'b', stateId: 'default', visual }];
+  }
+
+  async installedPlugins(): Promise<InstalledPluginSummary> {
+    this.calls.push('installedPlugins');
+    return {
+      plugins: [
+        { id: 'sim', name: 'Sim Racing', kind: 'easydeck', icons: 12, locales: ['ru'] },
+      ],
+      broken: [],
+      messages: { ru: { sim: { start: 'Старт' } } },
+    };
   }
 
   async plugins(): Promise<readonly PluginManifest[]> {

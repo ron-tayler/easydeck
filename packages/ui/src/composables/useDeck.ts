@@ -1,6 +1,8 @@
 import { computed, onScopeDispose, readonly, ref, shallowRef } from 'vue';
 import type {
   DeckState,
+  InstalledPluginInfo,
+  InstalledPluginSummary,
   KeyView,
   LibraryImage,
   PluginManifest,
@@ -8,6 +10,7 @@ import type {
   ProfileSummary,
 } from '@easydeck/core';
 
+import { applyPluginMessages } from '../i18n/index.js';
 import { createClient } from '../api/client.js';
 import type { DeckClient } from '../api/client.js';
 
@@ -27,6 +30,9 @@ const profiles = shallowRef<readonly ProfileSummary[]>([]);
 /** The active profile in full — the left panel needs its whole folder tree. */
 const profile = shallowRef<ProfileDefinition | undefined>();
 const plugins = shallowRef<readonly PluginManifest[]>([]);
+/** What the plugins folder holds, which may be pictures and text and no actions. */
+const installedPlugins = shallowRef<readonly InstalledPluginInfo[]>([]);
+const brokenPlugins = shallowRef<readonly { id: string; problem: string }[]>([]);
 const pressedKeys = ref<ReadonlySet<number>>(new Set());
 /**
  * Which deck the window is showing.
@@ -109,6 +115,18 @@ async function refreshPlugins(): Promise<void> {
     plugins.value = result.plugins;
   } catch {
     plugins.value = [];
+  }
+
+  try {
+    const installed = await client.call<InstalledPluginSummary>('getInstalledPlugins');
+    installedPlugins.value = installed.plugins;
+    brokenPlugins.value = installed.broken;
+    // A plugin naming its own actions has to be able to name them before
+    // anything draws them, which is why the text arrives with the list.
+    applyPluginMessages(installed.messages);
+  } catch {
+    installedPlugins.value = [];
+    brokenPlugins.value = [];
   }
 }
 
@@ -234,6 +252,8 @@ export function useDeck() {
     profiles,
     profile,
     plugins,
+    installedPlugins,
+    brokenPlugins,
     pressedKeys: readonly(pressedKeys),
     selectedDeckId,
     /** The deck being shown, resolved against what the daemon reports. */

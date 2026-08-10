@@ -11,6 +11,8 @@ import type {
 import type { LabelSpec } from '../../domain/button-visual.js';
 import { RenderError } from '../../domain/render-target.js';
 import type { RgbaBitmap } from '../../domain/render-target.js';
+import { layoutLabel } from '@easydeck/engine/label';
+
 import { resolveFontFamily } from './font-registry.js';
 import { openGif, isGif } from './gif-sequence.js';
 import type { GifSequence } from './gif-sequence.js';
@@ -25,8 +27,6 @@ const ALERT_EDGE = '#1a1a1a';
 const DEFAULT_BACKGROUND = '#000000';
 const DEFAULT_LABEL_COLOR = '#ffffff';
 const DEFAULT_CORNER_RADIUS = 12;
-const DEFAULT_FONT_SIZE = 22;
-const MIN_FONT_SIZE = 9;
 
 /** Skia-backed composer: one canvas per region, reused across its frames. */
 export class CanvasPanelComposer implements PanelComposer {
@@ -118,7 +118,11 @@ export class CanvasPanelComposer implements PanelComposer {
     // seen through a window, so nothing is resampled and the seams stay put.
     ctx.drawImage(source, -request.x, -request.y);
 
-    if (request.label) this.drawLabel(ctx, request.width, request.height, request.label);
+    if (request.label) {
+      // Whether there is a picture under the text decides where it goes by
+      // default, and only the caller knows.
+      this.drawLabel(ctx, request.width, request.height, request.label, request.hasPicture === true);
+    }
     if (request.alert) this.drawAlert(ctx, request.width, request.height);
     this.roundCorners(ctx, request);
 
@@ -204,11 +208,13 @@ export class CanvasPanelComposer implements PanelComposer {
   }
 
   /**
-   * The picture over the whole region, edge to edge.
+   * The picture over the whole region, edge to edge, cropped to fit.
    *
-   * `cover` by default and for every region size, a single key included: a
-   * picture on a key fills the key. Letterboxing is available through
-   * `contain`, but it is the exception now rather than what an icon gets.
+   * The one behaviour there is, for every region size and a single key
+   * included: a picture on a key fills the key. Letterboxing used to be
+   * available as an option, and it was the wrong kind of choice — a setting
+   * that changed how a picture met the key's edge, offered on every icon,
+   * where what people wanted was for the picture to fill the key.
    */
   private drawCovering(
     ctx: SKRSContext2D,
@@ -217,10 +223,7 @@ export class CanvasPanelComposer implements PanelComposer {
     height: number,
     request: RegionRequest,
   ): void {
-    const scale =
-      (request.fit ?? 'cover') === 'contain'
-        ? Math.min(request.width / width, request.height / height)
-        : Math.max(request.width / width, request.height / height);
+    const scale = Math.max(request.width / width, request.height / height);
 
     const dw = width * scale;
     const dh = height * scale;
@@ -228,34 +231,47 @@ export class CanvasPanelComposer implements PanelComposer {
   }
 
   /**
-   * The label, always on top and never given room of its own.
+   * Draws the label where the shared layout says, not where this file decides.
    *
-   * The old path reserved a strip at the top or bottom and shrank the picture
-   * out of it. Now the picture keeps the whole tile and the text sits over it,
-   * so contrast is the profile author's to choose through `color`.
+   * The arithmetic — wrapping, shrinking, which end of the key the block sits
+   * at — belongs to both surfaces and lives in one place; what is left here is
+   * the part only a canvas can do: measuring glyphs and putting them down.
    */
-  private drawLabel(ctx: SKRSContext2D, width: number, height: number, label: LabelSpec): void {
-    const unit = Math.min(width, height) / 100;
+  private drawLabel(
+    ctx: SKRSContext2D,
+    width: number,
+    height: number,
+    label: LabelSpec,
+    hasPicture: boolean,
+  ): void {
     const family = resolveFontFamily(label.fontFamily);
-    const maxWidth = width * 0.94;
-    let fontSize = (label.fontSize ?? DEFAULT_FONT_SIZE) * unit;
 
-    ctx.font = `${fontSize}px ${family}`;
-    while (fontSize > MIN_FONT_SIZE && ctx.measureText(label.text).width > maxWidth) {
-      fontSize -= 1;
-      ctx.font = `${fontSize}px ${family}`;
-    }
+    const laid = layoutLabel(
+      label,
+      { width, height },
+      (text, fontSize) => {
+        ctx.font = `${fontSize}px ${family}`;
+        const measured = ctx.measureText(text);
+        return {
+          width: measured.width,
+          ascent: measured.actualBoundingBoxAscent,
+          descent: measured.actualBoundingBoxDescent,
+          fontAscent: measured.fontBoundingBoxAscent,
+        };
+      },
+      { hasPicture },
+    );
 
-    // Keep a half-line clear of each edge so descenders are not clipped
-    // (textBaseline is 'middle', so y is the visual centre of the line).
-    const position = label.position ?? 'bottom';
-    const edgePadding = fontSize * 0.62 + 2 * unit;
-    const y = position === 'top' ? edgePadding : position === 'bottom' ? height - edgePadding : height / 2;
-
+    ctx.font = `${laid.fontSize}px ${family}`;
     ctx.fillStyle = label.color ?? DEFAULT_LABEL_COLOR;
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(label.text, width / 2, y, maxWidth);
+    // Drawn from the baseline, which is what the layout hands over: every
+    // other origin puts the font's empty room into the measurement.
+    ctx.textBaseline = 'alphabetic';
+
+    laid.lines.forEach((line, index) => {
+      ctx.fillText(line, width / 2, laid.baselines[index] ?? 0);
+    });
   }
 
   /**

@@ -16,8 +16,6 @@ import type { RgbaBitmap } from '../domain/render-target.js';
 export interface RegionRequest {
   /** A path, a data URL, or the bytes themselves. Absent means plain background. */
   readonly source?: string | Uint8Array;
-  /** Defaults to `cover`: a picture on a key fills it, single key included. */
-  readonly fit?: 'cover' | 'contain';
   readonly background?: string;
   /** The size of the whole region in pixels, gaps between displays included. */
   readonly width: number;
@@ -41,6 +39,13 @@ export interface TileRequest {
   readonly rotationDegrees: 0 | 90 | 180 | 270;
   /** Drawn on top of the picture. Never inset — the picture keeps the whole tile. */
   readonly label?: LabelSpec;
+  /**
+   * Whether a picture sits under the text.
+   *
+   * Decides where an unpositioned label goes: over a picture it drops to the
+   * bottom, where it covers the least, and on a plain key it takes the middle.
+   */
+  readonly hasPicture?: boolean;
   /**
    * Which corners face the panel rather than the picture. Only those are
    * rounded: a key in the middle of a stretched picture that rounded all four

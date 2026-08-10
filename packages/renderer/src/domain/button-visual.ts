@@ -23,20 +23,17 @@ export interface BackdropSlice {
   readonly row: number;
   readonly cols: number;
   readonly rows: number;
-  readonly fit?: 'contain' | 'cover';
 }
 
 export interface IconSpec {
-  /** Encoded image (PNG/JPEG/WebP/AVIF) or a filesystem path to one. */
-  readonly source: Uint8Array | string;
   /**
-   * How to fit the picture into the key. Defaults to 'cover'.
+   * Encoded image (PNG/JPEG/WebP/AVIF) or a filesystem path to one.
    *
-   * The picture always fills the key edge to edge; there is no inset mode and
-   * no size fraction. A key showing a picture shows it whole, and the label
-   * goes on top of it.
+   * The picture always fills the key edge to edge, cropped to do it: there is
+   * no inset mode and no size fraction. A key showing a picture shows it
+   * across the whole key, and the label goes on top.
    */
-  readonly fit?: 'contain' | 'cover';
+  readonly source: Uint8Array | string;
 }
 
 export interface LabelSpec {

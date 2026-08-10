@@ -29,9 +29,12 @@ const FORMAT: PanelFormat = {
 
 /** Fourth byte of a tile: 1 when a label was drawn, 9 when it was shrunk. */
 const PRESSED_MARK = 9;
+/** Marks the tile written to a key the scene has emptied. */
+const BLANK_MARK = 7;
 
 const GIF = { id: 'sha1-gif', source: 'cat.gif' };
 const STILL = { id: 'sha1-png', source: 'cat.png' };
+const OTHER = { id: 'sha1-dog', source: 'dog.png' };
 
 class FakeClock implements ClockPort {
   private time = 0;
@@ -78,6 +81,12 @@ class FakeClock implements ClockPort {
   }
 }
 
+/** Whether a key was emptied — painted blank, rather than merely told to clear. */
+function blanked(panel: FakePanel, key: number): boolean {
+  const last = panel.writes.filter((write) => write.key === key).at(-1);
+  return last?.bytes.at(-1) === BLANK_MARK;
+}
+
 /** Lets background preparation, which yields between frames, run to completion. */
 async function flush(rounds = 60): Promise<void> {
   for (let index = 0; index < rounds; index++) {
@@ -106,7 +115,14 @@ class FakeComposer implements ComposerPort {
       delaysMs: animated ? new Array<number>(frameCount).fill(this.delayMs) : [0],
       composeFrame: async (index: number): Promise<ComposedRegion> => {
         this.composed.push(index);
-        return { width: request.geometry.width, height: request.geometry.height, index } as never;
+        return {
+          width: request.geometry.width,
+          height: request.geometry.height,
+          index,
+          // Which picture this came from, so two different assets produce
+          // tiles that can be told apart.
+          asset: request.asset?.id ?? 'blank',
+        } as never;
       },
       close: () => {
         this.closes++;
@@ -114,23 +130,44 @@ class FakeComposer implements ComposerPort {
     };
   }
 
+  /** Held open to model a shrink that outlives the press that asked for it. */
+  holdShrink = false;
+  private waiting?: () => void;
+
+  releaseShrink(): void {
+    this.waiting?.();
+    this.waiting = undefined;
+    this.holdShrink = false;
+  }
+
   /** Marks the tile as shrunk, so a pressed key is recognisable in a write. */
   async shrinkTile(tile: Uint8Array, request: ShrinkTileRequest): Promise<TileBitmap> {
+    if (this.holdShrink) await new Promise<void>((resolve) => (this.waiting = resolve));
+
     return {
       width: request.width,
       height: request.height,
-      data: Uint8Array.from([...tile.slice(0, 3), PRESSED_MARK]),
+      // Keeps frame, cell and picture; the label bit gives way to the mark,
+      // which is all a pressed-key check needs.
+      data: Uint8Array.from([...tile.slice(0, 3), tile[4] ?? 0, PRESSED_MARK]),
     };
   }
 
   async cutTile(region: ComposedRegion, request: CutTileRequest): Promise<TileBitmap> {
-    const index = (region as unknown as { index: number }).index;
-    // Pixels that identify the frame and the cell they came from, so a write
-    // can be checked for being the right slice of the right frame.
+    const { index, asset } = region as unknown as { index: number; asset: string };
+    // Pixels that identify the frame, the cell and the picture they came from,
+    // so a write can be checked for being the right slice of the right frame
+    // of the right picture.
     return {
       width: FORMAT.tileWidth,
       height: FORMAT.tileHeight,
-      data: new Uint8Array([index, request.col, request.row, request.label ? 1 : 0]),
+      data: new Uint8Array([
+        index,
+        request.col,
+        request.row,
+        request.label ? 1 : 0,
+        asset === OTHER.id ? 2 : asset === GIF.id ? 1 : asset === 'blank' ? BLANK_MARK : 0,
+      ]),
     };
   }
 }
@@ -190,8 +227,9 @@ test('each key gets its own slice', async () => {
 
   await compositor.present({ regions: [{ key: 0, cols: 2, rows: 1, image: { asset: STILL } }] });
 
-  assert.deepEqual([...panel.writes[0]!.bytes], [0, 0, 0, 0]);
-  assert.deepEqual([...panel.writes[1]!.bytes], [0, 1, 0, 0]);
+  // frame, column, row, label, picture
+  assert.deepEqual([...panel.writes[0]!.bytes], [0, 0, 0, 0, 0]);
+  assert.deepEqual([...panel.writes[1]!.bytes], [0, 1, 0, 0, 0]);
 });
 
 test('presenting the same scene again writes nothing', async () => {
@@ -219,13 +257,16 @@ test('changing one label rewrites one key', async () => {
   assert.deepEqual(panel.writes.slice(after).map((write) => write.key), [1]);
 });
 
-test('keys the new scene does not cover are cleared', async () => {
+test('keys the new scene does not cover are emptied', async () => {
   const { panel, compositor } = build();
 
   await compositor.present({ regions: [{ key: 0, cols: 3, rows: 2, image: { asset: STILL } }] });
   await compositor.present({ regions: [{ key: 0, cols: 1, rows: 1, image: { asset: STILL } }] });
 
-  assert.deepEqual(panel.cleared, [1, 2, 5, 6, 7]);
+  for (const key of [1, 2, 5, 6, 7]) {
+    assert.ok(blanked(panel, key), `key ${key} kept what it had`);
+  }
+  assert.ok(!blanked(panel, 0), 'the key the new scene covers was emptied too');
 });
 
 test('an animation starts on its first frame and moves on the clock', async () => {
@@ -317,7 +358,9 @@ test('paging back to the same picture reuses what was prepared', async () => {
   await compositor.present(STRETCHED);
   await flush();
 
-  assert.equal(composer.opens, opens + 1, 'the picture was decoded again on the way back');
+  // The still, and the one composition of the empty key that leaving made
+  // necessary — but not the animation, which was kept.
+  assert.equal(composer.opens, opens + 2, 'the picture was decoded again on the way back');
 });
 
 test('a reconnected panel is refilled from memory, not re-rendered', async () => {
@@ -427,4 +470,217 @@ test('a failing picture does not take the panel down', async () => {
 
   assert.equal(errors.length, 1);
   assert.equal(panel.writes.length, 0);
+});
+
+test('a key held through a scene change comes back as the new scene, not the old', async () => {
+  // Releasing used to paste back the picture from before the press — a page
+  // that had since been left behind, over the page now on screen.
+  const { panel, compositor } = build();
+
+  await compositor.present({ regions: [{ key: 0, cols: 1, rows: 1, image: { asset: STILL } }] });
+  const resting = panel.writes.at(-1)!.bytes;
+  await compositor.setPressed(0, true);
+
+  await compositor.present({ regions: [{ key: 0, cols: 1, rows: 1, image: { asset: OTHER } }] });
+
+  // Still held, so what is on the key now is the smaller copy of the new
+  // picture — the point of the fix.
+  assert.equal(panel.writes.at(-1)!.bytes.at(-1), PRESSED_MARK);
+
+  await compositor.setPressed(0, false);
+  const released = panel.writes.at(-1)!.bytes;
+
+  assert.notEqual(released.at(-1), PRESSED_MARK, 'released to the smaller copy');
+  assert.notDeepEqual(released, resting, 'released to the picture from the page it left');
+});
+
+test('a key held while its picture changes is redrawn, still held', async () => {
+  // A state switching under a finger used to leave the key showing the old
+  // picture until it was let go.
+  const { panel, compositor } = build();
+
+  await compositor.present({ regions: [{ key: 0, cols: 1, rows: 1, image: { asset: STILL } }] });
+  await compositor.setPressed(0, true);
+  const heldOld = panel.writes.at(-1)!.bytes;
+
+  await compositor.present({ regions: [{ key: 0, cols: 1, rows: 1, image: { asset: OTHER } }] });
+
+  const now = panel.writes.at(-1)!;
+  assert.equal(now.key, 0);
+  assert.equal(now.bytes.at(-1), PRESSED_MARK, 'redrawn, but not as held');
+  assert.notDeepEqual(now.bytes, heldOld, 'the held key still shows the old picture');
+});
+
+test('a scene that drops a held key forgets it', async () => {
+  // Otherwise releasing would write a picture onto a key the scene has
+  // cleared, and nothing would ever correct it.
+  const { panel, compositor } = build();
+
+  await compositor.present({ regions: [{ key: 0, cols: 1, rows: 1, image: { asset: STILL } }] });
+  await compositor.setPressed(0, true);
+
+  await compositor.present({ regions: [] });
+  const before = panel.writes.length;
+
+  await compositor.setPressed(0, false);
+
+  assert.equal(panel.writes.length, before, 'wrote to a key the scene had cleared');
+});
+
+test('leaving a page clears a key the new page has nothing for, even mid-press', async () => {
+  // Pressing a key that navigates away, from a page where it was animating:
+  // the key belongs to nobody now and must go dark, not keep the frame it
+  // happened to be showing.
+  const { panel, clock, compositor } = build(4, 100);
+
+  await compositor.present({ regions: [{ key: 0, cols: 1, rows: 1, image: { asset: GIF } }] });
+  await flush();
+  await clock.advance(150);
+
+  await compositor.setPressed(0, true);
+  await compositor.present({ regions: [{ key: 4, cols: 1, rows: 1, image: { asset: STILL } }] });
+  await compositor.setPressed(0, false);
+  await flush();
+  await clock.advance(300);
+
+  assert.ok(blanked(panel, 0), 'the key was never emptied');
+
+  const afterClear = panel.writes.filter((write) => write.key === 0).length;
+  const clearedAt = panel.writes.length;
+  await clock.advance(300);
+  await flush();
+
+  assert.equal(
+    panel.writes.slice(clearedAt).filter((write) => write.key === 0).length,
+    0,
+    'a frame landed on a key the scene had cleared',
+  );
+  assert.ok(afterClear >= 0);
+});
+
+test('releasing after the scene moved on does not paint a departed key', async () => {
+  // The order the panel actually produces: the gesture fires first — taking
+  // the deck somewhere else — and the release lands afterwards. A key the new
+  // page has nothing for must stay dark rather than take back the frame it
+  // was showing when it was pressed.
+  const { panel, clock, compositor } = build(4, 100);
+
+  await compositor.present({ regions: [{ key: 0, cols: 1, rows: 1, image: { asset: GIF } }] });
+  await flush();
+  await clock.advance(150);
+
+  await compositor.setPressed(0, true);
+
+  // Navigation happens on the gesture, which is delivered before the release.
+  await compositor.present({ regions: [{ key: 4, cols: 1, rows: 1, image: { asset: STILL } }] });
+  const afterScene = panel.writes.length;
+
+  await compositor.setPressed(0, false);
+  await flush();
+
+  assert.ok(blanked(panel, 0), 'the key was never emptied');
+  assert.equal(
+    panel.writes.slice(afterScene).filter((write) => write.key === 0).length,
+    0,
+    'the release painted a key the new page had cleared',
+  );
+});
+
+test('a page that covers fewer keys clears the ones an animation had', async () => {
+  // A stretched GIF leaves keys behind when the next page is smaller: they
+  // held frames, and nothing else is going to write to them.
+  const { panel, clock, compositor } = build(4, 100);
+
+  await compositor.present({ regions: [{ key: 0, cols: 3, rows: 2, image: { asset: GIF } }] });
+  await flush();
+  await clock.advance(250);
+
+  await compositor.setPressed(0, true);
+  await compositor.present({ regions: [{ key: 0, cols: 1, rows: 1, image: { asset: STILL } }] });
+  await compositor.setPressed(0, false);
+  await flush();
+  await clock.advance(400);
+
+  // Every key the big region had, except the one the small region keeps.
+  for (const key of [1, 2, 5, 6, 7]) {
+    assert.ok(blanked(panel, key), `key ${key} kept its frame`);
+  }
+});
+
+test('a shrink that finishes after the release is thrown away', async () => {
+  // The queue can be busy when a key goes down — a scene being written, a GIF
+  // being cut — so the smaller copy is sometimes produced after the finger has
+  // already gone. Writing it then would leave the key wearing a frozen picture,
+  // and marking it held again would mean nothing ever released it.
+  const { panel, composer, compositor } = build();
+
+  await compositor.present({ regions: [{ key: 0, cols: 1, rows: 1, image: { asset: STILL } }] });
+  const resting = panel.writes.at(-1)!.bytes;
+
+  composer.holdShrink = true;
+  const down = compositor.setPressed(0, true);
+  await compositor.setPressed(0, false);
+
+  composer.releaseShrink();
+  await down;
+  await flush();
+
+  assert.deepEqual(panel.writes.at(-1)!.bytes, resting, 'the late shrink landed anyway');
+
+  await compositor.present({ regions: [] });
+  assert.ok(blanked(panel, 0), 'the key was still thought to be held');
+});
+
+test('a tap over before the shrink lands leaves the key alone', async () => {
+  // A quick press finishes inside the time it takes to shrink and encode. The
+  // smaller copy must not arrive after the release — and must certainly not
+  // mark the key as held again, which left it frozen through every page after.
+  const { panel, compositor } = build();
+
+  await compositor.present({ regions: [{ key: 0, cols: 1, rows: 1, image: { asset: STILL } }] });
+  const resting = panel.writes.at(-1)!.bytes;
+
+  // Both halves of the tap before the queue is given a chance to run.
+  const down = compositor.setPressed(0, true);
+  const up = compositor.setPressed(0, false);
+  await Promise.all([down, up]);
+  await flush();
+
+  assert.deepEqual(panel.writes.at(-1)!.bytes, resting, 'the key was left shrunk');
+
+  // And the scene can still take the key away afterwards.
+  await compositor.present({ regions: [] });
+  assert.ok(blanked(panel, 0), 'the key stayed behind, still thought to be held');
+});
+
+test('an emptied key is painted, not just told to clear', async () => {
+  // The panel's clear-one-key command does not take: a key emptied that way
+  // kept showing whatever it had — a GIF frame, the smaller copy drawn under
+  // a finger — for as long as the deck stayed on that page.
+  const { panel, compositor } = build();
+
+  await compositor.present({ regions: [{ key: 0, cols: 1, rows: 1, image: { asset: STILL } }] });
+  const before = panel.writes.length;
+
+  await compositor.present({ regions: [] });
+
+  const written = panel.writes.slice(before).filter((write) => write.key === 0);
+  assert.equal(written.length, 1, 'the key was left to the clear command alone');
+});
+
+test('the empty key is encoded once, however many keys are emptied', async () => {
+  const { panel, composer, compositor } = build();
+
+  await compositor.present({ regions: [{ key: 0, cols: 3, rows: 2, image: { asset: STILL } }] });
+  const composedBefore = composer.composed.length;
+
+  await compositor.present({ regions: [] });
+  await compositor.present({ regions: [{ key: 0, cols: 1, rows: 1, image: { asset: STILL } }] });
+  await compositor.present({ regions: [] });
+
+  // One composition for the blank, plus the one that put the picture back.
+  assert.ok(
+    composer.composed.length - composedBefore <= 2,
+    `composed ${composer.composed.length - composedBefore} times for two clears`,
+  );
 });

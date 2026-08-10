@@ -109,6 +109,7 @@ export const keyboardManifest: PluginManifest = {
   actions: [
     {
       type: 'keyboard.hotkey',
+      icon: 'keyboard',
       label: { en: 'Press hotkey', ru: 'Нажать сочетание' },
       params: [
         {
@@ -121,6 +122,7 @@ export const keyboardManifest: PluginManifest = {
     },
     {
       type: 'keyboard.type-text',
+      icon: 'text',
       label: { en: 'Type text', ru: 'Напечатать текст' },
       params: [{ name: 'text', type: 'text', label: { en: 'Text', ru: 'Текст' } }],
     },

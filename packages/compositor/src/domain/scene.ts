@@ -28,13 +28,12 @@ export interface SceneLabel {
 }
 
 export interface SceneImage {
-  readonly asset: AssetRef;
   /**
-   * Defaults to `cover`, and the picture always fills the whole region edge to
-   * edge — a single key included. There is no inset mode: a key showing a
-   * picture shows it whole, and the label goes on top of it.
+   * The picture always fills the whole region edge to edge — a single key
+   * included — and is cropped to do it. There is no inset mode: a key showing
+   * a picture shows it across the whole key, with the label on top.
    */
-  readonly fit?: 'cover' | 'contain';
+  readonly asset: AssetRef;
 }
 
 export interface SceneRegion {
