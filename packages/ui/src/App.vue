@@ -1,10 +1,11 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type {
   ButtonDefinition,
   FolderDefinition,
   LibraryImage,
+  LocalizedText,
   ProfileDefinition,
   VariableDeclaration,
   VariableValue,
@@ -14,7 +15,7 @@ import type {
  *
  * Core is a Node package: importing a *value* from it drags the filesystem,
  * child_process and the HID stack into a browser bundle. Types are free, values
- * are not — which is why this file imports types from core and constants from
+ * are not вЂ” which is why this file imports types from core and constants from
  * a module with no I/O in it.
  */
 import { MAX_PAGES_PER_FOLDER, PROFILE_FORMAT_VERSION } from '@easydeck/engine/profile';
@@ -24,6 +25,7 @@ import type { MenuItem } from './components/ContextMenu.vue';
 import DeckGrid from './components/DeckGrid.vue';
 import FolderTree from './components/FolderTree.vue';
 import PluginList from './components/PluginList.vue';
+import PluginSettings from './components/PluginSettings.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
 import { useDeck } from './composables/useDeck.js';
 import ButtonEditor from './components/ButtonEditor.vue';
@@ -65,7 +67,7 @@ const selectedKey = ref<number | undefined>();
 const menu = ref<{ key: number; x: number; y: number } | undefined>();
 /**
  * Shallow on purpose: a deep `ref` wraps whatever it holds in a reactive
- * proxy, and a proxy cannot be structuredClone'd — which is exactly what the
+ * proxy, and a proxy cannot be structuredClone'd вЂ” which is exactly what the
  * editor does to work on a copy. The button is replaced wholesale anyway, so
  * there is nothing for deep reactivity to earn here.
  */
@@ -92,8 +94,8 @@ const decks = computed(() => deck.state.value?.decks ?? []);
 /*
  * One request at a time, oldest first.
  *
- * Several devices knocking — three browser tabs left open on the deck page,
- * say, all reconnecting the moment the daemon starts — used to stack three
+ * Several devices knocking вЂ” three browser tabs left open on the deck page,
+ * say, all reconnecting the moment the daemon starts вЂ” used to stack three
  * identical bars across the top of the window, each labelled with the same
  * platform name and telling them apart only by a six-digit code. Answering one
  * brings up the next, and the count says how many are left.
@@ -140,7 +142,7 @@ async function edit(change: (profile: ProfileDefinition) => ProfileDefinition): 
 /**
  * A click selects; a click on the already selected key runs it.
  *
- * Selecting first means the destructive things — paste, delete — always act
+ * Selecting first means the destructive things вЂ” paste, delete вЂ” always act
  * on something the user has just pointed at, and running needs no modifier or
  * double click to discover.
  */
@@ -158,7 +160,7 @@ const menuItems = computed<MenuItem[]>(() => {
   const key = menu.value?.key;
 
   /*
-   * Whether this key has a button of its own — not whether something is drawn
+   * Whether this key has a button of its own вЂ” not whether something is drawn
    * on it. A picture stretched across a region shows on every key it covers,
    * but belongs to the button at the region's top-left corner; the keys
    * underneath are free to hold their own buttons, or none at all.
@@ -226,8 +228,8 @@ async function onMenuChoose(id: string): Promise<void> {
 /**
  * Clipboard access from the menu, as opposed to a Ctrl+C the browser hands us.
  *
- * The permission model differs — reading the clipboard is guarded where
- * writing usually is not — so a failure here is reported rather than
+ * The permission model differs вЂ” reading the clipboard is guarded where
+ * writing usually is not вЂ” so a failure here is reported rather than
  * swallowed, with the keyboard route as the way out.
  */
 async function copyKey(key: number): Promise<void> {
@@ -270,7 +272,7 @@ async function pasteFromClipboard(key: number): Promise<void> {
 const allFolders = computed(() => {
   const out: { id: string; name: string }[] = [];
   const walk = (folder: FolderDefinition, prefix: string): void => {
-    const name = prefix ? `${prefix} › ${folder.name}` : folder.name;
+    const name = prefix ? `${prefix} вЂє ${folder.name}` : folder.name;
     out.push({ id: folder.id, name });
     for (const child of folder.folders ?? []) walk(child, name);
   };
@@ -282,7 +284,7 @@ const allPages = computed(() => {
   const out: { id: string; name: string }[] = [];
   const walk = (folder: FolderDefinition): void => {
     folder.pages.forEach((page, index) => {
-      out.push({ id: page.id, name: `${folder.name} · ${page.name ?? index + 1}` });
+      out.push({ id: page.id, name: `${folder.name} В· ${page.name ?? index + 1}` });
     });
     for (const child of folder.folders ?? []) walk(child);
   };
@@ -308,7 +310,7 @@ const pageButtons = computed(() => {
     if (page) {
       return page.buttons.map((button) => ({
         id: button.id,
-        name: `${button.key + 1} · ${button.states[0]?.visual.label?.text ?? button.id}`,
+        name: `${button.key + 1} В· ${button.states[0]?.visual.label?.text ?? button.id}`,
         states: button.states.map((state) => state.id),
       }));
     }
@@ -395,7 +397,7 @@ async function createProfile(name: string): Promise<void> {
   const taken = new Set(deck.profiles.value.map((item) => item.id));
 
   // Derived from the name so the file on disk is recognisable, but never
-  // trusted to be unique or even non-empty — a profile named only in Cyrillic
+  // trusted to be unique or even non-empty вЂ” a profile named only in Cyrillic
   // would otherwise get an empty id.
   const base = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   let id = base || 'profile';
@@ -609,9 +611,86 @@ function onDropAction(payload: { key: number; actionType: string; label: string 
  * Drops a plugin's ready-made key onto the grid.
  *
  * A preset is a whole button, so an occupied key is replaced rather than
- * added to — which is worth asking about, since what it replaces may be an
+ * added to вЂ” which is worth asking about, since what it replaces may be an
  * evening's work.
  */
+// --- plugin settings ------------------------------------------------------
+
+/**
+ * The plugin whose settings are open, with what the daemon last told us.
+ *
+ * Loaded on opening rather than kept in sync: a settings window is short-lived
+ * and a form that reloads under the cursor is worse than one that is a second
+ * out of date. The status line is the exception вЂ” it follows the live event,
+ * because watching the light go green is how somebody knows the password they
+ * just typed was right.
+ */
+const configuring = ref<{
+  pluginId: string;
+  values: Record<string, VariableValue>;
+  filledSecrets: string[];
+  status: string;
+  message?: LocalizedText;
+  note?: string;
+  busy?: boolean;
+} | undefined>();
+
+const configuringPlugin = computed(() =>
+  deck.plugins.value.find((plugin) => plugin.id === configuring.value?.pluginId),
+);
+
+/** The live status wins over the one loaded with the form. */
+const configuringStatus = computed(() => {
+  const pluginId = configuring.value?.pluginId;
+  if (!pluginId) return { status: 'off' as string, message: undefined as LocalizedText | undefined };
+
+  const live = deck.pluginStatuses.value[pluginId];
+  return {
+    status: live?.status ?? configuring.value?.status ?? 'off',
+    message: live?.message ?? configuring.value?.message,
+  };
+});
+
+function onConfigurePlugin(pluginId: string): void {
+  void (async () => {
+    try {
+      const loaded = await deck.pluginSettings(pluginId);
+      configuring.value = { pluginId, ...loaded, filledSecrets: loaded.filledSecrets ?? [] };
+    } catch (error) {
+      deck.lastError.value = (error as Error).message;
+    }
+  })();
+}
+
+function onSavePluginSettings(values: Record<string, VariableValue>): void {
+  const open = configuring.value;
+  if (!open) return;
+
+  void (async () => {
+    try {
+      await deck.savePluginSettings(open.pluginId, values);
+      configuring.value = undefined;
+    } catch (error) {
+      deck.lastError.value = (error as Error).message;
+    }
+  })();
+}
+
+function onPluginCommand(command: string): void {
+  const open = configuring.value;
+  if (!open) return;
+
+  void (async () => {
+    configuring.value = { ...open, busy: true, note: undefined };
+    try {
+      await deck.runPluginCommand(open.pluginId, command);
+      configuring.value = { ...open, busy: false, note: t('plugins.commandDone') };
+    } catch (error) {
+      configuring.value = { ...open, busy: false, note: (error as Error).message };
+    }
+  })();
+}
+
 function onDropPreset(payload: { key: number; pluginId: string; name: string }): void {
   const plugin = deck.plugins.value.find((each) => each.id === payload.pluginId);
   const preset = plugin?.presets?.find((each) => each.name === payload.name);
@@ -757,7 +836,7 @@ onBeforeUnmount(() => {
         <span class="muted">{{ t('decks.label') }}</span>
         <select :value="shownDeckId" @change="onSelectDeck">
           <option v-for="entry in decks" :key="entry.id" :value="entry.id">
-            {{ entry.name }}{{ entry.online ? '' : ` — ${t('decks.offline')}` }}
+            {{ entry.name }}{{ entry.online ? '' : ` вЂ” ${t('decks.offline')}` }}
           </option>
         </select>
       </label>
@@ -772,7 +851,7 @@ onBeforeUnmount(() => {
             :title="t('decks.rename')"
             @click="renameShownDeck"
           >
-            ✎
+            вњЋ
           </button>
         </template>
         <template v-else-if="deck.loading.value">
@@ -794,7 +873,7 @@ onBeforeUnmount(() => {
     <div v-if="nextRequest" class="pending">
       <span>
         <strong>{{ nextRequest.name }}</strong>
-        <span v-if="nextRequest.address" class="muted"> · {{ nextRequest.address }}</span>
+        <span v-if="nextRequest.address" class="muted"> В· {{ nextRequest.address }}</span>
       </span>
       <code class="code">{{ nextRequest.code }}</code>
       <span class="muted">{{ t('devices.match') }}</span>
@@ -826,7 +905,7 @@ onBeforeUnmount(() => {
             :aria-label="t('settings.open')"
             @click="settingsOpen = true"
           >
-            ⚙
+            вљ™
           </button>
 
           <button
@@ -837,7 +916,7 @@ onBeforeUnmount(() => {
             :disabled="!deck.profile.value"
             @click="addFolderAtCurrent"
           >
-            ＋
+            пј‹
           </button>
 
           <button
@@ -893,7 +972,7 @@ onBeforeUnmount(() => {
             :disabled="!deck.state.value"
             @click="ask(t('profiles.newTitle'), '', createProfile)"
           >
-            ＋
+            пј‹
           </button>
         </div>
 
@@ -934,7 +1013,7 @@ onBeforeUnmount(() => {
             :disabled="pages.length >= MAX_PAGES"
             @click="currentFolderId && editProfile((p) => addPage(p, currentFolderId!, MAX_PAGES))"
           >
-            ＋
+            пј‹
           </button>
         </div>
       </main>
@@ -945,6 +1024,8 @@ onBeforeUnmount(() => {
           :plugins="deck.plugins.value"
           presets
           :variables="deck.state.value?.variables ?? {}"
+          :statuses="deck.pluginStatuses.value"
+          @configure="onConfigurePlugin"
         />
       </aside>
     </div>
@@ -999,6 +1080,20 @@ onBeforeUnmount(() => {
       @set="onSetVariable"
       @remove="onRemoveVariable"
       @close="variablesOpen = false"
+    />
+
+    <PluginSettings
+      v-if="configuring && configuringPlugin"
+      :plugin="configuringPlugin"
+      :values="configuring.values"
+      :filled-secrets="configuring.filledSecrets"
+      :status="configuringStatus.status"
+      :message="configuringStatus.message"
+      :note="configuring.note"
+      :busy="configuring.busy"
+      @save="onSavePluginSettings"
+      @command="onPluginCommand"
+      @close="configuring = undefined"
     />
 
     <ConfirmDialog
@@ -1160,7 +1255,7 @@ header {
 }
 
 /* Wide enough for a word rather than a glyph, and monospaced so the braces
-   read as syntax — which is exactly what they are in a key's label. */
+   read as syntax вЂ” which is exactly what they are in a key's label. */
 .icon.wide {
   width: auto;
   padding: 0 9px;

@@ -9,7 +9,10 @@ import type {
   ActionRegistry,
   ButtonEvent,
   KeyView,
+  LocalizedText,
+  ParamOption,
   PluginManifest,
+  PluginStatus,
   ProfileDefinition,
   VariableValue,
 } from '@easydeck/engine';
@@ -145,6 +148,12 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     options.decks.on('added', (deck) => this.follow(deck));
 
     options.decks.on('error', (error) => this.emit('actionError', error.message));
+    options.plugins?.on('status', (pluginId, status, message) =>
+      this.emit('pluginStatusChanged', { pluginId, status, ...(message ? { message } : {}) }),
+    );
+    // A plugin that fails is worth the same line in the log as a failed
+    // action, and nothing more: its status already says so on its own gear.
+    options.plugins?.on('error', (error) => this.emit('actionError', error.message));
     options.devices?.on('changed', () => this.emit('devicesChanged'));
     options.decks.variables.onChange(() =>
       this.emit('variablesChanged', options.decks.variables.snapshot()),
@@ -222,6 +231,77 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
   /** The running plugins, for whoever configures them. */
   get pluginRuntime(): PluginRuntime | undefined {
     return this.options.plugins;
+  }
+
+  /**
+   * What a plugin's settings window needs to draw itself.
+   *
+   * Values come back without the secrets — the manifest says which fields are
+   * secret and this reports only whether each is filled. A configurator that
+   * never receives a token cannot leak one, and it has no use for the value
+   * anyway: the field it draws is a password box.
+   */
+  async pluginSettings(pluginId: string): Promise<{
+    readonly values: Record<string, VariableValue>;
+    readonly filledSecrets: readonly string[];
+    readonly status: PluginStatus;
+    readonly message?: LocalizedText;
+  }> {
+    const runtime = this.requirePlugins();
+    const state = runtime.status(pluginId);
+    if (!state) throw new Error(`No plugin '${pluginId}' is running`);
+
+    const secret = new Set(
+      (state.manifest.settings ?? []).filter((param) => param.secret).map((param) => param.name),
+    );
+    const stored = await runtime.settingsOf(pluginId);
+    const values: Record<string, VariableValue> = {};
+    for (const [name, value] of Object.entries(stored)) {
+      if (!secret.has(name)) values[name] = value;
+    }
+
+    return {
+      values,
+      filledSecrets: await runtime.filledSecretsOf(pluginId),
+      status: state.status,
+      ...(state.message ? { message: state.message } : {}),
+    };
+  }
+
+  async savePluginSettings(
+    pluginId: string,
+    values: Readonly<Record<string, VariableValue>>,
+  ): Promise<void> {
+    await this.requirePlugins().configure(pluginId, values);
+  }
+
+  async runPluginCommand(pluginId: string, command: string): Promise<void> {
+    await this.requirePlugins().runCommand(pluginId, command);
+  }
+
+  /** The choices behind a parameter declared with `optionsFrom`. */
+  async pluginOptions(pluginId: string, source: string): Promise<readonly ParamOption[]> {
+    const runtime = this.options.plugins;
+    if (!runtime) return [];
+    return runtime.optionsFor(pluginId, source);
+  }
+
+  /** Where every plugin with a life of its own has got to. */
+  pluginStatuses(): Record<string, { status: PluginStatus; message?: LocalizedText }> {
+    const statuses: Record<string, { status: PluginStatus; message?: LocalizedText }> = {};
+    for (const state of this.options.plugins?.list() ?? []) {
+      statuses[state.manifest.id] = {
+        status: state.status,
+        ...(state.message ? { message: state.message } : {}),
+      };
+    }
+    return statuses;
+  }
+
+  private requirePlugins(): PluginRuntime {
+    const runtime = this.options.plugins;
+    if (!runtime) throw new Error('No plugins are running');
+    return runtime;
   }
 
   /**

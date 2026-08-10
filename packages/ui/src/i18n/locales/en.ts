@@ -58,6 +58,17 @@ export default {
     stretch: 'Stretch the picture over neighbouring keys',
   },
   plugins: {
+    configure: 'Plugin settings',
+    secretStored: 'stored — type a new one to replace it',
+    secretEmpty: 'not set',
+    nothingToSet: 'This plugin has nothing to set.',
+    status: {
+      off: 'Not running',
+      connecting: 'Connecting',
+      ready: 'Running',
+      error: 'Error',
+    },
+    commandDone: 'Done',
     title: 'Actions',
     search: 'Search actions',
     builtIn: 'built in',

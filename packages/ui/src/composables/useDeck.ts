@@ -5,9 +5,11 @@ import type {
   InstalledPluginSummary,
   KeyView,
   LibraryImage,
+  LocalizedText,
   PluginManifest,
   ProfileDefinition,
   ProfileSummary,
+  VariableValue,
 } from '@easydeck/core';
 
 import { applyPluginMessages } from '../i18n/index.js';
@@ -32,6 +34,15 @@ const profile = shallowRef<ProfileDefinition | undefined>();
 const plugins = shallowRef<readonly PluginManifest[]>([]);
 /** What the plugins folder holds, which may be pictures and text and no actions. */
 const installedPlugins = shallowRef<readonly InstalledPluginInfo[]>([]);
+/**
+ * Where each plugin that holds a connection has got to.
+ *
+ * Kept beside the manifests rather than inside them: a manifest is what a
+ * plugin *is* and never changes, while this changes whenever OBS is started
+ * or closed, and merging the two would mean redrawing the palette every time
+ * a socket blinks.
+ */
+const pluginStatuses = shallowRef<Readonly<Record<string, { status: string; message?: LocalizedText }>>>({});
 const brokenPlugins = shallowRef<readonly { id: string; problem: string }[]>([]);
 const pressedKeys = ref<ReadonlySet<number>>(new Set());
 /**
@@ -225,6 +236,18 @@ function start(): void {
    * Asking for the list is one round trip and cannot rot the same way.
    */
   client.on('devicesChanged', () => void refreshDevices());
+  client.on('pluginStatusChanged', (payload) => {
+    const event = payload as { pluginId?: string; status?: string; message?: LocalizedText };
+    if (!event.pluginId || !event.status) return;
+
+    pluginStatuses.value = {
+      ...pluginStatuses.value,
+      [event.pluginId]: {
+        status: event.status,
+        ...(event.message ? { message: event.message } : {}),
+      },
+    };
+  });
   client.on('actionError', (payload) => {
     lastError.value = (payload as { message?: string })?.message;
   });
@@ -253,6 +276,23 @@ export function useDeck() {
     profile,
     plugins,
     installedPlugins,
+    pluginStatuses,
+    pluginSettings: (pluginId: string) =>
+      client.call<{
+        values: Record<string, VariableValue>;
+        filledSecrets: string[];
+        status: string;
+        message?: LocalizedText;
+      }>('getPluginSettings', { pluginId }),
+    savePluginSettings: (pluginId: string, values: Record<string, VariableValue>) =>
+      client.call('savePluginSettings', { pluginId, values }),
+    runPluginCommand: (pluginId: string, command: string) =>
+      client.call('runPluginCommand', { pluginId, command }),
+    actionOptions: (pluginId: string, source: string) =>
+      client.call<{ options: { value: string; label?: LocalizedText }[] }>('getActionOptions', {
+        pluginId,
+        source,
+      }),
     brokenPlugins,
     pressedKeys: readonly(pressedKeys),
     selectedDeckId,

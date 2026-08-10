@@ -193,6 +193,31 @@ export class ApiHandler {
         return { opened: folder };
       }
 
+      case 'getPluginSettings':
+        return this.deck.pluginSettings(text(params, 'pluginId'));
+
+      case 'savePluginSettings': {
+        const values = params['values'];
+        if (typeof values !== 'object' || values === null || Array.isArray(values)) {
+          throw new TypeError('savePluginSettings needs an object of values');
+        }
+
+        await this.deck.savePluginSettings(
+          text(params, 'pluginId'),
+          values as Record<string, VariableValue>,
+        );
+        return { ok: true };
+      }
+
+      case 'runPluginCommand':
+        await this.deck.runPluginCommand(text(params, 'pluginId'), text(params, 'command'));
+        return { ok: true };
+
+      case 'getActionOptions':
+        return {
+          options: await this.deck.pluginOptions(text(params, 'pluginId'), text(params, 'source')),
+        };
+
       case 'setBrightness':
         await this.deck.setBrightness(integer(params, 'percent'));
         return { ok: true };

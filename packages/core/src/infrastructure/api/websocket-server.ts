@@ -451,6 +451,25 @@ export async function startApiServer(options: ApiServerOptions): Promise<Running
         });
         return true;
 
+      case 'getPluginSettings':
+      case 'savePluginSettings':
+      case 'runPluginCommand':
+        /*
+         * Also never, for the same reason and a worse one.
+         *
+         * Saving settings writes the tokens a plugin signs in with, and a
+         * command can open a browser window on the machine the daemon runs
+         * on. Neither is anything a deck does, and the extensions API is for
+         * driving a deck — not for configuring the accounts behind it.
+         */
+        send(ws, {
+          type: 'response',
+          id: parsed.id,
+          ok: false,
+          error: { message: `A device may not call '${parsed.method}'` },
+        });
+        return true;
+
       default: {
         /*
          * A deck needs none of the rest of the API, so a device gets it only
@@ -489,6 +508,11 @@ export async function startApiServer(options: ApiServerOptions): Promise<Running
   service.onDeckEvent('keyUp', (event) => broadcast({ type: 'event', event: 'keyUp', payload: event }));
   service.onDeckEvent('profilesChanged', () => broadcast({ type: 'event', event: 'profilesChanged' }));
   service.onDeckEvent('devicesChanged', () => broadcast({ type: 'event', event: 'devicesChanged' }));
+  service.onDeckEvent('pluginStatusChanged', (event) =>
+    // To everyone: a configurator on a second screen shows the same lamp, and
+    // a deck ignores what it does not understand.
+    broadcast({ type: 'event', event: 'pluginStatusChanged', payload: event }),
+  );
   service.onDeckEvent('actionError', (message) =>
     broadcast({ type: 'event', event: 'actionError', payload: { message } }),
   );

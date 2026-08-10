@@ -58,6 +58,17 @@ export default {
     stretch: 'Растянуть картинку на соседние клавиши',
   },
   plugins: {
+    configure: 'Настройки плагина',
+    secretStored: 'сохранено — впишите новое, чтобы заменить',
+    secretEmpty: 'не задано',
+    nothingToSet: 'У плагина нет настроек.',
+    status: {
+      off: 'Не запущен',
+      connecting: 'Подключается',
+      ready: 'Работает',
+      error: 'Ошибка',
+    },
+    commandDone: 'Готово',
     title: 'Действия',
     search: 'Поиск действий',
     builtIn: 'встроенный',

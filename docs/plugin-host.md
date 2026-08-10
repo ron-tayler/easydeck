@@ -177,10 +177,12 @@ offers it, avoids both the redirect and the secret entirely.
 2. `hardware` — processor, memory, disks. Done: no sockets, no authorisation,
    no settings, and it proved the live-key path end to end.
 3. `obs` — a socket, a password, dynamic scene lists, feedback by event.
-4. The settings window in the configurator, and dynamic options with it.
-   Deliberately after OBS rather than before: a form built for a plugin that
-   does not exist yet is a guess about what its settings need.
-5. The loopback server, which nothing wants until the first OAuth flow.
+4. The settings window in the configurator. Done, and built after OBS on
+   purpose: a form drawn for a plugin that does not exist yet is a guess
+   about what its settings need.
+5. Dynamic options where a parameter is filled in — the daemon answers
+   already; the key editor has yet to ask.
+6. The loopback server, which nothing wants until the first OAuth flow.
 
 Then Discord, which talks over a pipe rather than a socket, and Twitch, which
 is where authorisation gets interesting.

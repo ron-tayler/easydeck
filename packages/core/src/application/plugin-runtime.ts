@@ -202,6 +202,18 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
     this.entries.clear();
   }
 
+  /** What a plugin was configured with, secrets included; for the host only. */
+  async settingsOf(pluginId: string): Promise<Readonly<Record<string, VariableValue>>> {
+    const entry = this.entries.get(pluginId);
+    if (!entry) throw new Error(`No plugin '${pluginId}' is running`);
+    return entry.settings;
+  }
+
+  /** Which secret fields are filled in — never what is in them. */
+  async filledSecretsOf(pluginId: string): Promise<readonly string[]> {
+    return this.options.settings.filledSecrets(pluginId);
+  }
+
   /** Registers the code behind the commands a manifest declares. */
   registerCommands(
     pluginId: string,

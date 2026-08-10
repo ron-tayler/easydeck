@@ -55,6 +55,8 @@ export type ApiEvent =
   | 'deviceRejected'
   /** The set of known or waiting devices changed. */
   | 'devicesChanged'
+  /** A plugin connected, lost its connection, or gave up. */
+  | 'pluginStatusChanged'
   /** A scene for a deck that draws for itself. */
   | 'scene';
 

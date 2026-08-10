@@ -1,4 +1,4 @@
-import type { DeckLocation, VariableValue } from '@easydeck/engine';
+import type { DeckLocation, LocalizedText, PluginStatus, VariableValue } from '@easydeck/engine';
 
 import type { DeckState } from '../../domain/api-messages.js';
 
@@ -37,4 +37,14 @@ export interface DeckEvents {
   /** A device was approved, revoked, or has started asking to be let in. */
   devicesChanged: [];
   actionError: [message: string];
+  /**
+   * A plugin connected, lost its connection, or gave up.
+   *
+   * Its own event rather than part of the state: a plugin reconnecting in the
+   * background must not make a configurator redraw everything it is showing,
+   * and the gear beside the plugin is the only thing that changed.
+   */
+  pluginStatusChanged: [
+    event: { pluginId: string; status: PluginStatus; message?: LocalizedText },
+  ];
 }

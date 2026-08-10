@@ -25,9 +25,33 @@ const props = defineProps<{
   presets?: boolean;
   /** Current values, so a preset's tile shows real figures rather than `{{…}}`. */
   variables?: Readonly<Record<string, VariableValue>>;
+  /** Where each plugin that holds a connection has got to. */
+  statuses?: Readonly<Record<string, { status: string; message?: LocalizedText }>>;
 }>();
 
+const emit = defineEmits<{ configure: [pluginId: string] }>();
+
 const { t, locale } = useI18n();
+
+/** A plugin worth opening a window for: one with settings or commands. */
+const configurable = (plugin: PluginManifest): boolean =>
+  (plugin.settings?.length ?? 0) > 0 || (plugin.commands?.length ?? 0) > 0;
+
+const statusOf = (pluginId: string): string => props.statuses?.[pluginId]?.status ?? 'off';
+
+/**
+ * Why the lamp is the colour it is, in the plugin's own words.
+ *
+ * "Nothing is listening on 127.0.0.1:4455" is worth reading; a red dot on its
+ * own only says that something is wrong.
+ */
+function statusHint(pluginId: string): string {
+  const state = props.statuses?.[pluginId];
+  const message = say(state?.message);
+  const name = t(`plugins.status.${state?.status ?? 'off'}`);
+  return message ? `${name}
+${message}` : name;
+}
 const search = ref('');
 
 const STORAGE_KEY = 'easydeck.collapsedPlugins';
@@ -108,13 +132,15 @@ function preview(preset: ButtonPreset): {
  * The name, and the description under it where there is one.
  *
  * Both in the one tooltip rather than a name here and a question mark badge
- * there: the tile is a picture of a key now, and a mark floating over it
- * would be the only thing on the shelf that is not part of a key.
+ * there. Two reasons it applies to actions as well as presets: a tile is
+ * ninety pixels wide, so a name longer than two short words is cut off and
+ * the whole of it has to be readable somewhere; and a badge floating over a
+ * tile was the only thing on a shelf of keys that was not part of one.
  */
-function hint(preset: ButtonPreset): string {
-  const description = say(preset.description);
-  return description ? `${say(preset.label)}
-${description}` : say(preset.label);
+function hint(item: { label: LocalizedText; description?: LocalizedText }): string {
+  const description = say(item.description);
+  return description ? `${say(item.label)}
+${description}` : say(item.label);
 }
 
 interface Group {
@@ -166,7 +192,28 @@ const groups = computed<Group[]>(() => {
         >
           <span class="chevron" :class="{ open: isOpen(group.plugin.id) }">›</span>
           <span class="name">{{ say(group.plugin.name) }}</span>
+
+          <!-- Only where the plugin holds something of its own: a connection,
+               an account. A lamp beside navigation would be a light that can
+               only ever be one colour. -->
+          <span
+            v-if="configurable(group.plugin)"
+            class="lamp"
+            :class="statusOf(group.plugin.id)"
+            :title="statusHint(group.plugin.id)"
+          />
           <span class="count">{{ group.actions.length + group.presets.length }}</span>
+        </button>
+
+        <button
+          v-if="configurable(group.plugin)"
+          type="button"
+          class="gear"
+          :title="t('plugins.configure')"
+          :aria-label="t('plugins.configure')"
+          @click.stop="emit('configure', group.plugin.id)"
+        >
+          ⚙
         </button>
 
         <ul v-show="isOpen(group.plugin.id)">
@@ -200,19 +247,12 @@ const groups = computed<Group[]>(() => {
                  while looking for something, and it cost the row the width
                  that now holds three actions. It still lives in the manifest,
                  for wherever there is room to say more. -->
-            <!-- No hover text of its own: the name is written under the mark,
-                 and the action's type — `easydeck.go-home` — reads as an
-                 untranslated string to anyone who is not writing plugins. -->
             <div
               class="action"
               draggable="true"
+              :title="hint(action)"
               @dragstart="onDragStart($event, action)"
             >
-              <!-- Only where there is something to tell: a question mark on
-                   every tile would be a row of marks that mostly say nothing,
-                   and the ones worth hovering would stop standing out. -->
-              <span v-if="say(action.description)" class="why" :title="say(action.description)">?</span>
-
               <img v-if="isDrawnIcon(action.icon)" class="mark" :src="action.icon" alt="" />
               <svg v-else class="mark" viewBox="0 0 24 24" aria-hidden="true">
                 <path :d="actionIconPath(action.icon)" fill="currentColor" />
@@ -345,25 +385,46 @@ ul {
   border-color: var(--accent);
 }
 
-.why {
+.group {
+  position: relative;
+}
+
+.gear {
   position: absolute;
   top: 3px;
-  right: 4px;
-  width: 13px;
-  height: 13px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  font-size: 9px;
+  right: 3px;
+  padding: 2px 5px;
+  font-size: 12px;
   line-height: 1;
+  background: none;
+  border: none;
   color: var(--text-muted);
-  background: var(--surface-2);
+}
+
+.gear:hover {
+  color: var(--accent);
+}
+
+/* Four states, four colours, and one of them is deliberately dull. */
+.lamp {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--text-muted);
   cursor: help;
 }
 
-.why:hover {
-  color: var(--text);
-  background: var(--accent-soft);
+.lamp.ready {
+  background: #3fae63;
+}
+
+.lamp.connecting {
+  background: #d3a038;
+}
+
+.lamp.error {
+  background: #d4544a;
 }
 
 /* A key, at the size the palette gives it. */

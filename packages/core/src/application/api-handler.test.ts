@@ -83,6 +83,25 @@ class FakeDeck implements DeckFacade {
     return [{ key: 0, buttonId: 'b', stateId: 'default', visual }];
   }
 
+  /** Enough of a plugin to answer the settings window; see the OBS tests for the real thing. */
+  async pluginSettings(pluginId: string) {
+    this.calls.push(`pluginSettings:${pluginId}`);
+    return { values: { port: 4455 }, filledSecrets: ['password'], status: 'ready' as const };
+  }
+
+  async savePluginSettings(pluginId: string, values: Readonly<Record<string, VariableValue>>) {
+    this.calls.push(`savePluginSettings:${pluginId}:${JSON.stringify(values)}`);
+  }
+
+  async runPluginCommand(pluginId: string, command: string) {
+    this.calls.push(`runPluginCommand:${pluginId}:${command}`);
+  }
+
+  async pluginOptions(pluginId: string, source: string) {
+    this.calls.push(`pluginOptions:${pluginId}:${source}`);
+    return [{ value: 'Intro', label: { en: 'Intro' } }];
+  }
+
   async installedPlugins(): Promise<InstalledPluginSummary> {
     this.calls.push('installedPlugins');
     return {
