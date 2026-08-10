@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type {
   ActionDefinition,
@@ -80,23 +80,64 @@ async function loadOptionsFor(param: ParamDefinition): Promise<void> {
 }
 
 /**
- * Reloads every dynamic list when the action changes or a parameter is
- * edited.
+ * What the answers depend on, as a value rather than an object.
+ *
+ * Watching `params` itself watched the *reference*, and the parent hands down
+ * a fresh one on every render — so a variable ticking over somewhere else in
+ * the window counted as "the parameters changed" and every list was fetched
+ * again. Comparing the contents means the question is only re-asked when the
+ * answer could actually be different.
+ */
+const dependencies = computed(() => JSON.stringify(props.params ?? {}));
+
+/**
+ * Reloads the dynamic lists when the action changes, or when something that
+ * feeds them does.
  *
  * The second half is what makes a dependent list work: choosing a source has
- * to change which filters are offered, and nothing else would tell this that
- * the question has a different answer now.
+ * to change which filters are offered.
+ *
+ * What is deliberately absent is emptying the lists first. Clearing before
+ * fetching turned every select into a text box and back again — which, with a
+ * hardware gauge repainting the window every couple of seconds, is the
+ * flicker you could see. The old answers stay on screen until better ones
+ * arrive; only a different action throws them away, since they belong to the
+ * action that asked for them.
  */
 watch(
-  [() => props.definition?.type, () => props.params],
+  () => props.definition?.type,
   () => {
     dynamic.value = {};
     for (const param of fields.value) {
       if (param.optionsFrom) void loadOptionsFor(param);
     }
   },
-  { immediate: true, deep: true },
+  { immediate: true },
 );
+
+/**
+ * Waits for typing to stop before asking again.
+ *
+ * A parameter can be typed into rather than picked — that is the fallback
+ * when the plugin has no list to offer — and a request per keystroke would
+ * ask OBS about the filters of "W", "We", "Web"… None of those answers is
+ * wanted, and the last one arrives no later for having skipped them.
+ */
+const RELOAD_DELAY_MS = 300;
+let reload: ReturnType<typeof setTimeout> | undefined;
+
+watch(dependencies, () => {
+  if (reload) clearTimeout(reload);
+  reload = setTimeout(() => {
+    for (const param of fields.value) {
+      if (param.optionsFrom) void loadOptionsFor(param);
+    }
+  }, RELOAD_DELAY_MS);
+});
+
+onBeforeUnmount(() => {
+  if (reload) clearTimeout(reload);
+});
 
 const choices = (param: ParamDefinition): readonly { value: string; label?: LocalizedText }[] =>
   dynamic.value[param.name] ?? [];

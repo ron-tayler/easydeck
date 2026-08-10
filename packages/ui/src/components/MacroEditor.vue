@@ -59,6 +59,16 @@ const say = (text: LocalizedText | undefined): string =>
   text === undefined ? '' : (text[locale.value] ?? text.en);
 
 /**
+ * One empty object, shared by every action that has no parameters.
+ *
+ * `?? {}` in the template builds a new one on every render, and a fresh
+ * reference reads as a change to whatever is watching it downstream — which
+ * is how a gauge ticking over in another corner of the window ended up
+ * re-fetching the scene list.
+ */
+const NO_PARAMS: Readonly<Record<string, unknown>> = Object.freeze({});
+
+/**
  * The plugin a step belongs to, which is the prefix of its type.
  *
  * Shown on the step itself because that is where the trouble is noticed: a
@@ -435,7 +445,7 @@ function onTabDrop(which: Trigger): void {
         <ActionParams
           v-if="open === index"
           :definition="definitions.get(action.type)"
-          :params="action.params ?? {}"
+          :params="action.params ?? NO_PARAMS"
           :values="values"
           :declarations="declarations"
           :folders="folders"
