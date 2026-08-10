@@ -254,7 +254,7 @@ function save(): void {
 }
 
 /** Inserts a placeholder into the label where the caret is. */
-const labelField = ref<HTMLInputElement>();
+const labelField = ref<HTMLTextAreaElement>();
 
 function insertVariable(name: string): void {
   const token = `{{${name}}}`;
@@ -400,13 +400,20 @@ const preview = computed(() => {
                 :value="state.visual.label?.color ?? '#ffffff'"
                 @input="patchLabel({ color: ($event.target as HTMLInputElement).value })"
               />
-              <input
+              <!-- A textarea, because a key's label is not one line.
+                   Where the text breaks is part of how a key looks — "Сцена"
+                   over "Ожидание" reads at a glance where one wrapped line
+                   does not — and the engine has always honoured a newline;
+                   there was simply no way to type one. Two rows by default,
+                   draggable taller, and Enter breaks the line rather than
+                   doing anything clever. -->
+              <textarea
                 ref="labelField"
-                type="text"
-                class="grow"
+                class="grow label-text"
+                rows="2"
                 :value="state.visual.label?.text ?? ''"
-                @input="patchLabel({ text: ($event.target as HTMLInputElement).value })"
-              />
+                @input="patchLabel({ text: ($event.target as HTMLTextAreaElement).value })"
+              ></textarea>
             </VariablePicker>
           </label>
 
@@ -758,6 +765,15 @@ h3 {
 }
 
 .behaviour { padding: 14px 18px; overflow-y: auto; }
+
+.label-text {
+  /* Vertical only: the row's other two controls fix the width, and a textarea
+     dragged sideways would push them out of the panel. */
+  resize: vertical;
+  min-height: 2.4em;
+  font: inherit;
+  line-height: 1.3;
+}
 
 .field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
 .field span { color: var(--text-muted); }
