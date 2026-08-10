@@ -7,10 +7,12 @@ import type {
   IconSpec,
   LibraryImage,
   PluginManifest,
+  StateRange,
   VariableDeclaration,
   VariableType,
 } from '@easydeck/core';
 
+import { isStateRange } from '@easydeck/engine/profile';
 import { renderTemplate } from '@easydeck/engine/template';
 
 import IconPicker from './IconPicker.vue';
@@ -229,6 +231,42 @@ const binding = computed<VariableDeclaration | undefined>(() =>
 const boundType = computed<VariableType | undefined>(() =>
   draft.value.stateFrom ? (binding.value?.type ?? 'string') : undefined,
 );
+
+/**
+ * Which of the three answers a number-bound state is giving.
+ *
+ * Derived from what is stored rather than kept beside it: a mode held in its
+ * own ref would drift the moment a state is switched or a profile reloaded.
+ */
+type WhenMode = 'auto' | 'value' | 'range';
+
+const whenMode = computed<WhenMode>(() => {
+  const when = state.value.when;
+  if (when === undefined) return 'auto';
+  return isStateRange(when) ? 'range' : 'value';
+});
+
+const range = computed<StateRange>(() =>
+  isStateRange(state.value.when) ? state.value.when : {},
+);
+
+function setWhenMode(mode: WhenMode): void {
+  if (mode === 'auto') patchState({ when: undefined });
+  // An empty band rather than a guess at one: it matches everything until an
+  // end is typed, which is visible in the preview straight away.
+  else if (mode === 'range') patchState({ when: {} });
+  else patchState({ when: 0 });
+}
+
+/** One end of a band; empty means unbounded on that side. */
+function setRange(end: 'min' | 'max', raw: string): void {
+  const next: { min?: number; max?: number } = { ...range.value };
+
+  if (raw === '') delete next[end];
+  else next[end] = Number(raw);
+
+  patchState({ when: next });
+}
 
 /**
  * The value written into `when`, kept in the shape the type expects: a boolean
@@ -524,9 +562,50 @@ const preview = computed(() => {
               </option>
             </select>
 
+            <!-- A number answers to either one value or a band of them, and
+                 the difference is worth a control rather than a convention: a
+                 counter wants "exactly 3", a gauge wants "85 and above", and
+                 neither is guessable from a single box. -->
+            <div v-else-if="boundType === 'number'" class="when">
+              <select
+                :value="whenMode"
+                @change="setWhenMode(($event.target as HTMLSelectElement).value as WhenMode)"
+              >
+                <option value="auto">{{ t('editor.whenAuto') }}</option>
+                <option value="value">{{ t('editor.whenExact') }}</option>
+                <option value="range">{{ t('editor.whenRange') }}</option>
+              </select>
+
+              <input
+                v-if="whenMode === 'value'"
+                type="number"
+                :value="typeof state.when === 'number' ? state.when : ''"
+                @change="setWhen(($event.target as HTMLInputElement).value)"
+              />
+
+              <template v-else-if="whenMode === 'range'">
+                <!-- Either end may be left empty, which is what "90 and above"
+                     is: a band open at the top. Both empty matches every
+                     number, which is a usable "everything else" when the state
+                     is written last. -->
+                <input
+                  type="number"
+                  :placeholder="t('editor.whenFrom')"
+                  :value="range.min ?? ''"
+                  @change="setRange('min', ($event.target as HTMLInputElement).value)"
+                />
+                <input
+                  type="number"
+                  :placeholder="t('editor.whenTo')"
+                  :value="range.max ?? ''"
+                  @change="setRange('max', ($event.target as HTMLInputElement).value)"
+                />
+              </template>
+            </div>
+
             <input
               v-else
-              :type="boundType === 'number' ? 'number' : 'text'"
+              type="text"
               :value="state.when === undefined ? '' : String(state.when)"
               :placeholder="t('editor.whenAuto')"
               @change="setWhen(($event.target as HTMLInputElement).value)"
@@ -765,6 +844,22 @@ h3 {
 }
 
 .behaviour { padding: 14px 18px; overflow-y: auto; }
+
+.when {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* The mode picker keeps its own width; the numbers share what is left. */
+.when > select {
+  flex: none;
+}
+
+.when > input {
+  flex: 1;
+  min-width: 0;
+}
 
 .label-text {
   /* Vertical only: the row's other two controls fix the width, and a textarea
