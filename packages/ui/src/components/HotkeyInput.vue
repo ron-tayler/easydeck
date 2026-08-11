@@ -107,8 +107,16 @@ function add(): void {
   commit([...chosen.value, '']);
 }
 
-function removeAt(index: number): void {
-  const left = chosen.value.filter((_, at) => at !== index);
+/**
+ * Takes the last key off, which is the only removal offered.
+ *
+ * A cross beside every list made a destructive button the neighbour of every
+ * choice, and which key it removed depended on which one it sat next to. One
+ * cross at the end removes what was added last, which is what undoing a
+ * combination means.
+ */
+function removeLast(): void {
+  const left = chosen.value.slice(0, -1);
   commit(left.length > 0 ? left : ['']);
 }
 </script>
@@ -122,7 +130,13 @@ function removeAt(index: number): void {
     <span v-for="(id, index) in chosen" :key="index" class="slot">
       <span v-if="index > 0" class="plus" aria-hidden="true">+</span>
 
-      <select :value="id" @change="setAt(index, ($event.target as HTMLSelectElement).value)">
+      <!-- Titled with what is chosen: the box is narrow enough that "Right Alt
+           (AltGr)" does not fit, and the list is where the full name is read. -->
+      <select
+        :value="id"
+        :title="say(keyboardKey(id)?.label)"
+        @change="setAt(index, ($event.target as HTMLSelectElement).value)"
+      >
         <option value="" disabled>{{ t('editor.choose') }}</option>
         <optgroup
           v-for="entry in grouped"
@@ -134,17 +148,6 @@ function removeAt(index: number): void {
           </option>
         </optgroup>
       </select>
-
-      <button
-        v-if="chosen.length > 1"
-        type="button"
-        class="drop"
-        :title="t('editor.hotkeyRemove')"
-        :aria-label="t('editor.hotkeyRemove')"
-        @click="removeAt(index)"
-      >
-        ✕
-      </button>
     </span>
 
     <button
@@ -155,6 +158,20 @@ function removeAt(index: number): void {
       @click="add"
     >
       ＋
+    </button>
+
+    <!-- One cross, at the end, taking the last key off. A cross per row put a
+         destructive button between every two lists, where the thing being
+         removed was whichever one it happened to sit beside. -->
+    <button
+      v-if="chosen.length > 1"
+      type="button"
+      class="drop"
+      :title="t('editor.hotkeyRemove')"
+      :aria-label="t('editor.hotkeyRemove')"
+      @click="removeLast"
+    >
+      ✕
     </button>
 
     <span class="muted small preview">
@@ -178,11 +195,12 @@ function removeAt(index: number): void {
   gap: 6px;
 }
 
+/* Sixty pixels of text and twenty for the arrow. Most answers are a letter or
+   `Ctrl`; the long ones are read in the list, and from the title on hover. */
 .slot select {
-  /* Wide enough for "Right Alt (AltGr)" without stretching the row when the
-     answer is "M". */
-  min-width: 8em;
-  max-width: 12em;
+  width: 80px;
+  min-width: 0;
+  padding-right: 4px;
 }
 
 .plus {
