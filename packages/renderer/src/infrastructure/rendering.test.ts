@@ -3,17 +3,60 @@ import { describe, it } from 'node:test';
 import { decode as jpegDecode } from 'jpeg-js';
 
 import { KeyRenderer } from '../application/key-renderer.js';
-import { NapiCanvasRasterizer } from './canvas/napi-canvas-rasterizer.js';
+import type { ButtonVisual } from '../domain/button-visual.js';
+import type { RgbaBitmap } from '../domain/render-target.js';
+import { CanvasPanelComposer } from './canvas/canvas-panel-composer.js';
 import { JsJpegEncoder } from './jpeg/js-jpeg-encoder.js';
 import { TurboJpegEncoder } from './jpeg/turbo-jpeg-encoder.js';
 
 const D6_TARGET = { width: 100, height: 100, rotationDegrees: 180 as const, maxBytes: 10240 };
 
-const rasterizer = new NapiCanvasRasterizer();
+const composer = new CanvasPanelComposer();
 
-describe('NapiCanvasRasterizer', () => {
+/**
+ * One key drawn through the composer, which is the only way anything is drawn.
+ *
+ * There used to be a rasterizer for single keys beside it, with its own copy
+ * of the label, the alert sign and the corner mask. Two implementations of one
+ * picture drift, and these did: an SVG whose parameters had been substituted
+ * drew correctly through one and came out blank through the other.
+ */
+async function rasterize(options: {
+  visual: ButtonVisual;
+  width: number;
+  height: number;
+  rotationDegrees: 0 | 90 | 180 | 270;
+}): Promise<RgbaBitmap> {
+  const region = await composer.open({
+    ...(options.visual.icon ? { source: options.visual.icon.source } : {}),
+    ...(options.visual.background === undefined ? {} : { background: options.visual.background }),
+    width: options.width,
+    height: options.height,
+  });
+
+  try {
+    const composed = region.composeFrame(0);
+    return composer.cutTile(composed, {
+      x: 0,
+      y: 0,
+      width: options.width,
+      height: options.height,
+      rotationDegrees: options.rotationDegrees,
+      corners: { topLeft: true, topRight: true, bottomRight: true, bottomLeft: true },
+      ...(options.visual.cornerRadius === undefined
+        ? {}
+        : { cornerRadius: options.visual.cornerRadius }),
+      ...(options.visual.label ? { label: options.visual.label } : {}),
+      ...(options.visual.icon ? { hasPicture: true } : {}),
+    });
+  } finally {
+    region.close();
+  }
+}
+
+describe('drawing a key', () => {
   it('fills the background color (center pixel) and masks rounded corners to black', async () => {
-    const bitmap = await rasterizer.rasterize({
+    const bitmap = await rasterize({
       visual: { background: '#ff0000', cornerRadius: 20 },
       width: 100,
       height: 100,
@@ -29,7 +72,7 @@ describe('NapiCanvasRasterizer', () => {
   // visible stair-stepping on the device. The mask must be antialiased, i.e.
   // the corner arc must produce partially-blended pixels.
   it('antialiases the rounded corners', async () => {
-    const bitmap = await rasterizer.rasterize({
+    const bitmap = await rasterize({
       visual: { background: '#ff0000', cornerRadius: 20 },
       width: 100,
       height: 100,
@@ -49,7 +92,7 @@ describe('NapiCanvasRasterizer', () => {
   it('bakes in the 180 degree rotation', async () => {
     // Top-positioned white label on black: after rotation the bright pixels
     // must sit in the bottom half.
-    const bitmap = await rasterizer.rasterize({
+    const bitmap = await rasterize({
       visual: { label: { text: 'AAAA', position: 'top' }, cornerRadius: 0 },
       width: 100,
       height: 100,
@@ -72,7 +115,7 @@ describe('NapiCanvasRasterizer', () => {
   // Regression: Skia does not resolve the generic CSS families, so labels
   // used to render as nothing at all. Assert on actual glyph pixels.
   const countLabelPixels = async (text: string, fontFamily?: string): Promise<number> => {
-    const bitmap = await rasterizer.rasterize({
+    const bitmap = await rasterize({
       visual: { background: '#000000', cornerRadius: 0, label: { text, color: '#ffffff', fontSize: 20, fontFamily } },
       width: 100,
       height: 100,
@@ -96,7 +139,7 @@ describe('NapiCanvasRasterizer', () => {
   });
 
   it('keeps bottom-positioned descenders inside the key', async () => {
-    const bitmap = await rasterizer.rasterize({
+    const bitmap = await rasterize({
       // "ру" has descenders; they must not touch the last pixel rows.
       visual: { background: '#000000', cornerRadius: 0, label: { text: 'ару', color: '#ffffff', fontSize: 20, position: 'bottom' } },
       width: 100,
@@ -179,7 +222,7 @@ describe('jpeg encoders', () => {
 
 describe('end-to-end render', () => {
   it('a busy visual still fits the D6 byte limit', async () => {
-    const renderer = new KeyRenderer(rasterizer, new JsJpegEncoder());
+    const renderer = new KeyRenderer(composer, new JsJpegEncoder());
 
     // Noise background stresses the encoder more than any realistic button.
     const noise = {

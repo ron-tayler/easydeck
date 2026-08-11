@@ -10,7 +10,6 @@ export type { ButtonVisual, BackdropSlice, IconSpec, LabelSpec } from './domain/
 export type { RenderTarget, RgbaBitmap } from './domain/render-target.js';
 export { RenderError } from './domain/render-target.js';
 
-export type { Rasterizer, RasterizeRequest } from './application/ports/rasterizer.js';
 export type { JpegEncoder, JpegEncodeOptions } from './application/ports/jpeg-encoder.js';
 export { KeyRenderer } from './application/key-renderer.js';
 
@@ -29,14 +28,13 @@ export { CanvasPanelComposer } from './infrastructure/canvas/canvas-panel-compos
 export { isGif, openGif } from './infrastructure/canvas/gif-sequence.js';
 export type { GifSequence } from './infrastructure/canvas/gif-sequence.js';
 
-export { NapiCanvasRasterizer } from './infrastructure/canvas/napi-canvas-rasterizer.js';
 export { TurboJpegEncoder } from './infrastructure/jpeg/turbo-jpeg-encoder.js';
 export type { ChromaSubsampling } from './infrastructure/jpeg/turbo-jpeg-encoder.js';
 export { JsJpegEncoder } from './infrastructure/jpeg/js-jpeg-encoder.js';
 
 import { KeyRenderer } from './application/key-renderer.js';
 import type { JpegEncoder } from './application/ports/jpeg-encoder.js';
-import { NapiCanvasRasterizer } from './infrastructure/canvas/napi-canvas-rasterizer.js';
+import { CanvasPanelComposer } from './infrastructure/canvas/canvas-panel-composer.js';
 
 /**
  * libjpeg-turbo, falling back to the pure-JS encoder if the native prebuild
@@ -53,13 +51,13 @@ export async function createJpegEncoder(): Promise<JpegEncoder> {
 }
 
 /**
- * Convenience composition root for rendering a single visual: skia canvas plus
- * whichever JPEG encoder this platform has.
+ * Convenience composition root for rendering a single visual: the panel
+ * composer plus whichever JPEG encoder this platform has.
  *
- * The deck itself no longer goes through here — it composes whole regions
- * through `CanvasPanelComposer` — but rendering one key on its own is still
- * what previews and the examples want.
+ * The same composer the deck uses. It used to be a rasterizer of its own,
+ * which meant two implementations of one picture — and they drifted, quietly,
+ * until a parametric icon drew in one and not the other.
  */
 export async function createKeyRenderer(): Promise<KeyRenderer> {
-  return new KeyRenderer(new NapiCanvasRasterizer(), await createJpegEncoder());
+  return new KeyRenderer(new CanvasPanelComposer(), await createJpegEncoder());
 }
