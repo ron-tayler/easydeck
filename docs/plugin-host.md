@@ -93,6 +93,36 @@ from a preset, so editing it afterwards is editing a button, and uninstalling
 the plugin leaves it in place showing nothing — which is correct, because a
 profile knows nothing about plugins.
 
+### Pictures a preset puts on a key
+
+A preset is a finished key, and a finished key usually has a picture — which
+left nowhere to put one. A built-in plugin is a TypeScript module with no
+folder of its own, so the only way to give a preset an icon was to paste a data
+URL into the source: bearable for a small SVG, absurd for a three megabyte
+animation, and unreadable either way.
+
+Every plugin now has a folder of pictures, and a preset refers to one:
+
+```ts
+visual: { icon: { source: 'plugin:hardware/cpu-gauge.svg' } }
+```
+
+Built-in plugins keep theirs in `packages/core/assets/<id>/`; an installed
+plugin's `icons/` folder answers to the same scheme. One resolver sees both, so
+a preset may name **another plugin's** picture — a pack of OBS keys built on
+somebody else's gauge needs no arrangement between the two.
+
+What lands in a profile is the picture, not the reference. The manifest is
+expanded on its way to a window, so dropping a preset on the grid stores an
+ordinary icon: it survives the plugin being uninstalled, travels in an export,
+and is deduplicated by the profile's own asset store. A profile knows nothing
+about plugins, and this keeps it that way — at the price that changing a
+picture in a plugin does not change keys already placed.
+
+`..` in a reference is refused rather than resolved: a reference is ordinary
+data, it may arrive from a plugin somebody installed, and a path that climbs
+must not be followed.
+
 ### Icons that move
 
 A preset's icon may answer to a variable — a needle that swings with the

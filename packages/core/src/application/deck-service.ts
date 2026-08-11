@@ -22,6 +22,7 @@ import { NoProfilesError, ProfileNotFoundError } from '../domain/errors.js';
 import { configDir, iconsDir, pluginsDir, profilesDir } from '../infrastructure/config-paths.js';
 import { readLibrary } from '../infrastructure/icon-library.js';
 import { readInstalledPlugins } from '../infrastructure/plugins/installed-plugins.js';
+import { PluginAssets } from '../infrastructure/plugins/plugin-assets.js';
 import { secretId } from '../infrastructure/button-secrets.js';
 import type { ButtonSecretStore } from '../infrastructure/button-secrets.js';
 import { exportProfile, importProfile } from '../infrastructure/profile-archive.js';
@@ -130,6 +131,8 @@ function isTree(value: unknown): value is Record<string, unknown> {
 }
 
 export class DeckService extends EventEmitter<DeckServiceEvents> implements DeckFacade {
+  /** Pictures that arrive with a plugin; see plugin-assets.ts. */
+  private readonly assets = new PluginAssets();
   private readonly warnings: string[];
   private brightness: number;
   private listening?: { port: number; networkAccess: boolean };
@@ -241,8 +244,16 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     return this.deckOf(deckId).controller.view();
   }
 
+  /**
+   * The installed plugins, with their presets' pictures in place.
+   *
+   * A preset names a picture as `plugin:hardware/cpu-gauge.svg`, and this is
+   * where that becomes a picture. Expanded on the way out rather than at
+   * registration so a plugin's folder can be changed without restarting, and
+   * so what a window receives is an ordinary preset it need know nothing about.
+   */
   async plugins(): Promise<readonly PluginManifest[]> {
-    return this.options.actions.plugins();
+    return this.assets.expandAll(this.options.actions.plugins());
   }
 
   /**
