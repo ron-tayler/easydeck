@@ -10,6 +10,7 @@ import type {
 } from '../../application/panel-composer.js';
 import type { LabelSpec } from '../../domain/button-visual.js';
 import { RenderError } from '../../domain/render-target.js';
+import { rasterizeSvg } from './svg-rasterizer.js';
 import type { RgbaBitmap } from '../../domain/render-target.js';
 import { layoutLabel } from '@easydeck/engine/label';
 
@@ -28,6 +29,20 @@ const DEFAULT_BACKGROUND = '#000000';
 const DEFAULT_LABEL_COLOR = '#ffffff';
 const DEFAULT_CORNER_RADIUS = 12;
 
+/**
+ * Whether these bytes are markup rather than a compressed picture.
+ *
+ * Looks at the start of the file: an SVG begins with `<svg` or an XML
+ * declaration, possibly after whitespace or a byte-order mark. Cheaper and
+ * more honest than trusting a file extension, which a data URL does not have.
+ */
+function isSvg(bytes: Uint8Array): boolean {
+  const head = decodeUtf8(bytes.subarray(0, 200)).replace(/^﻿/, '').trimStart();
+  return head.startsWith('<svg') || head.startsWith('<?xml');
+}
+
+const decodeUtf8 = (bytes: Uint8Array): string => new TextDecoder().decode(bytes);
+
 /** Skia-backed composer: one canvas per region, reused across its frames. */
 export class CanvasPanelComposer implements PanelComposer {
   async open(request: RegionRequest): Promise<RegionSource> {
@@ -41,9 +56,22 @@ export class CanvasPanelComposer implements PanelComposer {
 
     if (isGif(bytes)) return this.openAnimated(canvas, ctx, request, openGif(bytes));
 
+    /*
+     * SVG goes through librsvg, everything else through the canvas library.
+     *
+     * The canvas library draws an SVG's presentation attributes and ignores
+     * its `<style>` block outright — a class that sets a fill draws black, a
+     * transform in a rule moves nothing. That is exactly how a parametric
+     * icon is written, so a bar that filled correctly in the window arrived
+     * on the panel as an empty outline.
+     */
+    const rendered = isSvg(bytes)
+      ? await rasterizeSvg(decodeUtf8(bytes), request.width, request.height)
+      : undefined;
+
     let image;
     try {
-      image = await loadImage(Buffer.from(bytes));
+      image = await loadImage(Buffer.from(rendered ?? bytes));
     } catch (cause) {
       throw new RenderError('Could not load the picture', { cause });
     }
