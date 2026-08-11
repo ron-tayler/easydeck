@@ -267,6 +267,14 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     return this.require().pluginOptions(pluginId, source, params);
   }
 
+  exportProfile(profileId: string) {
+    return this.require().exportProfile(profileId);
+  }
+
+  importProfile(base64: string) {
+    return this.require().importProfile(base64);
+  }
+
   pluginStatuses() {
     // Empty rather than a failure while the deck is released: a locked
     // workstation has no plugins running, which is a true answer.

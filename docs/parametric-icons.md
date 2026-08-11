@@ -126,6 +126,63 @@ what the picture declared and wires each one to a variable or to a fixed
 value. It appears only where the picture asks for it, so an ordinary key never
 shows it.
 
+## Writing one: the whole vocabulary
+
+Every field a parameter may carry, and what happens without it:
+
+| Field | Meaning |
+| --- | --- |
+| `name` | the custom property, without its dashes: `"angle"` ↔ `var(--angle)` |
+| `label` | what the settings window calls it; `en` required, others optional |
+| `description` | a line under it in that window |
+| `type` | `number` (the default), `color`, or `text` |
+| `from` / `to` | for a number: the range *this parameter* means, in its own units |
+| `unit` | `deg`, `px`, `%`, or nothing at all |
+| `default` | what the picture shows before it is wired to anything |
+
+The unit exists because CSS is particular: `rotate(35)` is not an angle and
+`rotate(35deg)` is. Declare it once and the arithmetic wears it. A ratio for
+`scaleX` has no unit and says so by leaving the field out.
+
+Inside the picture, write ordinary CSS:
+
+```xml
+<style>
+  :root { --value: 1; --colour: #2F80ED; }
+  .bar {
+    fill: var(--colour);
+    transform: scaleX(var(--value));
+    transform-origin: left;
+  }
+</style>
+<rect class="bar" x="4" y="58" width="120" height="12"/>
+```
+
+The values in `:root` are what the icon looks like in an editor, in a browser,
+and on a key that has not been wired up. They are also the fallback for a
+property that is used but never declared as a parameter — that is expanded
+from there too, exactly as a browser would.
+
+### Four things that catch people out
+
+- **`width` cannot be set from CSS.** It is an SVG 2 geometry property and
+  librsvg does not read it. Change size with `transform: scaleX(…)` and a
+  `transform-origin` at the edge the bar grows from.
+- **Do not set the same value twice.** A `fill="#2F80ED"` on the element and a
+  `fill: var(--colour)` in a class disagree, and which wins depends on which
+  renderer is looking. Put the default in `:root` and nowhere else.
+- **Strict JSON in the metadata.** No comments, no trailing commas. A comma
+  where a colon belongs leaves the icon with no parameters — the gear still
+  appears and says what the parser objected to.
+- **Numbers as numbers.** `"from": 0`, not `"from": "0"`. Strings are coerced,
+  but only because somebody will type them.
+
+### Trying one out
+
+Open the file in a browser: it is a valid SVG, and changing a value in `:root`
+through the developer tools shows what a key will do. What the browser shows
+and what the panel draws agree, with the exceptions below.
+
 ## What is supported
 
 What librsvg understands. Classes, transforms, gradients, opacity: yes.

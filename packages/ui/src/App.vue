@@ -614,6 +614,61 @@ function onDropAction(payload: { key: number; actionType: string; label: string 
  * added to — which is worth asking about, since what it replaces may be an
  * evening's work.
  */
+// --- profiles as files ----------------------------------------------------
+
+/**
+ * Saves a profile as one file, through the browser's own download.
+ *
+ * Rather than a native save dialog: the same code then works in the desktop
+ * app and in a browser talking to the daemon over the network, and neither
+ * needs a second, binary channel for the one button that uses it.
+ */
+function onExportProfile(profileId: string): void {
+  void (async () => {
+    try {
+      const archive = await deck.exportProfile(profileId);
+      const bytes = Uint8Array.from(atob(archive.base64), (character) => character.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/zip' }));
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = archive.name;
+      link.click();
+
+      // Freed on the next turn: revoking it straight away can beat the click.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      deck.lastError.value = (error as Error).message;
+    }
+  })();
+}
+
+/** Reads one back. Never over an existing profile — the daemon finds a free id. */
+function onImportProfile(): void {
+  const picker = document.createElement('input');
+  picker.type = 'file';
+  picker.accept = '.easydeck,.zip';
+
+  picker.addEventListener('change', () => {
+    const file = picker.files?.[0];
+    if (!file) return;
+
+    void (async () => {
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let binary = '';
+        for (const byte of bytes) binary += String.fromCharCode(byte);
+
+        await deck.importProfile(btoa(binary));
+      } catch (error) {
+        deck.lastError.value = (error as Error).message;
+      }
+    })();
+  });
+
+  picker.click();
+}
+
 // --- plugin settings ------------------------------------------------------
 
 /**
@@ -1170,7 +1225,13 @@ onBeforeUnmount(() => {
       :installed-plugins="deck.installedPlugins.value"
       :broken-plugins="deck.brokenPlugins.value"
       :plugin-statuses="deck.pluginStatuses.value"
+      :profiles="deck.profiles.value"
+      :active-profile-id="deck.deck.value?.profileId"
+      :user-icons="userIcons"
+      :omitted-icons="omittedIcons"
       @configure-plugin="onConfigurePlugin"
+      @export-profile="onExportProfile"
+      @import-profile="onImportProfile"
       @close="settingsOpen = false"
       @network="void deck.setNetworkSettings($event)"
       @approve-device="void deck.approveDevice($event)"

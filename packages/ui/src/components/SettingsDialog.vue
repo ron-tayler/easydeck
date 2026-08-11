@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import type {
   DeckState,
   InstalledPluginInfo,
+  LibraryImage,
   LocalizedText,
   PluginManifest,
 } from '@easydeck/core';
@@ -11,6 +12,7 @@ import type {
 import { SUPPORTED_LOCALES, setLocale } from '../i18n/index.js';
 import type { Locale } from '../i18n/index.js';
 import { THEMES, useTheme } from '../composables/useTheme.js';
+import IconLibrary from './IconLibrary.vue';
 import type { Theme } from '../composables/useTheme.js';
 
 const props = defineProps<{
@@ -24,6 +26,12 @@ const props = defineProps<{
   /** What the plugins folder holds, including plugins that run nothing. */
   installedPlugins?: readonly InstalledPluginInfo[];
   brokenPlugins?: readonly { id: string; problem: string }[];
+  /** What is stored, for the profiles section. */
+  profiles?: readonly { id: string; name: string }[];
+  activeProfileId?: string;
+  /** The user's own pictures, for browsing rather than picking. */
+  userIcons?: readonly LibraryImage[];
+  omittedIcons?: number;
   /** Where each plugin that holds a connection has got to. */
   pluginStatuses?: Readonly<Record<string, { status: string; message?: LocalizedText }>>;
 }>();
@@ -31,6 +39,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: [];
   configurePlugin: [pluginId: string];
+  exportProfile: [profileId: string];
+  importProfile: [];
   openFolder: [folder: 'config' | 'profiles' | 'plugins' | 'icons'];
   network: [patch: Record<string, unknown>];
   approveDevice: [deviceId: string];
@@ -40,7 +50,10 @@ const emit = defineEmits<{
 const { t, locale } = useI18n();
 const { theme, setTheme } = useTheme();
 
-const SECTIONS = ['system', 'network', 'plugins', 'icons', 'core', 'deck', 'about'] as const;
+/** Whether the icon collection is open for a look. */
+const browsingIcons = ref(false);
+
+const SECTIONS = ['system', 'network', 'profiles', 'plugins', 'icons', 'core', 'deck', 'about'] as const;
 
 /** A plugin worth opening a window for: one with settings or commands. */
 const configurable = (plugin: PluginManifest): boolean =>
@@ -325,6 +338,38 @@ const alsoWaiting = computed(() => Math.max(0, (props.pendingDevices?.length ?? 
           <p v-else class="muted">{{ t('settings.network.unavailable') }}</p>
         </section>
 
+        <section v-else-if="section === 'profiles'">
+          <h2>{{ t('settings.profiles.title') }}</h2>
+          <p class="muted">{{ t('settings.profiles.explanation') }}</p>
+
+          <ul v-if="(profiles ?? []).length > 0" class="list">
+            <li v-for="profile in profiles ?? []" :key="profile.id">
+              <div>
+                <strong>{{ profile.name }}</strong>
+                <span class="muted"> · {{ profile.id }}</span>
+                <span v-if="profile.id === activeProfileId" class="muted small">
+                  · {{ t('settings.profiles.active') }}
+                </span>
+              </div>
+
+              <!-- One file, pictures included: what somebody means by "send me
+                   your deck". -->
+              <button type="button" @click="emit('exportProfile', profile.id)">
+                {{ t('settings.profiles.export') }}
+              </button>
+            </li>
+          </ul>
+
+          <div class="row">
+            <button type="button" @click="emit('importProfile')">
+              {{ t('settings.profiles.import') }}
+            </button>
+            <button type="button" @click="emit('openFolder', 'profiles')">
+              {{ t('settings.profiles.openFolder') }}
+            </button>
+          </div>
+        </section>
+
         <section v-else-if="section === 'plugins'">
           <h2>{{ t('settings.plugins.title') }}</h2>
           <p class="muted">{{ t('settings.plugins.summary', { count: actionCount }) }}</p>
@@ -346,7 +391,6 @@ const alsoWaiting = computed(() => Math.max(0, (props.pendingDevices?.length ?? 
                 :class="statusOf(plugin.id)"
                 :title="statusHint(plugin.id)"
               />
-              <span class="muted small">{{ plugin.actions.length }}</span>
               <button
                 v-if="configurable(plugin)"
                 type="button"
@@ -372,9 +416,8 @@ const alsoWaiting = computed(() => Math.max(0, (props.pendingDevices?.length ?? 
                 <span v-if="plugin.version" class="muted"> · v{{ plugin.version }}</span>
                 <p v-if="plugin.description" class="muted small">{{ plugin.description }}</p>
               </div>
-              <span class="muted small">
-                {{ t('settings.plugins.carries', { icons: plugin.icons }) }}
-                <template v-if="plugin.locales.length > 0"> · {{ plugin.locales.join(', ') }}</template>
+              <span v-if="plugin.locales.length > 0" class="muted small">
+                · {{ plugin.locales.join(', ') }}
               </span>
             </li>
           </ul>
@@ -403,6 +446,11 @@ const alsoWaiting = computed(() => Math.max(0, (props.pendingDevices?.length ?? 
           <p class="muted">{{ t('settings.icons.explanation') }}</p>
           <p class="muted small">{{ t('settings.icons.formats') }}</p>
 
+          <!-- The same window the button editor opens, in its browsing mode:
+               one collection, shown one way, wherever it is looked at. -->
+          <button type="button" @click="browsingIcons = true">
+            {{ t('settings.icons.browse') }}
+          </button>
           <button type="button" @click="emit('openFolder', 'icons')">
             {{ t('settings.icons.openFolder') }}
           </button>
@@ -445,6 +493,16 @@ const alsoWaiting = computed(() => Math.max(0, (props.pendingDevices?.length ?? 
         </section>
       </div>
     </div>
+  <IconLibrary
+    v-if="browsingIcons"
+    browse
+    color="#ffffff"
+    :user-icons="userIcons ?? []"
+    :omitted-icons="omittedIcons"
+    @open-folder="emit('openFolder', 'icons')"
+    @close="browsingIcons = false"
+  />
+
   </div>
 </template>
 

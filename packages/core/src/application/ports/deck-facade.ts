@@ -105,6 +105,18 @@ export interface DeckFacade {
     params?: Readonly<Record<string, unknown>>,
   ): Promise<readonly ParamOption[]>;
 
+  /**
+   * A profile as one file: the document plus its pictures, zipped.
+   *
+   * Base64 because it travels over the same JSON protocol as everything else,
+   * and the alternative — a second, binary channel — would exist for one
+   * button in the settings window.
+   */
+  exportProfile(profileId: string): Promise<{ readonly name: string; readonly base64: string }>;
+
+  /** Reads such a file back, under a fresh id if that one is taken. */
+  importProfile(base64: string): Promise<{ readonly id: string }>;
+
   /** Where every plugin that holds a connection has got to, right now. */
   pluginStatuses(): Record<string, { status: PluginStatus; message?: LocalizedText }>;
 

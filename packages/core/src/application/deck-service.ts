@@ -22,6 +22,7 @@ import { NoProfilesError, ProfileNotFoundError } from '../domain/errors.js';
 import { configDir, iconsDir, pluginsDir, profilesDir } from '../infrastructure/config-paths.js';
 import { readLibrary } from '../infrastructure/icon-library.js';
 import { readInstalledPlugins } from '../infrastructure/plugins/installed-plugins.js';
+import { exportProfile, importProfile } from '../infrastructure/profile-archive.js';
 import type { Library, LibraryImage } from '../infrastructure/icon-library.js';
 import type { DaemonSettings, DeckBinding } from '../domain/settings.js';
 import { localAddresses } from '../infrastructure/api/network-addresses.js';
@@ -233,6 +234,50 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
 
   async plugins(): Promise<readonly PluginManifest[]> {
     return this.options.actions.plugins();
+  }
+
+  /**
+   * Packs a stored profile into an archive.
+   *
+   * Read from storage rather than from the running deck: "export this profile"
+   * means the thing on disk, not whichever page a deck happens to be showing.
+   */
+  async exportProfile(profileId: string): Promise<{ name: string; base64: string }> {
+    const profile = await this.options.profiles.load(profileId);
+    const archive = exportProfile(profile);
+
+    return {
+      name: `${profile.name || profile.id}.easydeck`,
+      base64: Buffer.from(archive).toString('base64'),
+    };
+  }
+
+  /**
+   * Reads an archive in, under a free id.
+   *
+   * Never over an existing profile: an import is somebody's work arriving, and
+   * quietly replacing what they already had would be the one mistake here that
+   * cannot be undone.
+   */
+  async importProfile(base64: string): Promise<{ id: string }> {
+    const profile = importProfile(Buffer.from(base64, 'base64'));
+    const id = await this.freeProfileId(profile.id);
+
+    await this.options.profiles.save({ ...profile, id });
+    this.emit('profilesChanged');
+
+    return { id };
+  }
+
+  private async freeProfileId(wanted: string): Promise<string> {
+    if (!(await this.options.profiles.has(wanted))) return wanted;
+
+    for (let suffix = 2; suffix < 100; suffix += 1) {
+      const candidate = `${wanted}-${suffix}`;
+      if (!(await this.options.profiles.has(candidate))) return candidate;
+    }
+
+    throw new Error(`Too many profiles named like '${wanted}'`);
   }
 
   /** The running plugins, for whoever configures them. */

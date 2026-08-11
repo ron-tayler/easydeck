@@ -97,6 +97,16 @@ class FakeDeck implements DeckFacade {
     this.calls.push(`runPluginCommand:${pluginId}:${command}`);
   }
 
+  async exportProfile(profileId: string) {
+    this.calls.push(`exportProfile:${profileId}`);
+    return { name: `${profileId}.easydeck`, base64: 'UEsDBA==' };
+  }
+
+  async importProfile(base64: string) {
+    this.calls.push(`importProfile:${base64.length}`);
+    return { id: 'imported' };
+  }
+
   pluginStatuses() {
     return { obs: { status: 'ready' as const } };
   }

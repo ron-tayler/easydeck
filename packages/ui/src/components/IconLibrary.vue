@@ -29,9 +29,19 @@ const props = defineProps<{
    * absent from here looks like the program losing it.
    */
   omitted?: number;
+  /**
+   * Browsing rather than choosing.
+   *
+   * The same window serves two errands: picking a picture for a key, and
+   * simply looking at what is installed. Looking has no use for an upload
+   * button — there is a folder for that, and it is one click away — and a
+   * tile that does nothing when clicked is better than one that silently
+   * changes a key somewhere.
+   */
+  browse?: boolean;
 }>();
 
-const emit = defineEmits<{ pick: [source: string]; close: [] }>();
+const emit = defineEmits<{ pick: [source: string]; close: [], openFolder: [] }>();
 
 const { t } = useI18n();
 
@@ -142,6 +152,8 @@ const hidden = computed(
 );
 
 async function pickBuiltIn(icon: LibraryIcon): Promise<void> {
+  if (props.browse) return;
+
   problem.value = '';
   busy.value = true;
   try {
@@ -184,7 +196,11 @@ async function pickFile(event: Event): Promise<void> {
           :placeholder="t('icons.search')"
           autofocus
         />
-        <label class="upload">
+        <button v-if="browse" type="button" class="open-folder" @click="emit('openFolder')">
+          {{ t('icons.openFolder') }}
+        </button>
+
+        <label v-else class="upload">
           <input type="file" accept="image/*" :disabled="busy" @change="pickFile" />
           <span>{{ t('icons.upload') }}</span>
         </label>
@@ -221,7 +237,7 @@ async function pickFile(event: Event): Promise<void> {
             class="tile"
             :title="item.group ? `${item.group}/${item.name}` : item.name"
             :disabled="busy"
-            @click="emit('pick', item.source)"
+            @click="browse ? undefined : emit('pick', item.source)"
           >
             <img :src="item.source" alt="" />
           </button>

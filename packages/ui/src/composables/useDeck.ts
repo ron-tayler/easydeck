@@ -282,6 +282,9 @@ export function useDeck() {
     plugins,
     installedPlugins,
     pluginStatuses,
+    exportProfile: (profileId: string) =>
+      client.call<{ name: string; base64: string }>('exportProfile', { profileId }),
+    importProfile: (archive: string) => client.call<{ id: string }>('importProfile', { archive }),
     pluginSettings: (pluginId: string) =>
       client.call<{
         values: Record<string, VariableValue>;

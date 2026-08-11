@@ -16,6 +16,7 @@ export default {
     namePrompt: 'What should this device be called?',
   },
   icons: {
+    openFolder: 'Open folder',
     title: 'Icon library',
     search: 'Search by name',
     upload: 'Upload your own',
@@ -205,6 +206,15 @@ export default {
     dismiss: 'Dismiss',
   },
   settings: {
+    profiles: {
+      title: 'Profiles',
+      explanation: 'A profile is a whole deck layout. Exporting puts it in one file, pictures included.',
+      active: 'active',
+      export: 'Export',
+      import: 'Import a profile',
+      openFolder: 'Open the profiles folder',
+      imported: 'Profile added: {name}',
+    },
     open: 'Settings',
     close: 'Close',
     soon: 'not yet',
@@ -253,6 +263,7 @@ export default {
       broken: 'unreadable',
     },
     icons: {
+      browse: 'Browse the library',
       title: 'Icon library',
       explanation:
         'Drop pictures into this folder and they appear in the button editor beside the built-in set. A chosen picture is embedded into the profile, so the profile stays portable even if the folder is later cleared.',

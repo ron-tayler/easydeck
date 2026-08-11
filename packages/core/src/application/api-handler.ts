@@ -213,6 +213,12 @@ export class ApiHandler {
         return { opened: folder };
       }
 
+      case 'exportProfile':
+        return this.deck.exportProfile(text(params, 'profileId'));
+
+      case 'importProfile':
+        return this.deck.importProfile(text(params, 'archive'));
+
       case 'getPluginSettings':
         return this.deck.pluginSettings(text(params, 'pluginId'));
 
