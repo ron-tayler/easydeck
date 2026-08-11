@@ -30,6 +30,10 @@
     "./label": {
       "types": "./dist/domain/label-layout.d.ts",
       "import": "./dist/domain/label-layout.js"
+    },
+    "./keys": {
+      "types": "./dist/domain/keyboard-keys.d.ts",
+      "import": "./dist/domain/keyboard-keys.js"
     }
   },
   "files": [

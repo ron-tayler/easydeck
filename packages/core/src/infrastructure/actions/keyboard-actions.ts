@@ -1,4 +1,4 @@
-import { stringParam } from '@easydeck/engine';
+import { hotkeyProblem, orderedHotkey, parseHotkey, stringParam } from '@easydeck/engine';
 import type { ActionDefinition, ActionRegistry } from '@easydeck/engine';
 
 import { loadUnicodeTyper } from './win32-typing.js';
@@ -15,8 +15,12 @@ import { loadUnicodeTyper } from './win32-typing.js';
  */
 
 export interface NutKeyboard {
-  pressKey(...keys: number[]): Promise<unknown>;
-  releaseKey(...keys: number[]): Promise<unknown>;
+  /**
+   * One key. The real signature is variadic and the extra arguments do not
+   * work — see `pressCombination`.
+   */
+  pressKey(key: number): Promise<unknown>;
+  releaseKey(key: number): Promise<unknown>;
   type(text: string): Promise<unknown>;
   config: { autoDelayMs: number };
 }
@@ -26,25 +30,83 @@ export interface NutModule {
   Key: Record<string, number>;
 }
 
-/** Spellings a profile author might reasonably use, mapped to nut.js names. */
-const ALIASES: Record<string, string> = {
+/**
+ * Every key in the catalogue, as this backend spells it.
+ *
+ * The catalogue says which keys exist and what to call them in front of a
+ * person; this says how to ask for one. Two tables rather than one because
+ * the second belongs to whichever native module is doing the pressing — a
+ * different backend would replace this file and leave the list alone.
+ *
+ * A test walks the catalogue and resolves every id, so the two cannot drift
+ * apart without something going red.
+ */
+const NUT_NAMES: Readonly<Record<string, string>> = {
   ctrl: 'LeftControl',
-  control: 'LeftControl',
-  alt: 'LeftAlt',
-  option: 'LeftAlt',
   shift: 'LeftShift',
+  alt: 'LeftAlt',
   win: 'LeftSuper',
-  cmd: 'LeftSuper',
-  command: 'LeftSuper',
-  super: 'LeftSuper',
-  meta: 'LeftSuper',
-  esc: 'Escape',
-  del: 'Delete',
-  ins: 'Insert',
-  pgup: 'PageUp',
-  pgdn: 'PageDown',
+  rctrl: 'RightControl',
+  rshift: 'RightShift',
+  ralt: 'RightAlt',
+  rwin: 'RightSuper',
+
+  escape: 'Escape',
+  tab: 'Tab',
+  capslock: 'CapsLock',
+  space: 'Space',
   enter: 'Return',
-  ' ': 'Space',
+  backspace: 'Backspace',
+  delete: 'Delete',
+  insert: 'Insert',
+  home: 'Home',
+  end: 'End',
+  pageup: 'PageUp',
+  pagedown: 'PageDown',
+  up: 'Up',
+  down: 'Down',
+  left: 'Left',
+  right: 'Right',
+  printscreen: 'Print',
+  scrolllock: 'ScrollLock',
+  pause: 'Pause',
+  menu: 'Menu',
+
+  grave: 'Grave',
+  minus: 'Minus',
+  equal: 'Equal',
+  leftbracket: 'LeftBracket',
+  rightbracket: 'RightBracket',
+  backslash: 'Backslash',
+  semicolon: 'Semicolon',
+  quote: 'Quote',
+  comma: 'Comma',
+  period: 'Period',
+  slash: 'Slash',
+
+  numlock: 'NumLock',
+  numdivide: 'Divide',
+  nummultiply: 'Multiply',
+  numsubtract: 'Subtract',
+  numadd: 'Add',
+  // The keypad's own Return, which this backend calls `Enter` and the main one
+  // `Return` — the one naming collision worth a line of explanation.
+  numenter: 'Enter',
+  numdecimal: 'Decimal',
+
+  mute: 'AudioMute',
+  volumedown: 'AudioVolDown',
+  volumeup: 'AudioVolUp',
+  play: 'AudioPlay',
+  stop: 'AudioStop',
+  previous: 'AudioPrev',
+  next: 'AudioNext',
+
+  // The digit row is `Num1`…`Num0` here, which is not the keypad.
+  ...Object.fromEntries([...'1234567890'].map((digit) => [digit, `Num${digit}`])),
+  ...Object.fromEntries([...'abcdefghijklmnopqrstuvwxyz'].map((letter) => [letter, letter.toUpperCase()])),
+  ...Object.fromEntries(Array.from({ length: 24 }, (_, index) => [`f${index + 1}`, `F${index + 1}`])),
+  ...Object.fromEntries(Array.from({ length: 10 }, (_, digit) => [`num${digit}`, `NumPad${digit}`])),
 };
 
 /**
@@ -81,16 +143,48 @@ export async function loadKeyboardBackend(): Promise<NutModule | null> {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Holds a combination down, then lets it go.
+ *
+ * One key per call, which is the whole of why hotkeys never worked. The
+ * backend's signature is variadic and reads as though it takes a combination —
+ * `pressKey(Ctrl, Shift, M)` — and it does not: anything past the first
+ * argument comes back as "Invalid key flag specified". A single key went
+ * through, so the action looked half-alive: `f13` pressed, `ctrl+f13` failed,
+ * and the failure only ever reached the log.
+ *
+ * Down in order and up in reverse, so a modifier is down before the key it
+ * modifies and released after it.
+ */
+export async function pressCombination(module: NutModule, keys: readonly number[]): Promise<void> {
+  const down: number[] = [];
+
+  try {
+    for (const key of keys) {
+      await module.keyboard.pressKey(key);
+      down.push(key);
+    }
+
+    await wait(KEY_HOLD_MS);
+  } finally {
+    // Released even when a key part-way through refused: leaving Ctrl stuck
+    // down would make the machine unusable until somebody pressed it by hand.
+    for (const key of [...down].reverse()) {
+      await module.keyboard.releaseKey(key).catch(() => undefined);
+    }
+  }
+}
+
 export function resolveKey(module: NutModule, token: string): number {
   const trimmed = token.trim();
   if (trimmed.length === 0) throw new Error('Empty key in hotkey');
 
-  const alias = ALIASES[trimmed.toLowerCase()];
   const candidates = [
-    alias,
+    NUT_NAMES[trimmed.toLowerCase()],
+    // A name the backend itself uses, for a profile written against it
+    // directly — `LeftSuper`, `NumPad7`. Nothing offers these, but nothing
+    // gains from refusing them either.
     trimmed,
-    trimmed.toUpperCase(),
-    trimmed[0]!.toUpperCase() + trimmed.slice(1).toLowerCase(),
   ].filter((name): name is string => typeof name === 'string');
 
   for (const name of candidates) {
@@ -98,7 +192,7 @@ export function resolveKey(module: NutModule, token: string): number {
     if (typeof value === 'number') return value;
   }
 
-  throw new Error(`Unknown key '${token}' in hotkey`);
+  throw new Error(`There is no key called '${token}'`);
 }
 
 /**
@@ -119,7 +213,8 @@ export const keyboardActions: ActionDefinition[] = [
           name: 'keys',
           type: 'hotkey',
           label: { en: 'Combination', ru: 'Сочетание' },
-          placeholder: { en: 'ctrl+shift+m' },
+          // No placeholder: the editor offers the keys as lists rather than
+          // asking anybody to know how one is spelled.
         },
       ],
     },
@@ -153,13 +248,17 @@ export async function registerKeyboardActions(
 
   registry.extendPlugin('system', keyboardActions, {
     'system.hotkey': async (params) => {
-      const combo = stringParam(params, 'keys');
-      const keys = combo.split('+').map((token) => resolveKey(backend, token));
+      const ids = parseHotkey(stringParam(params, 'keys'));
 
-      await backend.keyboard.pressKey(...keys);
-      await wait(KEY_HOLD_MS);
-      // Release in reverse so modifiers outlive the key they modify.
-      await backend.keyboard.releaseKey(...[...keys].reverse());
+      // Refused with the reason rather than pressed halfway: an empty
+      // combination used to reach the backend as an empty argument list, which
+      // pressed nothing and said nothing.
+      const problem = hotkeyProblem(ids);
+      if (problem) throw new Error(`${problem}. Choose the keys in the button editor`);
+
+      const keys = orderedHotkey(ids).map((id) => resolveKey(backend, id));
+
+      await pressCombination(backend, keys);
     },
 
     /**

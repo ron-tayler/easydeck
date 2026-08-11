@@ -40,6 +40,16 @@ export {
   drawableIcon,
 } from './domain/icon-params.js';
 export { variablesReadBy } from './domain/profile-variables.js';
+export type { KeyboardKey, KeyGroup } from './domain/keyboard-keys.js';
+export {
+  KEYBOARD_KEYS,
+  MAX_HOTKEY_KEYS,
+  formatHotkey,
+  hotkeyProblem,
+  keyboardKey,
+  orderedHotkey,
+  parseHotkey,
+} from './domain/keyboard-keys.js';
 export type {
   ButtonVisual,
   ButtonVisualTemplate,

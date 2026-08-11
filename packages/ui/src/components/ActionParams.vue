@@ -10,6 +10,7 @@ import type {
 } from '@easydeck/core';
 
 import ColorPicker from './ColorPicker.vue';
+import HotkeyInput from './HotkeyInput.vue';
 import VariablePicker from './VariablePicker.vue';
 
 const props = defineProps<{
@@ -284,6 +285,14 @@ function set(param: ParamDefinition, raw: string | boolean): void {
 
       <ColorPicker
         v-else-if="param.type === 'color'"
+        :model-value="valueOf(param)"
+        @update:model-value="set(param, $event)"
+      />
+
+      <!-- Chosen from a list rather than typed: a key cannot be misspelled
+           this way, and the list is also the answer to what may go here. -->
+      <HotkeyInput
+        v-else-if="param.type === 'hotkey'"
         :model-value="valueOf(param)"
         @update:model-value="set(param, $event)"
       />

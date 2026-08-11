@@ -42,6 +42,8 @@ export type {
   ParamOption,
   ParamType,
   LocalizedText,
+  KeyboardKey,
+  KeyGroup,
 } from '@easydeck/engine';
 export { PLUGIN_API_VERSION, localized } from '@easydeck/engine';
 
