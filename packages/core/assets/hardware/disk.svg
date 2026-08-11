@@ -1,0 +1,12 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="128" height="128" rx="8" fill="#2F5FC7"/>
+<circle cx="19" cy="34" r="3" stroke="white" stroke-width="2"/>
+<circle cx="19" cy="94" r="3" stroke="white" stroke-width="2"/>
+<circle cx="109" cy="94" r="3" stroke="white" stroke-width="2"/>
+<circle cx="109" cy="34" r="3" stroke="white" stroke-width="2"/>
+<path d="M19 26H109C113.418 26 117 29.5817 117 34V47C117 48.1046 116.105 49 115 49H110C108.343 49 107 50.3431 107 52V76C107 77.6569 108.343 79 110 79H115C116.105 79 117 79.8954 117 81V94C117 98.4183 113.418 102 109 102H19C14.5817 102 11 98.4183 11 94V34C11 29.5817 14.5817 26 19 26Z" stroke="white" stroke-width="4"/>
+<path d="M117 53C118.105 53 119 53.8954 119 55V55C119 56.1046 118.105 57 117 57L109 57L109 53L117 53Z" fill="white"/>
+<path d="M117 59C118.105 59 119 59.8954 119 61V61C119 62.1046 118.105 63 117 63L109 63L109 59L117 59Z" fill="white"/>
+<path d="M117 65C118.105 65 119 65.8954 119 67V67C119 68.1046 118.105 69 117 69L109 69L109 65L117 65Z" fill="white"/>
+<path d="M117 71C118.105 71 119 71.8954 119 73V73C119 74.1046 118.105 75 117 75L109 75L109 71L117 71Z" fill="white"/>
+</svg>

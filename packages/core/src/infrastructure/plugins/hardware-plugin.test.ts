@@ -193,22 +193,40 @@ describe('hardware plugin', () => {
   });
 
   it('colours a gauge by the band its value falls in', async () => {
-    // What the bands were added for. The preset is only interesting if a
-    // processor at 95% looks different from one at 5%.
+    /*
+     * What the bands were added for: a processor at 95% has to look different
+     * from one at 5%, and a number with no exact match would otherwise walk
+     * the states like a carousel.
+     *
+     * Written against a button declared here rather than against whichever
+     * preset the plugin currently ships. It used to take the `cpu` preset and
+     * read its states, which tied a test of the engine's banding to a
+     * decision about how a key is decorated — and broke the day those keys
+     * were redrawn with pictures instead of colours.
+     */
     const bed = bench();
     const presenter = new Presenter();
     const deck = new DeckController(presenter, bed.registry, { variables: bed.variables });
 
     await registerHardwarePlugin(bed.registry, bed.runtime, { fastIntervalMs: 10_000 });
-    const cpu = (hardwareManifest([]).presets ?? []).find((preset) => preset.name === 'cpu');
-    assert.ok(cpu);
+
+    const gauge = {
+      id: 'gauge',
+      key: 0,
+      stateFrom: 'hw.cpu',
+      states: [
+        { id: 'calm', when: { max: 59 }, visual: { background: '#22303c' } },
+        { id: 'busy', when: { min: 60, max: 84 }, visual: { background: '#6b5416' } },
+        { id: 'hot', when: { min: 85 }, visual: { background: '#7a2c2c' } },
+      ],
+    };
 
     await deck.load({
       ...gaugeProfile,
       root: {
         id: 'root',
         name: 'Root',
-        pages: [{ id: 'main', buttons: [{ ...cpu.button, id: 'gauge', key: 0 }] }],
+        pages: [{ id: 'main', buttons: [gauge] }],
       },
     });
 

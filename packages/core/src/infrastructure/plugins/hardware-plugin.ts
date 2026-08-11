@@ -134,26 +134,66 @@ export function hardwareManifest(disks: readonly Disk[]): PluginManifest {
     actions: [],
     variables,
     presets: [
-      gauge('cpu', { en: 'Processor', ru: 'Процессор' }, 'hw.cpu', '{{hw.cpu}}%', {
-        en: 'Load, coloured as it climbs',
-        ru: 'Нагрузка, с цветом по мере роста',
-      }),
-      gauge('memory', { en: 'Memory', ru: 'Память' }, 'hw.memory', '{{hw.memory}}%', {
-        en: 'How much of the memory is in use',
-        ru: 'Сколько памяти занято',
-      }),
-      ...disks.map((disk) =>
-        gauge(
-          `disk-${disk.key}`,
-          { en: `Disk ${disk.label}`, ru: `Диск ${disk.label}` },
-          `hw.disk-${disk.key}`,
-          `${disk.label}\n{{hw.disk-${disk.key}-free}} GB`,
-          {
-            en: `Free space on ${disk.label}, coloured as it runs out`,
-            ru: `Свободное место на ${disk.label}, с цветом по мере заполнения`,
-          },
-        ),
-      ),
+      {
+        name: 'CPU',
+        label: {en: "Processor", ru: 'Процессор'},
+        description: {en: "Load, coloured as it climbs", ru: "Нагрузка, с цветом по мере роста"},
+        button: {
+          states: [{
+            id: 'default',
+            visual: {
+              label: {
+                text: 'CPU\n{{hw.cpu}}%',
+                color: '#ffffff',
+                position: 'center',
+                fontSize: 20,
+              },
+              icon: {source: `plugin:hardware/cpu.svg`}
+            }
+          }]
+        }
+      },
+      {
+        name: 'memory',
+        label: {en: "Memory", ru: 'Память'},
+        description: {en: "How much of the memory is in use", ru: "Сколько памяти занято"},
+        button: {
+          states: [{
+            id: 'default',
+            visual: {
+              label: {
+                text: 'RAM\n{{hw.memory}}%',
+                color: '#ffffff',
+                position: 'center',
+                fontSize: 20,
+              },
+              icon: {source: `plugin:hardware/ram.svg`}
+            }
+          }]
+        }
+      },
+      ...disks.map((disk)=>({
+        name: `disk-${disk.key}`,
+        label: { en: `Disk ${disk.label}`, ru: `Диск ${disk.label}` },
+        description: {
+          en: `Free space on ${disk.label}`,
+          ru: `Свободное место на ${disk.label}`,
+        },
+        button: {
+          states: [{
+            id: 'default',
+            visual: {
+              label: {
+                text: `${disk.label}:\n{{hw.disk-${disk.key}-free}} GB`,
+                color: '#ffffff',
+                position: 'center' as const,
+                fontSize: 13,
+              },
+              icon: {source: `plugin:hardware/disk.svg`}
+            }
+          }]
+        }
+      })),
     ],
   };
 }
