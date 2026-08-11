@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -24,6 +24,14 @@ function profile(id: string, name = 'Test'): ProfileDefinition {
       ],
     },
   };
+}
+
+/** Whether a path is there, as a question rather than an exception. */
+async function exists(path: string): Promise<boolean> {
+  return access(path).then(
+    () => true,
+    () => false,
+  );
 }
 
 describe('FileProfileRepository', () => {
@@ -164,6 +172,111 @@ describe('FileProfileRepository', () => {
       'the old down actions must still run before the old up ones',
     );
     assert.deepEqual(actions?.longPress?.map((action) => action.type), ['easydeck.go-home']);
+
+    await rm(isolated, { recursive: true, force: true });
+  });
+
+  it('stores pictures beside the document rather than inside it', async () => {
+    const isolated = await mkdtemp(join(tmpdir(), 'easydeck-assets-'));
+    const store = new FileProfileRepository(isolated);
+
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    await store.save({
+      formatVersion: PROFILE_FORMAT_VERSION,
+      id: 'shiny',
+      name: 'Shiny',
+      layout: { rows: 1, cols: 2 },
+      root: {
+        id: 'root',
+        name: 'Root',
+        pages: [
+          {
+            id: 'main',
+            buttons: [
+              // The same picture twice: one file, because a file is named
+              // after what is in it.
+              { id: 'a', key: 0, states: [{ id: 'default', visual: { icon: { source: png } } }] },
+              { id: 'b', key: 1, states: [{ id: 'default', visual: { icon: { source: png } } }] },
+            ],
+          },
+        ],
+      },
+    });
+
+    const document = await readFile(join(isolated, 'shiny', 'profile.json'), 'utf8');
+    assert.doesNotMatch(document, /base64/, 'no picture may remain in the document');
+    assert.match(document, /asset:/);
+
+    const assets = await readdir(join(isolated, 'shiny', 'assets'));
+    assert.equal(assets.length, 1, 'one picture, however many keys use it');
+
+    // And it comes back as the profile everything downstream expects.
+    const loaded = await store.load('shiny');
+    assert.equal(loaded.root.pages[0]!.buttons[0]!.states[0]!.visual.icon?.source, png);
+    assert.equal(loaded.root.pages[0]!.buttons[1]!.states[0]!.visual.icon?.source, png);
+
+    await rm(isolated, { recursive: true, force: true });
+  });
+
+  it('sweeps away a picture nothing points at any more', async () => {
+    // Otherwise every icon ever chosen stays in the folder for ever, which is
+    // how a program stops being trusted with somebody's files.
+    const isolated = await mkdtemp(join(tmpdir(), 'easydeck-sweep-'));
+    const store = new FileProfileRepository(isolated);
+
+    const withIcon = (source: string): ProfileDefinition => ({
+      formatVersion: PROFILE_FORMAT_VERSION,
+      id: 'sweep',
+      name: 'Sweep',
+      layout: { rows: 1, cols: 1 },
+      root: {
+        id: 'root',
+        name: 'Root',
+        pages: [
+          {
+            id: 'main',
+            buttons: [{ id: 'a', key: 0, states: [{ id: 'default', visual: { icon: { source } } }] }],
+          },
+        ],
+      },
+    });
+
+    await store.save(withIcon('data:image/png;base64,iVBORw0KGgo='));
+    await store.save(withIcon('data:image/png;base64,iVBORw0KGgoBBB=='));
+
+    const assets = await readdir(join(isolated, 'sweep', 'assets'));
+    assert.equal(assets.length, 1, 'the replaced picture is gone');
+
+    await rm(isolated, { recursive: true, force: true });
+  });
+
+  it('reads a profile still stored as a single file, and folds it on save', async () => {
+    // Nobody has to do anything about the old shape, and nobody loses a
+    // profile by upgrading.
+    const isolated = await mkdtemp(join(tmpdir(), 'easydeck-fold-'));
+    const store = new FileProfileRepository(isolated);
+
+    await writeFile(
+      join(isolated, 'old.json'),
+      JSON.stringify({
+        formatVersion: PROFILE_FORMAT_VERSION,
+        id: 'old',
+        name: 'Old',
+        layout: { rows: 1, cols: 1 },
+        root: { id: 'root', name: 'Root', pages: [{ id: 'main', buttons: [] }] },
+      }),
+      'utf8',
+    );
+
+    const loaded = await store.load('old');
+    assert.equal(loaded.name, 'Old');
+    assert.deepEqual((await store.list()).map((each) => each.id), ['old']);
+
+    await store.save({ ...loaded, name: 'Folded' });
+
+    assert.equal(await exists(join(isolated, 'old', 'profile.json')), true);
+    assert.equal(await exists(join(isolated, 'old.json')), false, 'the file goes once the folder is there');
+    assert.equal((await store.load('old')).name, 'Folded');
 
     await rm(isolated, { recursive: true, force: true });
   });

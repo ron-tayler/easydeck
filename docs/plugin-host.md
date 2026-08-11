@@ -130,7 +130,24 @@ Saving is partial. The configurator never receives a secret, so it cannot send
 one back, and a whole-document save would drop every token the moment somebody
 changed a port.
 
-### Where it lands
+### Where a profile lands
+
+Beside this, and worth knowing when reading one: a profile is a folder now.
+
+```
+profiles/gaming/
+  profile.json        pages, keys, variables — forty kilobytes, readable
+  assets/9f8b….png    pictures, named after their own contents
+```
+
+A key refers to a picture as `asset:9f8b…`, identical pictures collapse into
+one file, and a picture nothing points at is swept away when the profile is
+saved. What `load` returns is unchanged — the same profile with data URLs
+everything downstream already speaks — so this is a storage decision and
+nothing more. A profile still stored as a single `<id>.json` is read as it
+always was and becomes a folder the next time it is saved.
+
+### Where a plugin's settings land
 
 ```
 %APPDATA%\EasyDeck\
