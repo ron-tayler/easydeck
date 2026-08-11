@@ -9,6 +9,7 @@ import type {
   VariableValue,
 } from '@easydeck/core';
 import { renderTemplate } from '@easydeck/engine/template';
+import { CORE_DELAY, CORE_FOR, CORE_IF } from '@easydeck/engine/actions';
 
 import { actionIconPath, isDrawnIcon } from '../icons/action-icons.js';
 
@@ -84,6 +85,31 @@ const isOpen = (pluginId: string): boolean => searching.value || !collapsed.valu
  */
 const say = (text: LocalizedText | undefined): string =>
   text === undefined ? '' : (text[locale.value] ?? text.en);
+
+/**
+ * The three steps the engine runs itself, offered like any other.
+ *
+ * They travel as an ordinary action drag, so the editor needs no second way of
+ * receiving them: what lands is a step of that type, and the editor already
+ * knows which types are blocks.
+ */
+const BLOCKS: readonly string[] = [CORE_IF, CORE_FOR, CORE_DELAY];
+
+const BLOCK_ICONS: Readonly<Record<string, string>> = {
+  [CORE_IF]: '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M4 5h6v2H6.4l4 5H20v2h-10L6.4 19H4v-2h1.4l3.2-4-3.2-4H4z"/></svg>',
+  [CORE_FOR]: '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 5a7 7 0 1 0 6.3 4h-2.3A5 5 0 1 1 12 7V5z"/><path fill="currentColor" d="M11 3l4 3-4 3z"/></svg>',
+  [CORE_DELAY]: '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9 9 9 0 0 0-9-9zm1 9V7h-2v7h6v-2z"/></svg>',
+};
+
+const blockIcon = (type: string): string => BLOCK_ICONS[type] ?? '';
+
+function onBlockDragStart(event: DragEvent, type: string): void {
+  event.dataTransfer?.setData(
+    'application/x-easydeck-action',
+    JSON.stringify({ type, label: t(`editor.blocks.${type}`) }),
+  );
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+}
 
 function onDragStart(event: DragEvent, action: ActionDefinition): void {
   event.dataTransfer?.setData(
@@ -187,6 +213,28 @@ const groups = computed<Group[]>(() => {
     />
 
     <div class="scroll">
+      <!-- The blocks a script is built from, above the plugins because they
+           are not one: a fork is not something a deck *does*, it is how what a
+           deck does is arranged. Only inside the key editor — dropping an `if`
+           onto the grid would mean nothing. -->
+      <section v-if="!presets" class="group blocks">
+        <div class="head static">{{ t('editor.blocks.title') }}</div>
+
+        <ul>
+          <li v-for="type in BLOCKS" :key="type">
+            <div
+              class="action block"
+              draggable="true"
+              :title="t(`editor.blocks.${type}Hint`)"
+              @dragstart="onBlockDragStart($event, type)"
+            >
+              <span class="mark" v-html="blockIcon(type)" />
+              <span class="label">{{ t(`editor.blocks.${type}`) }}</span>
+            </div>
+          </li>
+        </ul>
+      </section>
+
       <section v-for="group in groups" :key="group.plugin.id" class="group">
         <button
           type="button"

@@ -101,6 +101,55 @@ function patchVisual(change: Record<string, unknown>): void {
   patchState({ visual: { ...state.value.visual, ...change } });
 }
 
+// --- the button's script, and the states that differ from it ---------------
+
+/**
+ * Which state actually holds the script being shown.
+ *
+ * The first one, unless this state has claimed its own. Having every state
+ * carry a script made a two-state button twice the work and twice the thing
+ * to keep in step — and the usual case is a key that looks different when the
+ * mic is muted while doing the same thing on a press.
+ */
+const scriptOwner = computed<number>(() =>
+  stateIndex.value === 0 || state.value.ownActions === true ? stateIndex.value : 0,
+);
+
+const script = computed(() => draft.value.states[scriptOwner.value]?.actions ?? {});
+
+function setScript(actions: NonNullable<ButtonStateDefinition['actions']>): void {
+  const states = [...draft.value.states];
+  const at = scriptOwner.value;
+  states[at] = { ...states[at]!, actions };
+  draft.value = { ...draft.value, states };
+}
+
+/**
+ * Turns a state's own script on or off.
+ *
+ * Switching it on copies what was being followed, so the panel does not empty
+ * the moment somebody ticks the box: they asked to differ from the button's
+ * script, not to throw it away and start again.
+ *
+ * Switching it off leaves that copy in the state, unused. It costs a few lines
+ * in the profile and means the box can be un-ticked and re-ticked without the
+ * work in between being lost.
+ */
+function setOwnScript(own: boolean): void {
+  if (!own) {
+    patchState({ ownActions: false });
+    return;
+  }
+
+  const inherited = draft.value.states[0]?.actions;
+  patchState({
+    ownActions: true,
+    ...(state.value.actions === undefined && inherited
+      ? { actions: JSON.parse(JSON.stringify(inherited)) as NonNullable<ButtonStateDefinition['actions']> }
+      : {}),
+  });
+}
+
 function patchLabel(change: Record<string, unknown>): void {
   const label = { text: '', ...state.value.visual.label, ...change };
   patchVisual({ label: label.text === '' && !change['text'] ? undefined : label });
@@ -978,8 +1027,18 @@ const previewIcon = computed(() => {
         <section class="behaviour">
           <h3>{{ t('editor.behaviour') }}</h3>
 
+          <!-- A button has one script, held by its first state. A state that
+               genuinely acts differently says so here — and until it does, it
+               shows the button's script rather than an empty one, because a
+               blank panel reads as "this key does nothing". -->
+          <label v-if="stateIndex > 0" class="own-script">
+            <input type="checkbox" :checked="state.ownActions === true" @change="setOwnScript(($event.target as HTMLInputElement).checked)" />
+            <span>{{ t('editor.ownScript') }}</span>
+            <em v-if="!state.ownActions" class="muted small">{{ t('editor.ownScriptHint', { state: draft.states[0]?.id ?? '' }) }}</em>
+          </label>
+
           <MacroEditor
-            :actions="state.actions ?? {}"
+            :actions="script"
             :trigger="trigger"
             :plugins="plugins"
             :values="variables"
@@ -993,7 +1052,7 @@ const previewIcon = computed(() => {
             :filled-secrets="filledSecrets"
             :save-secret="saveSecret"
             :clear-secret="clearSecret"
-            @update="patchState({ actions: $event })"
+            @update="setScript($event)"
             @trigger="trigger = $event"
             @configure-plugin="emit('configurePlugin', $event)"
           />

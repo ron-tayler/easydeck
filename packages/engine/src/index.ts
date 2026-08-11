@@ -45,6 +45,16 @@ export { evaluateCondition } from './domain/condition.js';
 export { CORE_DELAY, CORE_FOR, CORE_IF, CORE_STEPS, isCoreStep } from './domain/action.js';
 export { MAX_DEPTH, MAX_REPEATS, MAX_STEPS, ScriptLimitError, runScript } from './application/script-runner.js';
 export type { ScriptHost } from './application/script-runner.js';
+export type { StepPath } from './domain/script-tree.js';
+export {
+  insertStep,
+  isInside,
+  listAt,
+  moveStep,
+  removeStep,
+  stepAt,
+  updateStep,
+} from './domain/script-tree.js';
 export type { KeyboardKey, KeyGroup } from './domain/keyboard-keys.js';
 export {
   KEYBOARD_KEYS,

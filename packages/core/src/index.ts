@@ -44,6 +44,10 @@ export type {
   LocalizedText,
   KeyboardKey,
   KeyGroup,
+  Condition,
+  ConditionOperator,
+  ConditionSource,
+  StepPath,
 } from '@easydeck/engine';
 export { PLUGIN_API_VERSION, localized } from '@easydeck/engine';
 

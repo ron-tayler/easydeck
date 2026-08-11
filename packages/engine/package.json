@@ -34,6 +34,14 @@
     "./keys": {
       "types": "./dist/domain/keyboard-keys.d.ts",
       "import": "./dist/domain/keyboard-keys.js"
+    },
+    "./actions": {
+      "types": "./dist/domain/action.d.ts",
+      "import": "./dist/domain/action.js"
+    },
+    "./script": {
+      "types": "./dist/domain/script-tree.d.ts",
+      "import": "./dist/domain/script-tree.js"
     }
   },
   "files": [

@@ -11,7 +11,10 @@ import type {
   VariableValue,
 } from '@easydeck/core';
 
-import ActionParams from './ActionParams.vue';
+import { insertStep, moveStep, removeStep, stepAt, updateStep } from '@easydeck/engine/script';
+import type { StepPath } from '@easydeck/core';
+
+import ScriptSteps from './ScriptSteps.vue';
 
 type Trigger = 'press' | 'longPress' | 'doublePress';
 type ActionMap = NonNullable<ButtonStateDefinition['actions']>;
@@ -134,10 +137,13 @@ const countOf = (which: Trigger): number => (props.actions[which] ?? []).length;
  * in a macro — impossible to see. Collapsed steps carry a summary instead, so
  * the sequence reads at a glance and the fields are one click away.
  */
-const open = ref<number | null>(null);
+const openPath = ref<StepPath | undefined>();
 watch(trigger, () => {
-  open.value = null;
+  openPath.value = undefined;
 });
+
+/** The top of the script, named so the template does not build one per render. */
+const TOP: StepPath = Object.freeze([]) as StepPath;
 
 const definitions = computed(() => {
   const map = new Map<string, PluginManifest['actions'][number]>();
@@ -201,8 +207,19 @@ function summarise(descriptor: ActionDescriptor): string {
 
 // --- editing --------------------------------------------------------------
 
+/**
+ * Every edit is a path into the tree, applied by the engine's own functions.
+ *
+ * The editor holds no copy of the script: it is handed one, it hands back the
+ * next one, and the profile is the only place it lives. That is what keeps a
+ * block's branches from drifting out of step with the list they are drawn in.
+ */
 function setList(which: Trigger, next: ActionDescriptor[]): void {
   emit('update', { ...props.actions, [which]: next });
+}
+
+function apply(next: ActionDescriptor[]): void {
+  setList(trigger.value, next);
 }
 
 /**
@@ -213,111 +230,93 @@ function setList(which: Trigger, next: ActionDescriptor[]): void {
  * palette beside the editor shows what each one does and drops it exactly
  * where it is wanted, so the dropdown had nothing left to offer.
  */
-function insert(type: string, at: number): void {
-  const next = [...list.value];
-  const position = Math.max(0, Math.min(at, next.length));
-
-  next.splice(position, 0, { type });
-  setList(trigger.value, next);
-  open.value = position;
+function onInsert(where: StepPath, at: number, type: string): void {
+  apply(insertStep(list.value, where, at, { type }));
+  // Opened where it landed: a step just dropped is one about to be filled in.
+  openPath.value = [...where, at];
 }
 
-function duplicate(index: number): void {
-  const next = [...list.value];
-  next.splice(index + 1, 0, JSON.parse(JSON.stringify(next[index])) as ActionDescriptor);
-  setList(trigger.value, next);
-  open.value = index + 1;
+function onDuplicate(path: StepPath): void {
+  const step = stepAt(list.value, path);
+  if (!step) return;
+
+  const at = path[path.length - 1];
+  if (typeof at !== 'number') return;
+
+  // Deep-copied, branches included: a duplicated block that shared its
+  // children with the original would be two names for one thing.
+  const copy = JSON.parse(JSON.stringify(step)) as ActionDescriptor;
+  apply(insertStep(list.value, path.slice(0, -1), at + 1, copy));
 }
 
-function remove(index: number): void {
-  setList(
-    trigger.value,
-    list.value.filter((_, position) => position !== index),
-  );
-
-  if (open.value === index) open.value = null;
-  else if (open.value !== null && open.value > index) open.value -= 1;
+function onRemove(path: StepPath): void {
+  apply(removeStep(list.value, path));
+  openPath.value = undefined;
 }
 
-function updateParams(index: number, params: Record<string, unknown>): void {
-  setList(
-    trigger.value,
-    list.value.map((action, position) => (position === index ? { ...action, params } : action)),
-  );
+function onUpdate(path: StepPath, step: ActionDescriptor): void {
+  apply(updateStep(list.value, path, () => step));
+}
+
+function onMove(from: StepPath, where: StepPath, at: number): void {
+  apply(moveStep(list.value, from, where, at));
+  reset();
 }
 
 // --- drag and drop --------------------------------------------------------
 
-const dragIndex = ref<number | null>(null);
-/** A row is only draggable once the handle is held, so fields stay selectable. */
-const armed = ref<number | null>(null);
-/** Where the step would land: an insertion point, not a row. */
-const dropIndex = ref<number | null>(null);
+/** Which step is being carried, as a path into the tree. */
+const dragPath = ref<StepPath | undefined>();
+/** Where the line shows: which list, and the index within it. */
+const dropList = ref<StepPath | undefined>();
+const dropIndex = ref<number | undefined>();
 const tabOver = ref<Trigger | null>(null);
 
 function reset(): void {
   tailOver.value = false;
-  dragIndex.value = null;
-  armed.value = null;
-  dropIndex.value = null;
+  dragPath.value = undefined;
+  dropList.value = undefined;
+  dropIndex.value = undefined;
   tabOver.value = null;
 }
 
-function onDragStart(index: number, event: DragEvent): void {
-  dragIndex.value = index;
-  open.value = null;
-  event.dataTransfer?.setData(STEP_MIME, String(index));
-
-  /*
-   * The step itself travels with its index.
-   *
-   * Reordering needs only "which one"; dropping onto another state's tab
-   * needs "what it was", because that state is a different list in a
-   * different sequence and the index means nothing there.
-   */
-  const action = list.value[index];
-  if (action) {
-    event.dataTransfer?.setData(
-      STEP_PAYLOAD_MIME,
-      JSON.stringify({ trigger: trigger.value, index, action }),
-    );
-  }
-
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+function onOver(where: StepPath | undefined, at: number | undefined): void {
+  dropList.value = where;
+  dropIndex.value = at;
 }
 
-function onDragOver(index: number, event: DragEvent): void {
-  const types = event.dataTransfer?.types ?? [];
-  if (!types.includes(STEP_MIME) && !types.includes(ACTION_MIME)) return;
-  event.preventDefault();
-
-  const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
-  dropIndex.value = event.clientY < box.top + box.height / 2 ? index : index + 1;
-}
-
-function onDrop(event: DragEvent): void {
-  const from = dragIndex.value;
-  const to = dropIndex.value;
+/**
+ * A drop that landed on the room around the list rather than on a step.
+ *
+ * Aiming below the last step means "at the end", and aiming at an empty list
+ * means "the first one" — the alternative is a list nothing can ever be put
+ * into, since there is no row to aim at.
+ */
+function onOuterDrop(event: DragEvent): void {
   const dropped = event.dataTransfer?.getData(ACTION_MIME);
+  const carried = event.dataTransfer?.getData(STEP_MIME);
+  const where = dropList.value ?? [];
+  const at = dropIndex.value ?? list.value.length;
+
   reset();
 
-  // From the palette: a new step, at the point the line was showing.
   if (dropped) {
     try {
       const { type } = JSON.parse(dropped) as { type: string };
-      if (type) insert(type, to ?? list.value.length);
+      if (type) onInsert(where, at, type);
     } catch {
       // Something else's drag data wearing our type; nothing to add.
     }
     return;
   }
 
-  if (from === null || to === null) return;
-
-  const next = [...list.value];
-  const [moved] = next.splice(from, 1);
-  next.splice(to > from ? to - 1 : to, 0, moved!);
-  setList(trigger.value, next);
+  if (carried) {
+    try {
+      onMove(JSON.parse(carried) as StepPath, where, at);
+    } catch {
+      // As above.
+    }
+  }
 }
 
 const tailOver = ref(false);
@@ -328,41 +327,49 @@ function onTailDragOver(event: DragEvent): void {
 
   event.preventDefault();
   tailOver.value = true;
+  // The end of the top-level list, whatever a nested one was showing.
+  dropList.value = [];
   dropIndex.value = list.value.length;
 }
 
 function onTailDrop(event: DragEvent): void {
   tailOver.value = false;
-  onDrop(event);
+  onOuterDrop(event);
 }
 
 /** The empty list is a target too, or a first step could never be dropped. */
 function onEmptyDragOver(event: DragEvent): void {
-  if (!event.dataTransfer?.types.includes(ACTION_MIME)) return;
+  const types = event.dataTransfer?.types ?? [];
+  if (!types.includes(ACTION_MIME) && !types.includes(STEP_MIME)) return;
+
   event.preventDefault();
+  dropList.value = [];
   dropIndex.value = 0;
 }
 
 /** Dropping on another trigger's tab moves the step there — the usual fix
     for having built a sequence under the wrong one. */
 function onTabDragOver(which: Trigger, event: DragEvent): void {
-  if (dragIndex.value === null || which === trigger.value) return;
+  if (dragPath.value === undefined || which === trigger.value) return;
   event.preventDefault();
   tabOver.value = which;
 }
 
 function onTabDrop(which: Trigger): void {
-  const from = dragIndex.value;
+  const from = dragPath.value;
   const source = trigger.value;
   reset();
-  if (from === null || which === source) return;
+  if (from === undefined || which === source) return;
 
-  const rest = [...list.value];
-  const [moved] = rest.splice(from, 1);
+  // Whatever was picked up, branches and all, moved to the end of the other
+  // gesture's script.
+  const moved = stepAt(list.value, from);
+  if (!moved) return;
+
   emit('update', {
     ...props.actions,
-    [source]: rest,
-    [which]: [...(props.actions[which] ?? []), moved!],
+    [source]: removeStep(list.value, from),
+    [which]: [...(props.actions[which] ?? []), moved],
   });
   trigger.value = which;
 }
@@ -392,96 +399,43 @@ function onTabDrop(which: Trigger): void {
       class="muted empty"
       :class="{ over: dropIndex === 0 }"
       @dragover="onEmptyDragOver"
-      @dragleave="dropIndex = null"
-      @drop.prevent="onDrop"
+      @dragleave="dropIndex = undefined"
+      @drop.prevent="onOuterDrop"
     >
       {{ t('editor.noActions') }}
     </p>
 
-    <ol v-else @dragend="reset">
-      <li
-        v-for="(action, index) in list"
-        :key="index"
-        :draggable="armed === index"
-        :class="{
-          dragging: dragIndex === index,
-          'drop-before': dropIndex === index,
-          'drop-after': dropIndex === index + 1 && index === list.length - 1,
-        }"
-        @dragstart="onDragStart(index, $event)"
-        @dragover="onDragOver(index, $event)"
-        @drop.prevent="onDrop($event)"
-      >
-        <div class="head">
-          <span
-            class="handle"
-            :title="t('editor.reorder')"
-            @mousedown="armed = index"
-            @mouseup="armed = null"
-            >⠿</span
-          >
-          <span class="step">{{ index + 1 }}</span>
-
-          <button type="button" class="title" @click="open = open === index ? null : index">
-            <span class="name">{{ nameOf(action) }}</span>
-            <span v-if="open !== index && summarise(action)" class="summary">
-              {{ summarise(action) }}
-            </span>
-          </button>
-
-          <span class="controls">
-            <!-- A lamp and a way to act on it, on the steps that depend on
-                 something outside this machine. -->
-            <template v-if="watchable(action.type)">
-              <span class="lamp" :class="statusOf(action.type)" :title="statusHint(action.type)" />
-              <button
-                type="button"
-                :title="t('plugins.configure')"
-                @click="emit('configurePlugin', watchable(action.type)!.id)"
-              >
-                ⚙
-              </button>
-            </template>
-
-            <button type="button" :title="t('editor.duplicate')" @click="duplicate(index)">⧉</button>
-            <button
-              type="button"
-              class="remove"
-              :title="t('editor.removeAction')"
-              @click="remove(index)"
-            >
-              ✕
-            </button>
-            <button
-              type="button"
-              class="chevron"
-              :class="{ open: open === index }"
-              :aria-expanded="open === index"
-              @click="open = open === index ? null : index"
-            >
-              ⌄
-            </button>
-          </span>
-        </div>
-
-        <ActionParams
-          v-if="open === index"
-          :definition="definitions.get(action.type)"
-          :params="action.params ?? NO_PARAMS"
-          :values="values"
-          :declarations="declarations"
-          :folders="folders"
-          :pages="pages"
-          :buttons="buttons"
-          :own-states="ownStates"
-          :load-options="loadOptions"
-          :filled-secrets="filledSecrets"
-          :save-secret="saveSecret"
-          :clear-secret="clearSecret"
-          @update="updateParams(index, $event)"
-        />
-      </li>
-    </ol>
+    <div v-else class="script" @dragend="reset">
+      <ScriptSteps
+        :steps="list"
+        :path="TOP"
+        :open-path="openPath"
+        :drag-path="dragPath"
+        :drop-list="dropList"
+        :drop-index="dropIndex"
+        :plugins="plugins"
+        :values="values"
+        :declarations="declarations"
+        :folders="folders"
+        :pages="pages"
+        :buttons="buttons"
+        :own-states="ownStates"
+        :plugin-statuses="pluginStatuses"
+        :load-options="loadOptions"
+        :filled-secrets="filledSecrets"
+        :save-secret="saveSecret"
+        :clear-secret="clearSecret"
+        @open="openPath = $event"
+        @update="onUpdate"
+        @remove="onRemove"
+        @duplicate="onDuplicate"
+        @insert="onInsert"
+        @move="onMove"
+        @dragging="dragPath = $event"
+        @over="onOver"
+        @configure-plugin="emit('configurePlugin', $event)"
+      />
+    </div>
 
 
     <!-- The room below the last step: dropping anywhere in it means "at the
