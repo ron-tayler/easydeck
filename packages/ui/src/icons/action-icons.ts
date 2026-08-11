@@ -40,6 +40,8 @@ export const ACTION_ICONS: Readonly<Record<string, string>> = {
   // Keyboard and text
   text: 'M4 5h16v3h-6v11h-4V8H4z',
   keyboard: 'M3 7h18v10H3zm3 2v2h2V9zm4 0v2h2V9zm4 0v2h2V9zM6 13v2h12v-2z',
+  // A padlock: the one action whose value the profile never sees.
+  password: 'M12 2a5 5 0 0 0-5 5v3H5v12h14V10h-2V7a5 5 0 0 0-5-5zm0 2a3 3 0 0 1 3 3v3H9V7a3 3 0 0 1 3-3zm0 10a2 2 0 0 1 1 3.7V19h-2v-1.3A2 2 0 0 1 12 14z',
 
   // Sound and playback
   'play-pause': 'M4 5l7 7-7 7zM14 5h2v14h-2zm4 0h2v14h-2z',

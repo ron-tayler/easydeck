@@ -22,6 +22,8 @@ import { NoProfilesError, ProfileNotFoundError } from '../domain/errors.js';
 import { configDir, iconsDir, pluginsDir, profilesDir } from '../infrastructure/config-paths.js';
 import { readLibrary } from '../infrastructure/icon-library.js';
 import { readInstalledPlugins } from '../infrastructure/plugins/installed-plugins.js';
+import { secretId } from '../infrastructure/button-secrets.js';
+import type { ButtonSecretStore } from '../infrastructure/button-secrets.js';
 import { exportProfile, importProfile } from '../infrastructure/profile-archive.js';
 import type { Library, LibraryImage } from '../infrastructure/icon-library.js';
 import type { DaemonSettings, DeckBinding } from '../domain/settings.js';
@@ -87,6 +89,13 @@ export interface DeckServiceOptions {
    * appears the moment a plugin needs to hold a connection open.
    */
   readonly plugins?: PluginRuntime;
+  /**
+   * Passwords the buttons type, which no profile holds.
+   *
+   * Optional so a headless test can build a service without one; anything a
+   * person configures has it.
+   */
+  readonly buttonSecrets?: ButtonSecretStore;
 }
 
 /** Debounce for filesystem events: editors save in several bursts. */
@@ -428,6 +437,11 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
 
     if (id !== was) await this.refile(was, id);
 
+    // A button deleted, or its password action removed, must not leave the
+    // password on disk. Done after the write, so what was just saved counts as
+    // referring to its own secrets.
+    await this.options.buttonSecrets?.sweep(profilesDir()).catch(() => undefined);
+
     this.emit('profilesChanged');
     // Saving the profile that is on screen should show up immediately;
     // that is the whole point of editing it from a configurator.
@@ -468,7 +482,36 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
       throw new Error(`Profile '${id}' is running; activate another one before deleting it`);
     }
     await this.options.profiles.remove(id);
+    await this.options.buttonSecrets?.sweep(profilesDir()).catch(() => undefined);
     this.emit('profilesChanged');
+  }
+
+  /**
+   * What a button's password field should show, which is never the password.
+   *
+   * Only whether one is set. A configurator that cannot receive a password
+   * cannot leak one, and it has no use for the value: the control it draws is
+   * a row of dots and a button to replace them.
+   */
+  async buttonSecrets(): Promise<readonly string[]> {
+    return (await this.options.buttonSecrets?.filled()) ?? [];
+  }
+
+  /**
+   * Stores a password and answers with the reference to put in the button.
+   *
+   * The reference is what the profile holds; passing the old one back in keeps
+   * a change of password from being a change to the document.
+   */
+  async saveButtonSecret(value: string, reference?: string): Promise<{ reference: string }> {
+    const store = this.options.buttonSecrets;
+    if (!store) throw new Error('Passwords are unavailable: no secret store was configured');
+
+    return { reference: await store.save(value, reference ? secretId(reference) : undefined) };
+  }
+
+  async clearButtonSecret(reference: string): Promise<void> {
+    await this.options.buttonSecrets?.clear(reference);
   }
 
   async activateProfile(id: string, deckId?: string): Promise<void> {

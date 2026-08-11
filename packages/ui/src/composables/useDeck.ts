@@ -367,6 +367,26 @@ export function useDeck() {
     goToPage: (pageId: string) => client.call('goToPage', { pageId, ...deckParam() }),
     goUp: () => client.call('goUp', deckParam()),
     activateProfile: (id: string) => client.call('activateProfile', { id, ...deckParam() }),
+
+    /*
+     * Button passwords, which travel one way.
+     *
+     * There is no call that reads one back, deliberately: the window is told
+     * which references have something behind them and nothing else. A window
+     * that cannot receive a password cannot leak one.
+     */
+    buttonSecrets: async (): Promise<readonly string[]> => {
+      const result = await client.call<{ secrets: string[] }>('listButtonSecrets');
+      return result.secrets ?? [];
+    },
+    saveButtonSecret: async (value: string, reference?: string): Promise<string> => {
+      const result = await client.call<{ reference: string }>('saveButtonSecret', {
+        value,
+        ...(reference ? { reference } : {}),
+      });
+      return result.reference;
+    },
+    clearButtonSecret: (reference: string) => client.call('clearButtonSecret', { reference }),
     /* Fetched on demand rather than kept in state: the folder is the user's,
        it changes behind our back, and it only matters while a picker is open. */
     listIcons: async (): Promise<{ images: readonly LibraryImage[]; omitted: number }> => {

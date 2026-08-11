@@ -11,6 +11,7 @@ import type {
 
 import ColorPicker from './ColorPicker.vue';
 import HotkeyInput from './HotkeyInput.vue';
+import PasswordInput from './PasswordInput.vue';
 import VariablePicker from './VariablePicker.vue';
 
 const props = defineProps<{
@@ -38,6 +39,15 @@ const props = defineProps<{
     source: string,
     params: Readonly<Record<string, unknown>>,
   ) => Promise<readonly { value: string; label?: LocalizedText }[]>;
+  /**
+   * References that have a password behind them.
+   *
+   * Which is all a window is ever told about a password. See PasswordInput.
+   */
+  filledSecrets?: readonly string[];
+  /** Stores a password and answers with the reference to put on the button. */
+  saveSecret?: (value: string, reference?: string) => Promise<string>;
+  clearSecret?: (reference: string) => Promise<void>;
 }>();
 
 const emit = defineEmits<{ update: [params: Record<string, unknown>] }>();
@@ -233,6 +243,29 @@ function set(param: ParamDefinition, raw: string | boolean): void {
 
   emit('update', { ...props.params, [param.name]: value });
 }
+
+/**
+ * Hands a password to the daemon and keeps the reference it answers with.
+ *
+ * The password goes straight out of the window; what lands on the button is
+ * `secret:9f8b…`. Passing the old reference back in means changing a password
+ * is not a change to the profile at all.
+ */
+async function storeSecret(
+  param: ParamDefinition,
+  value: string,
+  reference: string | undefined,
+): Promise<void> {
+  if (!props.saveSecret) return;
+
+  const stored = await props.saveSecret(value, reference);
+  if (stored !== reference) set(param, stored);
+}
+
+async function dropSecret(param: ParamDefinition, reference: string): Promise<void> {
+  await props.clearSecret?.(reference);
+  set(param, '');
+}
 </script>
 
 <template>
@@ -295,6 +328,16 @@ function set(param: ParamDefinition, raw: string | boolean): void {
         v-else-if="param.type === 'hotkey'"
         :model-value="valueOf(param)"
         @update:model-value="set(param, $event)"
+      />
+
+      <!-- The value never reaches this window: what the button holds is a
+           reference, and the password lives outside the profile. -->
+      <PasswordInput
+        v-else-if="param.type === 'password'"
+        :model-value="valueOf(param)"
+        :filled="(filledSecrets ?? []).includes(valueOf(param))"
+        @save="(value, reference) => storeSecret(param, value, reference)"
+        @clear="dropSecret(param, $event)"
       />
 
       <!-- A list the plugin supplies, when it can. The name is typed by hand

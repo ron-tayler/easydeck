@@ -207,6 +207,18 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     return this.require().saveProfile(profile);
   }
 
+  buttonSecrets(): Promise<readonly string[]> {
+    return this.require().buttonSecrets();
+  }
+
+  saveButtonSecret(value: string, reference?: string): Promise<{ reference: string }> {
+    return this.require().saveButtonSecret(value, reference);
+  }
+
+  clearButtonSecret(reference: string): Promise<void> {
+    return this.require().clearButtonSecret(reference);
+  }
+
   deleteProfile(id: string): Promise<void> {
     return this.require().deleteProfile(id);
   }

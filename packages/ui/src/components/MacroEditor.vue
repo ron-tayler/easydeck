@@ -45,6 +45,10 @@ const props = defineProps<{
     source: string,
     params: Readonly<Record<string, unknown>>,
   ) => Promise<readonly { value: string; label?: LocalizedText }[]>;
+  /** Passed straight through to a password field; see ActionParams. */
+  filledSecrets?: readonly string[];
+  saveSecret?: (value: string, reference?: string) => Promise<string>;
+  clearSecret?: (reference: string) => Promise<void>;
 }>();
 
 const emit = defineEmits<{
@@ -471,6 +475,9 @@ function onTabDrop(which: Trigger): void {
           :buttons="buttons"
           :own-states="ownStates"
           :load-options="loadOptions"
+          :filled-secrets="filledSecrets"
+          :save-secret="saveSecret"
+          :clear-secret="clearSecret"
           @update="updateParams(index, $event)"
         />
       </li>

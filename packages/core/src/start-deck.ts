@@ -11,6 +11,7 @@ import type { DaemonSettings } from './domain/settings.js';
 import { registerDeviceActions } from './infrastructure/actions/device-actions.js';
 import { registerEasyDeckFolderActions } from './infrastructure/actions/folder-actions.js';
 import { registerKeyboardActions } from './infrastructure/actions/keyboard-actions.js';
+import { ButtonSecretStore } from './infrastructure/button-secrets.js';
 import { registerMediaActions } from './infrastructure/actions/media-actions.js';
 import { registerSystemActions } from './infrastructure/actions/system-actions.js';
 import { FileProfileRepository } from './infrastructure/file-profile-repository.js';
@@ -109,11 +110,15 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
     let actions = options.actions;
     let registry: DeckRegistry | undefined;
 
+    // Sealed the same way a plugin's tokens are, and outside every profile —
+    // which is the whole point of it. See button-secrets.ts.
+    const buttonSecrets = new ButtonSecretStore(options.secrets);
+
     if (!actions) {
       actions = registerSystemActions(createActionRegistry());
       registerEasyDeckFolderActions(actions);
       registerDeviceActions(actions, (deckId) => registry?.get(deckId)?.surface, brightness);
-      const keyboard = await registerKeyboardActions(actions);
+      const keyboard = await registerKeyboardActions(actions, buttonSecrets);
       if (keyboard.reason) warnings.push(keyboard.reason);
       const media = await registerMediaActions(actions);
       if (media.reason) warnings.push(media.reason);
@@ -171,6 +176,7 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
       actions,
       plugins,
       profiles,
+      buttonSecrets,
       settings: settingsRepository,
       settingsValue: { ...settings, brightness: initialBrightness },
       warnings,

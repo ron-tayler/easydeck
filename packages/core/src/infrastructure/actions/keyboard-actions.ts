@@ -224,6 +224,22 @@ export const keyboardActions: ActionDefinition[] = [
       label: { en: 'Type text', ru: 'Напечатать текст' },
       params: [{ name: 'text', type: 'text', label: { en: 'Text', ru: 'Текст' } }],
     },
+    {
+      type: 'system.type-password',
+      icon: 'password',
+      label: { en: 'Type password', ru: 'Ввести пароль' },
+      description: {
+        en: 'The password is kept outside the profile and never leaves this machine.',
+        ru: 'Пароль хранится вне профиля и не покидает этот компьютер.',
+      },
+      params: [
+        {
+          name: 'secret',
+          type: 'password',
+          label: { en: 'Password', ru: 'Пароль' },
+        },
+      ],
+    },
 ];
 
 export interface KeyboardActionsResult {
@@ -231,8 +247,20 @@ export interface KeyboardActionsResult {
   readonly reason?: string;
 }
 
+/**
+ * Where a password action gets its password.
+ *
+ * A port rather than the store itself: the only thing this file may do with a
+ * secret is type it, and the narrower the way in, the harder it is to grow a
+ * second use by accident.
+ */
+export interface SecretSource {
+  read(reference: string): Promise<string | undefined>;
+}
+
 export async function registerKeyboardActions(
   registry: ActionRegistry,
+  secrets?: SecretSource,
 ): Promise<KeyboardActionsResult> {
   const backend = await loadKeyboardBackend();
   const unicode = await loadUnicodeTyper();
@@ -261,20 +289,44 @@ export async function registerKeyboardActions(
       await pressCombination(backend, keys);
     },
 
-    /**
-     * Prefers the unicode path wherever it exists.
-     *
-     * The fallback presses the keys that *would* produce each character under
-     * the layout that happens to be active, so the same profile types
-     * different text depending on what the user last switched to. Where
-     * Windows can be told the character directly, it is.
-     */
     'system.type-text': async (params) => {
       const text = stringParam(params, 'text');
-      if (unicode) unicode.type(text);
-      else await backend.keyboard.type(text);
+      await typeText(text);
+    },
+
+    /**
+     * Types a password the profile does not hold.
+     *
+     * The parameter is a reference; the password is fetched at the moment it
+     * is typed and not kept anywhere afterwards. Nothing here logs it, and the
+     * errors are careful to name the button rather than what is in it.
+     */
+    'system.type-password': async (params) => {
+      const reference = stringParam(params, 'secret');
+      if (!secrets) throw new Error('Passwords are unavailable: no secret store was configured');
+
+      const password = await secrets.read(reference);
+      if (password === undefined || password === '') {
+        throw new Error('No password is set for this button. Set it in the button editor');
+      }
+
+      await typeText(password);
     },
   });
+
+  /**
+   * Prefers the unicode path wherever it exists.
+   *
+   * The fallback presses the keys that *would* produce each character under
+   * the layout that happens to be active, so the same profile types different
+   * text depending on what the user last switched to. Where Windows can be
+   * told the character directly, it is — which matters more for a password
+   * than for anything else, since nobody sees what was typed.
+   */
+  async function typeText(text: string): Promise<void> {
+    if (unicode) unicode.type(text);
+    else await backend!.keyboard.type(text);
+  }
 
   return { available: true };
 }

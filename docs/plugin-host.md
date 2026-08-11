@@ -169,6 +169,30 @@ be the one it arrived with. The daemon follows the move itself: the deck
 showing it, the active-profile setting and every per-deck binding are all
 carried over.
 
+### What a button holds that its profile does not
+
+A password is the first thing a button needs and a profile must not carry. A
+profile is copied between machines, exported as an archive and pasted into
+issues, and everything in it is readable by whoever receives it.
+
+So a `password` parameter stores a reference:
+
+```json
+{ "type": "system.type-password", "params": { "secret": "secret:9f8b7c…" } }
+```
+
+The password itself lives in `secrets\buttons.json`, sealed the same way a
+plugin's tokens are, outside every profile. An export carries the reference and
+nothing else — there is nothing to strip, because the document never held the
+password. Landing on another machine, the button says no password is set, which
+is both true and fixable.
+
+The value travels one way. A client is told which references have something
+behind them and never what; there is deliberately no call that reads one back.
+Passwords no profile refers to any more are forgotten when a profile is saved
+or deleted — though never on a partial reading of the profile directory, since
+a file that was briefly unreadable is not evidence that a password is unused.
+
 ### Where a plugin's settings land
 
 ```

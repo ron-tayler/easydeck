@@ -196,11 +196,13 @@ async function onMenuChoose(id: string): Promise<void> {
       if (!profile) return;
       editing.value = createEmptyButton(profile, key);
       void refreshUserIcons();
+      void refreshSecrets();
       return;
     }
     case 'settings':
       editing.value = findButton(key);
       void refreshUserIcons();
+      void refreshSecrets();
       return;
     case 'press':
       await deck.pressKey(key);
@@ -740,6 +742,43 @@ async function loadActionOptions(
   }
 }
 
+/**
+ * Which button passwords are set, and how to set one.
+ *
+ * The list is refreshed when the editor opens and after every change, because
+ * it is the only thing the window is ever told about a password: the value
+ * goes out and never comes back. See PasswordInput.
+ */
+const filledSecrets = ref<readonly string[]>([]);
+
+async function refreshSecrets(): Promise<void> {
+  try {
+    filledSecrets.value = await deck.buttonSecrets();
+  } catch {
+    filledSecrets.value = [];
+  }
+}
+
+async function saveButtonSecret(value: string, reference?: string): Promise<string> {
+  try {
+    const stored = await deck.saveButtonSecret(value, reference);
+    await refreshSecrets();
+    return stored;
+  } catch (error) {
+    deck.lastError.value = (error as Error).message;
+    return reference ?? '';
+  }
+}
+
+async function clearButtonSecret(reference: string): Promise<void> {
+  try {
+    await deck.clearButtonSecret(reference);
+  } catch (error) {
+    deck.lastError.value = (error as Error).message;
+  }
+  await refreshSecrets();
+}
+
 function onConfigurePlugin(pluginId: string): void {
   void (async () => {
     try {
@@ -1194,6 +1233,9 @@ onBeforeUnmount(() => {
       :omitted-icons="omittedIcons"
       :plugin-statuses="deck.pluginStatuses.value"
       :load-options="loadActionOptions"
+      :filled-secrets="filledSecrets"
+      :save-secret="saveButtonSecret"
+      :clear-secret="clearButtonSecret"
       @save="onEditorSave"
       @cancel="editing = undefined"
       @configure-plugin="onConfigurePlugin"

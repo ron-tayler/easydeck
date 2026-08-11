@@ -59,8 +59,20 @@ export type ParamType =
   /** A path on disk, offered through the platform's file picker. */
   | 'file'
   | 'directory'
-  /** A key combination, captured by pressing it. */
-  | 'hotkey';
+  /** A key combination, chosen key by key from the catalogue. */
+  | 'hotkey'
+  /**
+   * A secret the profile must not hold.
+   *
+   * The value never appears in the document: what is stored is a reference,
+   * and the secret itself lives in the machine's sealed store, outside every
+   * profile. A profile is meant to be copied to another machine, exported,
+   * pasted into an issue — and a password that travelled with it would be a
+   * password nobody meant to send.
+   *
+   * A client is told whether one is set, never what it is.
+   */
+  | 'password';
 
 export interface ParamOption {
   readonly value: string;

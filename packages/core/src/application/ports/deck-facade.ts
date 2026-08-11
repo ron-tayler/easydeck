@@ -138,6 +138,16 @@ export interface DeckFacade {
   getProfile(id: string): Promise<ProfileDefinition>;
   /** Stores it, and answers with the id it is filed under — renames move it. */
   saveProfile(profile: ProfileDefinition): Promise<{ id: string }>;
+
+  /**
+   * Passwords a button types, which live outside every profile.
+   *
+   * The list is of references that have something behind them; a value only
+   * ever travels inward. See button-secrets.ts.
+   */
+  buttonSecrets(): Promise<readonly string[]>;
+  saveButtonSecret(value: string, reference?: string): Promise<{ reference: string }>;
+  clearButtonSecret(reference: string): Promise<void>;
   deleteProfile(id: string): Promise<void>;
   /** Puts a profile on a deck. Without one, on whichever deck is active. */
   activateProfile(id: string, deckId?: string): Promise<void>;

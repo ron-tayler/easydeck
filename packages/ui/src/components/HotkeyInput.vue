@@ -150,19 +150,10 @@ function removeLast(): void {
       </select>
     </span>
 
-    <button
-      type="button"
-      class="add"
-      :disabled="full"
-      :title="full ? t('editor.hotkeyFull', { max: MAX_HOTKEY_KEYS }) : t('editor.hotkeyAdd')"
-      @click="add"
-    >
-      ＋
-    </button>
-
     <!-- One cross, at the end, taking the last key off. A cross per row put a
          destructive button between every two lists, where the thing being
-         removed was whichever one it happened to sit beside. -->
+         removed was whichever one it happened to sit beside. It comes before
+         ＋ so the button that grows the row is the last thing in it. -->
     <button
       v-if="chosen.length > 1"
       type="button"
@@ -172,6 +163,16 @@ function removeLast(): void {
       @click="removeLast"
     >
       ✕
+    </button>
+
+    <button
+      type="button"
+      class="add"
+      :disabled="full"
+      :title="full ? t('editor.hotkeyFull', { max: MAX_HOTKEY_KEYS }) : t('editor.hotkeyAdd')"
+      @click="add"
+    >
+      ＋
     </button>
 
     <span class="muted small preview">

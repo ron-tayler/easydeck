@@ -165,6 +165,28 @@ class FakeDeck implements DeckFacade {
     return { id: profile.id };
   }
 
+  /** References only. Nothing here ever holds a password. */
+  secrets: string[] = [];
+
+  async buttonSecrets(): Promise<readonly string[]> {
+    this.calls.push('buttonSecrets');
+    return this.secrets;
+  }
+
+  async saveButtonSecret(value: string, reference?: string): Promise<{ reference: string }> {
+    // The value is counted, never recorded: a test that kept one would be the
+    // first place a password was written down.
+    this.calls.push(`saveButtonSecret:${value.length}:${reference ?? 'new'}`);
+    const at = reference ?? 'secret:0123456789abcdef';
+    if (!this.secrets.includes(at)) this.secrets.push(at);
+    return { reference: at };
+  }
+
+  async clearButtonSecret(reference: string): Promise<void> {
+    this.calls.push(`clearButtonSecret:${reference}`);
+    this.secrets = this.secrets.filter((each) => each !== reference);
+  }
+
   async deleteProfile(id: string): Promise<void> {
     this.calls.push(`deleteProfile:${id}`);
   }

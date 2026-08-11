@@ -58,6 +58,10 @@ const props = defineProps<{
     source: string,
     params: Readonly<Record<string, unknown>>,
   ) => Promise<readonly { value: string; label?: LocalizedText }[]>;
+  /** Passed through to a password field; the value never comes back. */
+  filledSecrets?: readonly string[];
+  saveSecret?: (value: string, reference?: string) => Promise<string>;
+  clearSecret?: (reference: string) => Promise<void>;
 }>();
 
 const emit = defineEmits<{
@@ -986,6 +990,9 @@ const previewIcon = computed(() => {
             :own-states="ownStates"
             :plugin-statuses="pluginStatuses"
             :load-options="loadOptions"
+            :filled-secrets="filledSecrets"
+            :save-secret="saveSecret"
+            :clear-secret="clearSecret"
             @update="patchState({ actions: $event })"
             @trigger="trigger = $event"
             @configure-plugin="emit('configurePlugin', $event)"

@@ -222,6 +222,29 @@ export class ApiHandler {
       case 'importProfile':
         return this.deck.importProfile(text(params, 'archive'));
 
+      /*
+       * Passwords travel one way only.
+       *
+       * `listButtonSecrets` answers with references that have something behind
+       * them, never with a value; there is deliberately no call that reads one
+       * back. A configurator that cannot receive a password cannot leak one,
+       * and it has no use for it — the control it draws is a row of dots.
+       */
+      case 'listButtonSecrets':
+        return { secrets: await this.deck.buttonSecrets() };
+
+      case 'saveButtonSecret': {
+        const reference = params['reference'];
+        return this.deck.saveButtonSecret(
+          text(params, 'value'),
+          typeof reference === 'string' ? reference : undefined,
+        );
+      }
+
+      case 'clearButtonSecret':
+        await this.deck.clearButtonSecret(text(params, 'reference'));
+        return { ok: true };
+
       case 'getPluginSettings':
         return this.deck.pluginSettings(text(params, 'pluginId'));
 
