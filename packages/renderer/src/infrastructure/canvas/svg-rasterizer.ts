@@ -60,9 +60,17 @@ export async function rasterizeSvg(
 
   try {
     return await render(Buffer.from(svg, 'utf8'))
-      // `fill` rather than `cover`: a key's picture is stretched to the key,
-      // and an icon drawn for one is already square.
-      .resize(Math.max(1, Math.round(width)), Math.max(1, Math.round(height)), { fit: 'fill' })
+      /*
+       * `cover`, which is what every other picture on a key gets.
+       *
+       * It used to be `fill`, on the reasoning that a key is square and so is
+       * an icon drawn for one. A button spanning three keys is not square —
+       * that region is 364x112 — and a round dial stretched into it came out
+       * an oval the window never showed, since the window covers. Only this
+       * path was wrong, so a PNG beside it looked right and the disagreement
+       * read as the gap between the displays being ignored.
+       */
+      .resize(Math.max(1, Math.round(width)), Math.max(1, Math.round(height)), { fit: 'cover' })
       .png()
       .toBuffer();
   } catch {

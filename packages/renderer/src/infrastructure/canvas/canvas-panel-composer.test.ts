@@ -56,6 +56,38 @@ test('a stretched picture skips what falls behind the bezel', async () => {
   assert.deepEqual(pixel(right, 99, 50), [219, 0, 0]);
 });
 
+test('an SVG across several keys is cropped like any other picture, not squashed', async () => {
+  /*
+   * SVG takes a different path to the canvas — librsvg, because the canvas
+   * library ignores a `<style>` block — and that path used to stretch the
+   * picture to the region instead of covering it. A square icon on a button
+   * spanning three keys came out an oval the window never showed, since the
+   * window covers. Only the SVG path was wrong, so a PNG beside it looked
+   * right and the disagreement read as the gap being ignored.
+   *
+   * The band across the top tenth is the tell: covering a 100x100 picture into
+   * a 220x100 region scales it 2.2x, so the band is drawn off the top edge.
+   * Stretching would keep it on screen, ten pixels tall.
+   */
+  const composer = new CanvasPanelComposer();
+  const width = TILE * 2 + GAP;
+
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">' +
+    '<rect width="100" height="100" fill="#0000ff"/>' +
+    '<rect width="100" height="10" fill="#ff0000"/></svg>';
+
+  const source = await composer.open({
+    source: `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`,
+    width,
+    height: TILE,
+  });
+  const tile = composer.cutTile(source.composeFrame(0), { ...SQUARE, x: 0, y: 0 });
+
+  assert.deepEqual(pixel(tile, 50, 2), [0, 0, 255], 'the band is above the visible part');
+  assert.deepEqual(pixel(tile, 50, 50), [0, 0, 255]);
+});
+
 test('a picture fills a single key edge to edge', async () => {
   // No inset mode: a key showing a picture shows it across the whole key, and
   // a 1x1 region is not a special case.
