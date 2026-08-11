@@ -16,7 +16,13 @@ import type {
 } from '@easydeck/core';
 
 import { isStateRange } from '@easydeck/engine/profile';
-import { iconParamsProblem, readIconParams, svgTextOf } from '@easydeck/engine/icons';
+import {
+  drawableIcon,
+  iconParamsProblem,
+  readIconParams,
+  resolveIconParams,
+  svgTextOf,
+} from '@easydeck/engine/icons';
 import { parseVariableKey, variableKey } from '@easydeck/engine/variables';
 import { renderTemplate } from '@easydeck/engine/template';
 
@@ -619,6 +625,29 @@ const preview = computed(() => {
     label: label ? { ...label, text: renderTemplate(label.text, props.variables) } : undefined,
   };
 });
+
+/**
+ * The picture with its parameters filled in, which is what the key will show.
+ *
+ * The stored source is the template — a needle at its default angle, a bar
+ * empty — and showing that in the preview meant the one thing a parametric
+ * icon is for was the one thing the editor could not demonstrate. Wiring a
+ * gauge up and watching the preview stay still reads as the wiring having
+ * failed.
+ *
+ * Same call the panel and the grid make, over the same text: an editor that
+ * substituted differently would be a fourth opinion about what an icon looks
+ * like.
+ */
+const previewIcon = computed(() => {
+  const icon = state.value.visual.icon;
+  if (!icon) return undefined;
+
+  const svg = svgTextOf(icon.source);
+  if (svg === undefined) return icon.source;
+
+  return drawableIcon(icon.source, resolveIconParams(readIconParams(svg), icon.params, props.variables));
+});
 </script>
 
 <template>
@@ -689,12 +718,7 @@ const preview = computed(() => {
             class="preview"
             :style="{ background: preview.background }"
           >
-            <img
-              v-if="state.visual.icon"
-              class="preview-icon"
-              :src="state.visual.icon.source"
-              alt=""
-            />
+            <img v-if="previewIcon" class="preview-icon" :src="previewIcon" alt="" />
             <!-- The same component the grid uses, so the preview cannot
                  drift from what the key will actually look like. -->
             <KeyLabel
