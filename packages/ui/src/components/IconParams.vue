@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n';
 import type { IconBinding, IconParam, LocalizedText, VariableDeclaration } from '@easydeck/core';
 import { iconParamsProblem, readIconParams, svgTextOf } from '@easydeck/engine/icons';
 
+import ColorPicker from './ColorPicker.vue';
+
 /**
  * Wiring up an icon that answers to a variable.
  *
@@ -213,12 +215,11 @@ function type(key: string, raw: string, commit: (value: string) => void): void {
 
           <!-- A colour gets a swatch, a number a spinner, anything else a box:
                the same controls these values have everywhere else. -->
-          <input
+          <ColorPicker
             v-if="!isVariable(param) && param.type === 'color'"
-            type="color"
-            class="swatch"
-            :value="constantOf(param) || '#ffffff'"
-            @input="patch(param.name, ($event.target as HTMLInputElement).value)"
+            :model-value="constantOf(param)"
+            fallback="#ffffff"
+            @update:model-value="patch(param.name, $event)"
           />
           <input
             v-else-if="!isVariable(param)"
@@ -275,12 +276,11 @@ function type(key: string, raw: string, commit: (value: string) => void): void {
               @input="setMapEntry(param, at, 'when', ($event.target as HTMLInputElement).value)"
             />
             <span class="muted small">→</span>
-            <input
+            <ColorPicker
               v-if="param.type === 'color'"
-              type="color"
-              class="swatch"
-              :value="entry[1] || '#ffffff'"
-              @input="setMapEntry(param, at, 'then', ($event.target as HTMLInputElement).value)"
+              :model-value="entry[1]"
+              fallback="#ffffff"
+              @update:model-value="setMapEntry(param, at, 'then', $event)"
             />
             <input
               v-else

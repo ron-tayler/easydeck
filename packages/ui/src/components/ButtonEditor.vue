@@ -31,6 +31,7 @@ import IconPicker from './IconPicker.vue';
 import { TEXT_POSITIONS, textPositionIcon } from '../icons/text-position.js';
 import KeyLabel from './KeyLabel.vue';
 import MacroEditor from './MacroEditor.vue';
+import ColorPicker from './ColorPicker.vue';
 import PluginList from './PluginList.vue';
 import VariablePicker from './VariablePicker.vue';
 
@@ -737,12 +738,11 @@ const previewIcon = computed(() => {
               :declarations="declarations"
               @pick="insertVariable($event)"
             >
-              <input
-                type="color"
-                class="swatch"
+              <ColorPicker
+                :model-value="state.visual.label?.color"
+                fallback="#ffffff"
                 :title="t('editor.textColor')"
-                :value="state.visual.label?.color ?? '#ffffff'"
-                @input="patchLabel({ color: ($event.target as HTMLInputElement).value })"
+                @update:model-value="patchLabel({ color: $event })"
               />
               <!-- A textarea, because a key's label is not one line.
                    Where the text breaks is part of how a key looks — "Сцена"
@@ -795,13 +795,12 @@ const previewIcon = computed(() => {
             <span class="row">
               <!-- A picture covers the key edge to edge, so a colour behind it
                    is a setting with nothing to show for it. -->
-              <input
+              <ColorPicker
                 v-if="!state.visual.icon"
-                type="color"
-                class="swatch"
+                :model-value="state.visual.background"
+                fallback="#111318"
                 :title="t('editor.background')"
-                :value="state.visual.background ?? '#111318'"
-                @input="patchVisual({ background: ($event.target as HTMLInputElement).value })"
+                @update:model-value="patchVisual({ background: $event })"
               />
 
               <!-- Only where the picture asks for it: an ordinary icon declares

@@ -9,6 +9,7 @@ import type {
   VariableValue,
 } from '@easydeck/core';
 
+import ColorPicker from './ColorPicker.vue';
 import VariablePicker from './VariablePicker.vue';
 
 const props = defineProps<{
@@ -281,11 +282,10 @@ function set(param: ParamDefinition, raw: string | boolean): void {
         @input="set(param, ($event.target as HTMLInputElement).value)"
       />
 
-      <input
+      <ColorPicker
         v-else-if="param.type === 'color'"
-        type="color"
-        :value="valueOf(param) || '#000000'"
-        @input="set(param, ($event.target as HTMLInputElement).value)"
+        :model-value="valueOf(param)"
+        @update:model-value="set(param, $event)"
       />
 
       <!-- A list the plugin supplies, when it can. The name is typed by hand
