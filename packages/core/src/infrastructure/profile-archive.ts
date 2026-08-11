@@ -54,8 +54,13 @@ export function exportProfile(profile: ProfileDefinition): Uint8Array {
     return `asset:${filed.id}`;
   });
 
+  // Without its id, exactly as the folder on disk stores it: an archive is
+  // opened on somebody else's machine, where which folder it used to sit in is
+  // not a fact worth carrying.
+  const { id: _filedAs, ...stored } = document;
+
   return writeZip([
-    { name: MANIFEST, bytes: Buffer.from(`${JSON.stringify(document, null, 2)}\n`, 'utf8') },
+    { name: MANIFEST, bytes: Buffer.from(`${JSON.stringify(stored, null, 2)}\n`, 'utf8') },
     // Sorted, so the same profile always exports to the same bytes: an export
     // is often compared with the last one to answer "did anything change?".
     ...[...assets.values()].sort((a, b) => a.name.localeCompare(b.name)),
@@ -90,8 +95,10 @@ export function importProfile(bytes: Uint8Array): ProfileDefinition {
 
   // Through the same migration as a profile read off disk: an archive may have
   // been exported by an older version, and an import is exactly when that has
-  // to be dealt with.
-  return migrateProfile(document);
+  // to be dealt with. The id is dropped along with it — an archive made before
+  // this may still carry one, and it names a folder on a machine that is not
+  // this one.
+  return { ...migrateProfile(document), id: '' };
 }
 
 /** Turns a data URL into an entry, or reports that it is not one. */

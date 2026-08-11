@@ -247,37 +247,25 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     const archive = exportProfile(profile);
 
     return {
-      name: `${profile.name || profile.id}.easydeck`,
+      name: `${profile.name || profileId}.easydeck`,
       base64: Buffer.from(archive).toString('base64'),
     };
   }
 
   /**
-   * Reads an archive in, under a free id.
+   * Reads an archive in, under a folder of its own.
    *
    * Never over an existing profile: an import is somebody's work arriving, and
    * quietly replacing what they already had would be the one mistake here that
-   * cannot be undone.
+   * cannot be undone. The empty id says "not stored yet", and storage files it
+   * under its name — numbering it if somebody already has one so called.
    */
   async importProfile(base64: string): Promise<{ id: string }> {
     const profile = importProfile(Buffer.from(base64, 'base64'));
-    const id = await this.freeProfileId(profile.id);
-
-    await this.options.profiles.save({ ...profile, id });
+    const id = await this.options.profiles.save({ ...profile, id: '' });
     this.emit('profilesChanged');
 
     return { id };
-  }
-
-  private async freeProfileId(wanted: string): Promise<string> {
-    if (!(await this.options.profiles.has(wanted))) return wanted;
-
-    for (let suffix = 2; suffix < 100; suffix += 1) {
-      const candidate = `${wanted}-${suffix}`;
-      if (!(await this.options.profiles.has(candidate))) return candidate;
-    }
-
-    throw new Error(`Too many profiles named like '${wanted}'`);
   }
 
   /** The running plugins, for whoever configures them. */
@@ -426,12 +414,53 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     return this.options.profiles.load(id);
   }
 
-  async saveProfile(profile: ProfileDefinition): Promise<void> {
-    await this.options.profiles.save(profile);
+  /**
+   * Stores a profile and says where it ended up.
+   *
+   * Renaming a profile renames its folder, so the id a configurator sent may
+   * not be the id that comes back. Everything holding the old one is moved
+   * over here rather than left pointing at a folder that no longer exists.
+   */
+  async saveProfile(profile: ProfileDefinition): Promise<{ id: string }> {
+    const was = profile.id;
+    const id = await this.options.profiles.save(profile);
+    const saved = { ...profile, id };
+
+    if (id !== was) await this.refile(was, id);
+
     this.emit('profilesChanged');
     // Saving the profile that is on screen should show up immediately;
     // that is the whole point of editing it from a configurator.
-    if (profile.id === this.activeProfileId) await this.applyProfile(profile);
+    if (was === this.activeProfileId || id === this.activeProfileId) {
+      await this.applyProfile(saved, was);
+    }
+
+    return { id };
+  }
+
+  /**
+   * Follows a profile that has moved folder.
+   *
+   * The decks showing it and the settings remembering it both hold the old id;
+   * a rename that left either behind would show as a deck falling back to
+   * some other profile at the next launch.
+   */
+  private async refile(was: string, id: string): Promise<void> {
+    if (this.activeProfileId === was) this.activeProfileId = id;
+
+    const stored = await this.options.settings.load();
+    const decks = Object.fromEntries(
+      Object.entries(stored.decks ?? {}).map(([deckId, binding]) => [
+        deckId,
+        binding.profileId === was ? { ...binding, profileId: id } : binding,
+      ]),
+    );
+
+    await this.options.settings.save({
+      ...stored,
+      ...(stored.activeProfileId === was ? { activeProfileId: id } : {}),
+      ...(Object.keys(decks).length > 0 ? { decks } : {}),
+    });
   }
 
   async deleteProfile(id: string): Promise<void> {
@@ -658,10 +687,10 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
    * profile, and editing a button that only one of them refreshed would leave
    * the other showing a version that no longer exists anywhere.
    */
-  private async applyProfile(profile: ProfileDefinition): Promise<void> {
+  private async applyProfile(profile: ProfileDefinition, was = profile.id): Promise<void> {
     const showing = this.options.decks
       .list()
-      .filter((deck) => deck.controller.profileId === profile.id);
+      .filter((deck) => deck.controller.profileId === was);
 
     // Nothing is showing it — an edit to a profile that is merely stored. The
     // active deck takes it, which is what activating a profile means.
@@ -681,7 +710,7 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
        * rather than to a deck, and reloading a profile no longer disturbs them.
        */
       const previousLocation =
-        controller.profileId === profile.id ? controller.currentLocation : undefined;
+        controller.profileId === was ? controller.currentLocation : undefined;
 
       controller.load(profile);
 

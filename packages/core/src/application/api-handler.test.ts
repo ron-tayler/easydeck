@@ -159,9 +159,10 @@ class FakeDeck implements DeckFacade {
     return validProfile(id);
   }
 
-  async saveProfile(profile: ProfileDefinition): Promise<void> {
+  async saveProfile(profile: ProfileDefinition): Promise<{ id: string }> {
     this.calls.push(`saveProfile:${profile.id}`);
     this.saved = profile;
+    return { id: profile.id };
   }
 
   async deleteProfile(id: string): Promise<void> {

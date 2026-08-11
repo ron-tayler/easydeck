@@ -69,7 +69,7 @@ async function build() {
     list: async () => [{ id: PROFILE.id, name: PROFILE.name }],
     has: async (id) => id === PROFILE.id,
     load: async () => PROFILE,
-    save: async () => undefined,
+    save: async () => PROFILE.id,
     remove: async () => undefined,
   };
   const settings: SettingsRepository = {

@@ -136,7 +136,8 @@ export interface DeckFacade {
 
   listProfiles(): Promise<ProfileSummary[]>;
   getProfile(id: string): Promise<ProfileDefinition>;
-  saveProfile(profile: ProfileDefinition): Promise<void>;
+  /** Stores it, and answers with the id it is filed under — renames move it. */
+  saveProfile(profile: ProfileDefinition): Promise<{ id: string }>;
   deleteProfile(id: string): Promise<void>;
   /** Puts a profile on a deck. Without one, on whichever deck is active. */
   activateProfile(id: string, deckId?: string): Promise<void>;

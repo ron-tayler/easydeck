@@ -84,6 +84,7 @@ export default {
     none: 'No profiles yet',
     label: 'Profile',
     add: 'New profile',
+    rename: 'Rename profile',
     newTitle: 'Profile name',
   },
   variables: {

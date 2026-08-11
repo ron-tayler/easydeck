@@ -137,8 +137,11 @@ export class ApiHandler {
         // Validated here as well as in the repository: a UI deserves the
         // reason its document was rejected, not a write that fails later.
         validateProfile(profile as ProfileDefinition);
-        await this.deck.saveProfile(profile as ProfileDefinition);
-        return { saved: (profile as ProfileDefinition).id };
+        // Answered with where it actually landed: renaming a profile renames
+        // its folder, so a client that assumed the id it sent would be holding
+        // one that no longer exists.
+        const { id } = await this.deck.saveProfile(profile as ProfileDefinition);
+        return { saved: id };
       }
 
       case 'deleteProfile':

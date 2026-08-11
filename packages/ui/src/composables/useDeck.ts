@@ -345,12 +345,20 @@ export function useDeck() {
     pressKey: (key: number) => client.call('simulateKey', { key, ...deckParam() }),
     holdKey: (key: number) => client.call('simulateLongPress', { key, ...deckParam() }),
     doubleKey: (key: number) => client.call('simulateDoublePress', { key, ...deckParam() }),
-    saveProfile: async (profile: ProfileDefinition) => {
-      await client.call('saveProfile', { profile });
+    /**
+     * Stores a profile and answers with where it landed.
+     *
+     * Which may not be where it came from: a profile is filed under its name,
+     * so renaming one moves its folder. Anything holding the id has to take
+     * the answer rather than the id it sent.
+     */
+    saveProfile: async (profile: ProfileDefinition): Promise<string> => {
+      const { saved } = await client.call<{ saved: string }>('saveProfile', { profile });
       // The save triggers a reload on the host, which announces new state;
       // refreshing here as well keeps the window responsive rather than
       // waiting a round trip for the event to come back.
       await refreshAll();
+      return saved;
     },
     openFolder: (folderId: string) => client.call('openFolder', { folderId, ...deckParam() }),
     /** Shows one of EasyDeck's own folders in the system file manager. */

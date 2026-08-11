@@ -141,7 +141,17 @@ export interface FolderDefinition {
 
 export interface ProfileDefinition {
   readonly formatVersion: number;
+  /**
+   * Where the profile is filed, which is not part of the document.
+   *
+   * Storage puts it here on the way in and takes it off on the way out: the
+   * folder's name is the identity, and a copy inside the file would be a
+   * second answer to the same question, wrong the moment anything moved. An
+   * empty string is a profile that has never been stored — storage will pick a
+   * name for it.
+   */
   readonly id: string;
+  /** What a person calls it, and what its folder name is derived from. */
   readonly name: string;
   /** Grid the profile is authored for; must match the surface it runs on. */
   readonly layout: { readonly rows: number; readonly cols: number };

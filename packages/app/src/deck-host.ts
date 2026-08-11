@@ -203,7 +203,7 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     return this.require().getProfile(id);
   }
 
-  saveProfile(profile: ProfileDefinition): Promise<void> {
+  saveProfile(profile: ProfileDefinition): Promise<{ id: string }> {
     return this.require().saveProfile(profile);
   }
 

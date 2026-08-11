@@ -10,7 +10,8 @@ import type { ProfileDefinition } from '@easydeck/engine';
 import { FileProfileRepository, assertSafeProfileId } from './file-profile-repository.js';
 import { FileSettingsRepository } from './file-settings-repository.js';
 
-function profile(id: string, name = 'Test'): ProfileDefinition {
+/** `name` defaults to the id, so most tests file under the id they name. */
+function profile(id: string, name = id): ProfileDefinition {
   return {
     formatVersion: PROFILE_FORMAT_VERSION,
     id,
@@ -52,13 +53,32 @@ describe('FileProfileRepository', () => {
     assert.deepEqual(await missing.list(), []);
   });
 
-  it('saves and loads a profile round-trip', async () => {
-    await repository.save(profile('main', 'Основной'));
+  it('files a profile under a transliteration of its name', async () => {
+    // The folder is the identity, so what it is called has to be derivable
+    // from what the profile is called — and readable by whoever opens it.
+    const id = await repository.save(profile('main', 'Основной'));
+    assert.equal(id, 'osnovnoy');
 
-    assert.equal(await repository.has('main'), true);
-    const loaded = await repository.load('main');
+    assert.equal(await repository.has('osnovnoy'), true);
+    const loaded = await repository.load(id);
     assert.equal(loaded.name, 'Основной');
+    assert.equal(loaded.id, 'osnovnoy', 'the id comes from where it is, not from the file');
     assert.equal(loaded.root.pages[0]!.buttons[0]!.id, 'b');
+  });
+
+  it('keeps no id inside the document', async () => {
+    // Two places holding the same fact is one place too many: a copied folder
+    // would otherwise answer to whatever the original was called.
+    const isolated = await mkdtemp(join(tmpdir(), 'easydeck-id-'));
+    const store = new FileProfileRepository(isolated);
+
+    await store.save(profile('anything', 'Stream'));
+
+    const document = JSON.parse(await readFile(join(isolated, 'stream', 'profile.json'), 'utf8'));
+    assert.equal('id' in document, false);
+    assert.equal(document.name, 'Stream');
+
+    await rm(isolated, { recursive: true, force: true });
   });
 
   // Profiles are user data in a folder people are told to edit by hand, so an
@@ -272,11 +292,34 @@ describe('FileProfileRepository', () => {
     assert.equal(loaded.name, 'Old');
     assert.deepEqual((await store.list()).map((each) => each.id), ['old']);
 
-    await store.save({ ...loaded, name: 'Folded' });
+    assert.equal(await store.save(loaded), 'old');
 
     assert.equal(await exists(join(isolated, 'old', 'profile.json')), true);
     assert.equal(await exists(join(isolated, 'old.json')), false, 'the file goes once the folder is there');
-    assert.equal((await store.load('old')).name, 'Folded');
+  });
+
+  it('files a copied file under its name rather than the name it was copied to', async () => {
+    // Copying `starter.json` to `444.json` used to leave a profile called
+    // Starter, filed as 444, still saying `"id": "starter"` inside. Whichever
+    // of the three you believed, one of the others was wrong.
+    const isolated = await mkdtemp(join(tmpdir(), 'easydeck-copy-'));
+    const store = new FileProfileRepository(isolated);
+
+    await store.save(profile('s', 'Starter'));
+    await writeFile(
+      join(isolated, '444.json'),
+      JSON.stringify({ ...profile('copy', 'Starter'), id: 'starter' }),
+      'utf8',
+    );
+
+    const copy = await store.load('444');
+    assert.equal(copy.id, '444', 'where it is, not what it says');
+
+    // And saving it settles the disagreement: its name is taken, so it takes
+    // the next one along rather than the original's folder.
+    assert.equal(await store.save(copy), 'starter-2');
+    assert.equal(await exists(join(isolated, '444.json')), false);
+    assert.equal((await store.load('starter')).root.pages[0]!.id, 's-main', 'the original stands');
 
     await rm(isolated, { recursive: true, force: true });
   });
@@ -379,8 +422,92 @@ describe('FileProfileRepository', () => {
     const list = await repository.list();
     assert.deepEqual(
       list.map((entry) => entry.id),
-      ['alpha', 'main', 'zulu'],
+      ['alpha', 'osnovnoy', 'zulu'],
     );
+  });
+
+  it('follows a rename, taking the pictures with it', async () => {
+    // Moved rather than rewritten: the pictures are the bulk of a profile, and
+    // copying six megabytes to change a word would be felt.
+    const isolated = await mkdtemp(join(tmpdir(), 'easydeck-rename-'));
+    const store = new FileProfileRepository(isolated);
+
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    const withIcon = (name: string): ProfileDefinition => ({
+      ...profile('ignored', name),
+      root: {
+        id: 'root',
+        name: 'Root',
+        pages: [
+          {
+            id: 'main',
+            buttons: [{ id: 'a', key: 0, states: [{ id: 'default', visual: { icon: { source: png } } }] }],
+          },
+        ],
+      },
+    });
+
+    const first = await store.save(withIcon('Стрим'));
+    assert.equal(first, 'strim');
+
+    const second = await store.save({ ...withIcon('Игры'), id: first });
+    assert.equal(second, 'igry');
+
+    assert.equal(await exists(join(isolated, 'strim')), false, 'nothing left behind');
+    assert.equal((await readdir(join(isolated, 'igry', 'assets'))).length, 1);
+    assert.equal(
+      (await store.load('igry')).root.pages[0]!.buttons[0]!.states[0]!.visual.icon?.source,
+      png,
+    );
+
+    await rm(isolated, { recursive: true, force: true });
+  });
+
+  it('numbers a name somebody else already has, and leaves them alone', async () => {
+    // The one thing that must never happen here: a profile renamed to match
+    // another must not land on top of it.
+    const isolated = await mkdtemp(join(tmpdir(), 'easydeck-clash-'));
+    const store = new FileProfileRepository(isolated);
+
+    const mine = await store.save(profile('a', 'Stream'));
+    const theirs = await store.save({ ...profile('b', 'Games'), id: '' });
+
+    const renamed = await store.save({ ...profile('b', 'Stream'), id: theirs });
+
+    assert.equal(mine, 'stream');
+    assert.equal(renamed, 'stream-2');
+    assert.equal((await store.load('stream')).root.pages[0]!.id, 'a-main', 'the first is untouched');
+    assert.equal((await store.load('stream-2')).root.pages[0]!.id, 'b-main');
+
+    await rm(isolated, { recursive: true, force: true });
+  });
+
+  it('stays put when the name has not changed', async () => {
+    // Otherwise a profile saved on every keystroke would walk down the
+    // numbers, leaving a folder behind for each one.
+    const isolated = await mkdtemp(join(tmpdir(), 'easydeck-stable-'));
+    const store = new FileProfileRepository(isolated);
+
+    const id = await store.save(profile('x', 'Stream'));
+    assert.equal(await store.save({ ...profile('x', 'Stream'), id }), 'stream');
+    assert.equal(await store.save({ ...profile('x', 'Stream'), id }), 'stream');
+    assert.deepEqual(await readdir(isolated), ['stream']);
+
+    await rm(isolated, { recursive: true, force: true });
+  });
+
+  it('moves back to the plain name once it is free', async () => {
+    const isolated = await mkdtemp(join(tmpdir(), 'easydeck-freed-'));
+    const store = new FileProfileRepository(isolated);
+
+    const first = await store.save(profile('a', 'Stream'));
+    const second = await store.save({ ...profile('b', 'Stream'), id: '' });
+    assert.equal(second, 'stream-2');
+
+    await store.remove(first);
+    assert.equal(await store.save({ ...profile('b', 'Stream'), id: second }), 'stream');
+
+    await rm(isolated, { recursive: true, force: true });
   });
 
   it('leaves no temporary file behind after a save', async () => {

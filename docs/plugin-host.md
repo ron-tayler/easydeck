@@ -135,8 +135,8 @@ changed a port.
 Beside this, and worth knowing when reading one: a profile is a folder now.
 
 ```
-profiles/gaming/
-  profile.json        pages, keys, variables — forty kilobytes, readable
+profiles/strim-igry/
+  profile.json        name, pages, keys, variables — forty kilobytes, readable
   assets/9f8b….png    pictures, named after their own contents
 ```
 
@@ -146,6 +146,28 @@ saved. What `load` returns is unchanged — the same profile with data URLs
 everything downstream already speaks — so this is a storage decision and
 nothing more. A profile still stored as a single `<id>.json` is read as it
 always was and becomes a folder the next time it is saved.
+
+**The folder's name is the profile's identity.** There is no `id` inside the
+document: it held one, and copying `starter.json` to `444.json` then left a
+profile called Starter, filed as 444, still claiming to be `starter` — three
+answers to one question. The document keeps the `name` a person reads, and the
+folder is derived from it, transliterated: "Стрим Игры" files as `strim-igry`,
+because a folder outside ASCII travels badly through zip files and command
+lines.
+
+Renaming a profile renames its folder, which is a move rather than a rewrite —
+the pictures are the bulk of a profile and copying them to change a word would
+be felt. Two rules keep that safe:
+
+- a save goes to the folder the profile was **loaded from**, never to the one
+  its name suggests, so two profiles called "Stream" cannot land on each other;
+- a name already taken gets a number — `stream`, then `stream-2` — and moves
+  back to the plain one if it is ever freed.
+
+`save` therefore answers with the id the profile ended up under, which may not
+be the one it arrived with. The daemon follows the move itself: the deck
+showing it, the active-profile setting and every per-deck binding are all
+carried over.
 
 ### Where a plugin's settings land
 

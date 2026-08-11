@@ -38,6 +38,14 @@ const TYPES: Readonly<Record<string, string>> = Object.fromEntries(
   Object.entries(EXTENSIONS).map(([type, extension]) => [extension, type]),
 );
 
+/**
+ * A profile as it is stored, which is everything but its identity.
+ *
+ * The folder's name is the id — kept in one place rather than two, so
+ * renaming the folder cannot leave the document disagreeing with it.
+ */
+export type ProfileDocument = Omit<ProfileDefinition, 'id'>;
+
 export interface ProfileFolder {
   /** The document, with `asset:<id>` where pictures were. */
   readonly document: ProfileDefinition;
@@ -75,7 +83,7 @@ export function extractAssets(profile: ProfileDefinition): ProfileFolder {
  * `asset:9f8b…` on a key says which picture is missing, where an empty string
  * would only say that something is.
  */
-export function inlineAssets(document: ProfileDefinition, names: readonly string[], read: (name: string) => Uint8Array | undefined): ProfileDefinition {
+export function inlineAssets<T>(document: T, names: readonly string[], read: (name: string) => Uint8Array | undefined): T {
   return rewrite(document, (source) => {
     if (!source.startsWith('asset:')) return source;
 
@@ -92,8 +100,8 @@ export function inlineAssets(document: ProfileDefinition, names: readonly string
 }
 
 /** Reads a profile folder off disk, pictures included. */
-export async function readProfileFolder(folder: string): Promise<ProfileDefinition> {
-  const document = JSON.parse(await readFile(join(folder, DOCUMENT), 'utf8')) as ProfileDefinition;
+export async function readProfileFolder(folder: string): Promise<ProfileDocument> {
+  const document = JSON.parse(await readFile(join(folder, DOCUMENT), 'utf8')) as ProfileDocument;
 
   let names: string[] = [];
   try {
@@ -150,11 +158,16 @@ export async function writeProfileFolder(folder: string, profile: ProfileDefinit
     if (!assets.has(name)) await rm(join(folder, ASSETS, name), { force: true });
   }
 
+  // The folder's own name is the profile's identity, so writing an id into the
+  // document would be storing the same fact twice — and the copy inside is the
+  // one that goes stale the moment somebody renames the folder.
+  const { id: _filedAs, ...stored } = document;
+
   // Beside the target and renamed over it: a crash mid-write must not leave a
   // half-written document where a profile used to be.
   const target = join(folder, DOCUMENT);
   const temporary = `${target}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(document, null, 2)}\n`, 'utf8');
+  await writeFile(temporary, `${JSON.stringify(stored, null, 2)}\n`, 'utf8');
   await rename(temporary, target);
 }
 

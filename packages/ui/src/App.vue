@@ -386,6 +386,10 @@ async function onResize(payload: { key: number; colSpan: number; rowSpan: number
  * Laid out for the device that is actually connected: a profile authored for a
  * different grid is refused by the engine, and silently producing one nobody
  * can load would be a strange way to start.
+ *
+ * Where it is filed is not decided here. The empty id means "not stored yet",
+ * and the daemon derives the folder from the name — one place making that
+ * choice rather than a window and a daemon making it separately.
  */
 async function createProfile(name: string): Promise<void> {
   // Laid out for the deck being shown: with several running they may differ in
@@ -394,23 +398,33 @@ async function createProfile(name: string): Promise<void> {
   if (!device) return;
 
   const trimmed = name.trim() || t('profiles.newTitle');
-  const taken = new Set(deck.profiles.value.map((item) => item.id));
 
-  // Derived from the name so the file on disk is recognisable, but never
-  // trusted to be unique or even non-empty — a profile named only in Cyrillic
-  // would otherwise get an empty id.
-  const base = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  let id = base || 'profile';
-  for (let index = 2; taken.has(id); index++) id = `${base || 'profile'}-${index}`;
-
-  await deck.saveProfile({
+  const id = await deck.saveProfile({
     formatVersion: PROFILE_FORMAT_VERSION,
-    id,
+    id: '',
     name: trimmed,
     layout: { rows: device.rows, cols: device.cols },
     root: { id: 'root', name: trimmed, pages: [{ id: 'main', buttons: [] }] },
   });
   await deck.activateProfile(id);
+}
+
+/**
+ * Renames the profile that is showing.
+ *
+ * Which renames its folder too, when the new name is free — the daemon decides
+ * that and says where the profile ended up. Nothing here has to follow it: the
+ * deck announces its new state, and the selector is drawn from that.
+ */
+function renameProfile(): void {
+  const current = deck.profile.value;
+  if (!current) return;
+
+  ask(t('profiles.rename'), current.name, (name) => {
+    const trimmed = name.trim();
+    if (trimmed === '' || trimmed === current.name) return;
+    void editProfile((profile) => ({ ...profile, name: trimmed }));
+  });
 }
 
 // --- variables -----------------------------------------------------------
@@ -1063,6 +1077,17 @@ onBeforeUnmount(() => {
               {{ item.name }}
             </option>
           </select>
+
+          <button
+            type="button"
+            class="icon rename"
+            :title="t('profiles.rename')"
+            :aria-label="t('profiles.rename')"
+            :disabled="!deck.profile.value"
+            @click="renameProfile"
+          >
+            ✎
+          </button>
 
           <button
             type="button"

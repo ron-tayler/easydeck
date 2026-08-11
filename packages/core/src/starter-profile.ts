@@ -26,7 +26,9 @@ export function createStarterProfile(configDirectory: string): ProfileDefinition
 
   return {
     formatVersion: PROFILE_FORMAT_VERSION,
-    id: 'starter',
+    // Not filed anywhere yet: storage derives the folder from the name, which
+    // is the one place that decision is made.
+    id: '',
     name: 'Starter',
     layout: { rows: 3, cols: 5 },
     variables: [
