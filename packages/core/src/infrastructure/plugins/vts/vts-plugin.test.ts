@@ -342,6 +342,75 @@ describe('what the VTube Studio plugin offers and does', () => {
     await bed.dispose();
   });
 
+  it('notices an expression a hotkey turned on, whoever pressed it', async () => {
+    /*
+     * The case this was missing. VTube Studio has no event for expressions at
+     * all, so an expression toggled by a hotkey — from the keyboard, a hand
+     * gesture, or another plugin acting on a Twitch reward — changed nothing
+     * on the deck. The hotkey event is the only notice there is, and it fires
+     * for every one of those.
+     */
+    const bed = await bench({ token: TOKEN, stored: TOKEN });
+    await bed.until('a session', () => bed.runtime.status('vts')?.status === 'ready');
+
+    bed.runtime.setWatched(['vts.expression(blush.exp3.json)']);
+    await bed.until('the watched expression', () => bed.variables.get('vts.expression(blush.exp3.json)') === false);
+
+    // The model's state changes underneath us, exactly as it would in VTube
+    // Studio, and then a hotkey says something happened.
+    STATE.ExpressionStateRequest.expressions[0]!.active = true;
+    bed.vts.emit('HotkeyTriggeredEvent', {
+      hotkeyID: 'hk-2',
+      hotkeyName: 'Смущение',
+      hotkeyTriggeredByAPI: true,
+    });
+
+    await bed.until('the expression to follow', () => bed.variables.get('vts.expression(blush.exp3.json)') === true);
+    assert.equal(bed.variables.get('vts.hotkey'), 'Смущение');
+
+    STATE.ExpressionStateRequest.expressions[0]!.active = false;
+    await bed.dispose();
+  });
+
+  it('follows an animation for as long as it plays, and ignores the idle one', async () => {
+    // An animation is not an expression: it starts, plays and ends, and both
+    // ends are reported. An idle animation runs for ever by design, so a key
+    // lit up for the whole stream would say nothing.
+    const bed = await bench({ token: TOKEN, stored: TOKEN });
+    await bed.until('a session', () => bed.runtime.status('vts')?.status === 'ready');
+
+    bed.vts.emit('ModelAnimationEvent', {
+      animationEventType: 'Start',
+      animationName: 'Помахать',
+      isIdleAnimation: false,
+    });
+    await bed.until('the animation', () => bed.variables.get('vts.animation') === 'Помахать');
+    assert.equal(bed.variables.get('vts.animation-active(Помахать)'), true);
+
+    bed.vts.emit('ModelAnimationEvent', {
+      animationEventType: 'End',
+      animationName: 'Помахать',
+      isIdleAnimation: false,
+    });
+    await bed.until('the end of it', () => bed.variables.get('vts.animation-active(Помахать)') === false);
+    assert.equal(bed.variables.get('vts.animation'), '');
+
+    bed.vts.emit('ModelAnimationEvent', {
+      animationEventType: 'Start',
+      animationName: 'Дыхание',
+      isIdleAnimation: true,
+    });
+    await delay(50);
+    assert.equal(bed.variables.get('vts.animation'), '', 'an idle animation is not news');
+
+    // And the names it has seen are what the editor can offer, since VTube
+    // Studio has no request that lists them.
+    const offered = await bed.runtime.optionsFor('vts', 'animations', {});
+    assert.deepEqual(offered.map((option) => option.value), ['Помахать']);
+
+    await bed.dispose();
+  });
+
   it('clears what it published when the connection goes', async () => {
     // A key showing the last model of a program that closed an hour ago is the
     // deck stating something untrue.

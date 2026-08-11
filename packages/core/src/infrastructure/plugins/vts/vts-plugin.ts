@@ -147,6 +147,40 @@ export const vtsManifest: PluginManifest = {
         optionsFrom: 'expressions',
       },
     },
+    {
+      name: 'vts.animation',
+      type: 'string',
+      label: { en: 'Animation playing', ru: 'Играет анимация' },
+      description: {
+        en: 'The name of the animation running now, idle animations aside',
+        ru: 'Название анимации, которая идёт сейчас; фоновая idle не в счёт',
+      },
+    },
+    {
+      /*
+       * Whether one particular animation is running.
+       *
+       * An animation is not an expression: it starts, plays and ends, and
+       * VTube Studio reports both ends of that. This is what a key binds to
+       * when it should light up for as long as the wave lasts.
+       */
+      name: 'vts.animation-active',
+      type: 'boolean',
+      label: { en: 'This animation playing', ru: 'Эта анимация играет' },
+      argument: {
+        label: { en: 'Animation', ru: 'Анимация' },
+        optionsFrom: 'animations',
+      },
+    },
+    {
+      name: 'vts.hotkey',
+      type: 'string',
+      label: { en: 'Last hotkey', ru: 'Последний хоткей' },
+      description: {
+        en: 'Whatever fired last, whoever fired it — you, a key press, or another plugin',
+        ru: 'Что сработало последним, от кого угодно: от вас, с клавиатуры или из другого плагина',
+      },
+    },
   ],
 
   actions: [
@@ -254,6 +288,33 @@ export const vtsManifest: PluginManifest = {
       },
     },
     {
+      name: 'animation',
+      label: { en: 'Animation', ru: 'Анимация' },
+      description: {
+        en: 'Runs a hotkey and lights up while the animation it started is playing',
+        ru: 'Запускает хоткей и подсвечивается, пока идёт запущенная им анимация',
+      },
+      button: {
+        // Bound to the family with the argument left out, like the expression
+        // preset: choosing the animation in the key editor fills it in.
+        stateFrom: 'vts.animation-active',
+        states: [
+          {
+            id: 'idle',
+            when: false,
+            visual: { background: '#22303c', label: { text: 'Анимация', fontSize: 13 } },
+            actions: { press: [{ type: 'vts.trigger-hotkey' }] },
+          },
+          {
+            id: 'playing',
+            when: true,
+            visual: { background: '#3d5a80', label: { text: 'Анимация', fontSize: 13 } },
+            actions: { press: [{ type: 'vts.trigger-hotkey' }] },
+          },
+        ],
+      },
+    },
+    {
       name: 'model',
       label: { en: 'Current model', ru: 'Текущая модель' },
       description: {
@@ -290,6 +351,15 @@ export class VtsPlugin implements Plugin {
   private watching: readonly string[] = [];
   /** True while this plugin is writing a setting itself; see reconnectIfNeeded. */
   private storingToken = false;
+  /**
+   * Animation names this connection has seen play.
+   *
+   * The only list there is: VTube Studio has no request for the animations a
+   * model holds, so the names come from the events themselves. It fills as the
+   * stream goes on, which is enough for the editor to offer something rather
+   * than nothing — and a name may always be typed.
+   */
+  private readonly seenAnimations = new Set<string>();
 
   constructor(private readonly options: VtsPluginOptions = {}) {}
 
@@ -454,6 +524,18 @@ export class VtsPlugin implements Plugin {
       }));
     });
 
+    /*
+     * Whatever has played since the connection opened.
+     *
+     * VTube Studio has no request for the animations a model holds, so this is
+     * the honest answer: names it has actually reported. Empty at first, which
+     * leaves the field a box a name can be typed into — the same fallback
+     * every dynamic parameter has.
+     */
+    host.provideOptions('animations', async () =>
+      [...this.seenAnimations].sort().map<ParamOption>((name) => ({ value: name, label: { en: name } })),
+    );
+
     host.provideOptions('models', async () => {
       const data = await this.require().request<{
         availableModels?: { modelName?: string; modelID?: string }[];
@@ -476,7 +558,16 @@ export class VtsPlugin implements Plugin {
 
     try {
       // Subscribed before reading, so a change between the two is not missed.
-      for (const event of ['ModelLoadedEvent', 'TrackingStatusChangedEvent']) {
+      for (const event of [
+        'ModelLoadedEvent',
+        'TrackingStatusChangedEvent',
+        // Fires for a hotkey pressed on the keyboard, triggered by a hand
+        // gesture, or run by another plugin — a Twitch reward, say. Which is
+        // the only way to know an expression changed: VTube Studio has no
+        // event for expressions at all.
+        'HotkeyTriggeredEvent',
+        'ModelAnimationEvent',
+      ]) {
         await connection.subscribe(event);
       }
 
@@ -544,6 +635,46 @@ export class VtsPlugin implements Plugin {
         host.setVariable('vts.tracking', data['faceFound'] === true);
         return;
 
+      /*
+       * Somebody ran a hotkey, and it was very likely not us.
+       *
+       * A hotkey may toggle an expression, and an expression changing is
+       * reported by nothing else — VTube Studio has no event for them. So the
+       * expressions a profile watches are read again, which is cheap because
+       * that list is only the ones actually on a key.
+       *
+       * Ours are included rather than filtered out by `hotkeyTriggeredByAPI`:
+       * another plugin's API calls look exactly the same, and a Twitch reward
+       * firing a hotkey is precisely the case worth following.
+       */
+      case 'HotkeyTriggeredEvent': {
+        const name = String(data['hotkeyName'] ?? '').trim();
+        host.setVariable('vts.hotkey', name || String(data['hotkeyID'] ?? ''));
+        void this.readExpressions();
+        return;
+      }
+
+      /*
+       * An animation started or ended.
+       *
+       * Not an expression: an animation plays for a while and stops, and both
+       * ends are reported. Idle animations are left out — they run for ever
+       * by design, and a key lit up for the whole stream says nothing.
+       */
+      case 'ModelAnimationEvent': {
+        if (data['isIdleAnimation'] === true) return;
+
+        const name = String(data['animationName'] ?? '').trim();
+        if (name === '') return;
+
+        const started = String(data['animationEventType'] ?? '') === 'Start';
+        this.seenAnimations.add(name);
+
+        host.setVariable('vts.animation', started ? name : '');
+        host.setFamily('vts.animation-active', name, started);
+        return;
+      }
+
       default:
         return;
     }
@@ -556,7 +687,12 @@ export class VtsPlugin implements Plugin {
     host.setVariable('vts.connected', false);
     host.setVariable('vts.model', undefined);
     host.setVariable('vts.tracking', undefined);
+    host.setVariable('vts.animation', undefined);
+    host.setVariable('vts.hotkey', undefined);
+
     for (const file of this.watching) host.setFamily('vts.expression', file, undefined);
+    for (const name of this.seenAnimations) host.setFamily('vts.animation-active', name, undefined);
+    this.seenAnimations.clear();
   }
 
   private require(): VtsConnection {
