@@ -289,6 +289,23 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
     return {
       settings: () => entry.settings,
 
+      /**
+       * A setting the plugin worked out for itself, stored the ordinary way.
+       *
+       * Through `configure`, so a token granted by another program lands in
+       * the sealed file exactly as a typed one would, and so the plugin's own
+       * listeners hear about it — there is no second path into the settings
+       * for the host to keep in step.
+       */
+      remember: async (name, value) => {
+        const declared = (entry.manifest.settings ?? []).some((param) => param.name === name);
+        if (!declared) {
+          throw new Error(`Plugin '${id}' has no setting '${name}' to remember`);
+        }
+
+        await this.configure(id, { [name]: value });
+      },
+
       onSettingsChanged: (listen) => {
         entry.listeners.push(listen);
         return () => {

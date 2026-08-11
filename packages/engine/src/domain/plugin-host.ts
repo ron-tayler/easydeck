@@ -37,6 +37,21 @@ export interface PluginHost {
   onSettingsChanged(listen: (settings: Readonly<Record<string, VariableValue>>) => void): () => void;
 
   /**
+   * Stores a setting the plugin worked out for itself.
+   *
+   * For the things a user cannot type: a token granted after they pressed
+   * Allow in another program's window, a device id discovered on the network.
+   * Saved exactly as the settings window would save it — sealed if the
+   * manifest declared the field secret — so it survives a restart and the
+   * plugin never asks again.
+   *
+   * The name must be a declared setting, which is what keeps this from
+   * becoming a general-purpose store: what a plugin remembers is part of what
+   * it says about itself.
+   */
+  remember(name: string, value: VariableValue): Promise<void>;
+
+  /**
    * Publishes a value for buttons to show and bind to.
    *
    * The name must be one the manifest declared, which is also what keeps a

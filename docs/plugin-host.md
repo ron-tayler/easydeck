@@ -33,6 +33,7 @@ methods hand it anything of ours:
 | --- | --- |
 | `settings()` | what the user filled in, secrets included |
 | `onSettingsChanged(fn)` | the user pressed Save |
+| `remember(name, value)` | store a setting the plugin worked out for itself |
 | `setVariable(name, value)` | publish a value for keys to show and bind to |
 | `setStatus(status, message?)` | `off` / `connecting` / `ready` / `error` |
 | `provideOptions(name, load)` | the choices behind a parameter's `optionsFrom` |
@@ -160,6 +161,17 @@ Saving is partial. The configurator never receives a secret, so it cannot send
 one back, and a whole-document save would drop every token the moment somebody
 changed a port.
 
+`remember` is for what a user cannot type: a token granted after they pressed
+Allow in another program's window, an id discovered on the network. It stores
+through the same path a settings window uses, so the value is sealed if the
+field was declared secret and the plugin's own listeners hear about it.
+
+Which is a trap worth naming, since it caught VTube Studio: **a plugin hears
+its own writes.** Authorising ends by remembering the token, that notifies
+every listener, and a plugin that reconnects on every notification tears down
+the session it just established. Either ignore the notification while writing,
+or work out which setting actually changed.
+
 ### Where a profile lands
 
 Beside this, and worth knowing when reading one: a profile is a folder now.
@@ -285,7 +297,12 @@ offers it, avoids both the redirect and the secret entirely.
    about what its settings need.
 5. Dynamic options where a parameter is filled in — the daemon answers
    already; the key editor has yet to ask.
-6. The loopback server, which nothing wants until the first OAuth flow.
+6. `vts` — hotkeys, expressions and models in VTube Studio. Done, and the
+   first plugin whose authorising involves a person: asking for a token puts a
+   dialog in front of whoever is live, so it happens when the button is
+   pressed and never on connect. The token is stored with `remember` and
+   reused silently thereafter.
+7. The loopback server, which nothing wants until the first OAuth flow.
 
 Then Discord, which talks over a pipe rather than a socket, and Twitch, which
 is where authorisation gets interesting.

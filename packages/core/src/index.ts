@@ -107,6 +107,7 @@ export {
   HARDWARE_PLUGIN_ID,
 } from './infrastructure/plugins/hardware-plugin.js';
 export { registerObsPlugin, obsManifest, OBS_PLUGIN_ID } from './infrastructure/plugins/obs/obs-plugin.js';
+export { registerVtsPlugin, vtsManifest, VTS_PLUGIN_ID } from './infrastructure/plugins/vts/vts-plugin.js';
 export { ObsConnection } from './infrastructure/plugins/obs/obs-connection.js';
 export { plainSecretVault } from './application/ports/secret-vault.js';
 export type { SecretVault } from './application/ports/secret-vault.js';
