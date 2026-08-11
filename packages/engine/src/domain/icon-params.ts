@@ -179,8 +179,12 @@ export function drawableIcon(
    * the shape with it. Without this, dropping a parametric icon on a key gave
    * a preview in the window and a hole on the panel, which is the one
    * disagreement worth going out of the way to avoid.
+   *
+   * `transform-origin` is here for the same reason: a picture that never uses
+   * a variable still turns about the wrong point on the panel unless it is
+   * rewritten.
    */
-  if (!svg.includes('var(')) return source;
+  if (!svg.includes('var(') && !svg.includes('transform-origin')) return source;
 
   return svgSourceOf(source, applyIconParams(svg, values ?? {}));
 }
@@ -370,6 +374,138 @@ function scale(value: number, binding: { from?: number; to?: number }, param: Ic
  * Anything unresolved keeps its fallback or its declared default, so a
  * half-configured icon is still a picture rather than a blank.
  */
+/**
+ * Writes `transform-origin` into the transform itself.
+ *
+ * The second thing librsvg does not do, and the only one left: it ignores the
+ * property outright and turns everything about `(0, 0)`, so a needle pinned to
+ * the corner of its dial swings off the picture instead of around the pin.
+ * Measured, not assumed — a gauge that worked in the window drew an empty dial
+ * on the panel.
+ *
+ * The rewrite is the identity every graphics text gives for rotating about a
+ * point: move the origin there, transform, move it back. Both engines
+ * understand that, and the declaration is removed afterwards so a browser
+ * given this same text does not apply the offset a second time.
+ *
+ * A transform with no origin declared is left alone: both engines already
+ * agree that it turns about `(0, 0)`, which is also what the browser does —
+ * checked rather than assumed, since the CSS default outside SVG is the
+ * centre and it would have been reasonable to expect that here.
+ */
+export function expandTransformOrigin(svg: string): string {
+  if (!svg.includes('transform-origin')) return svg;
+
+  const view = viewBoxOf(svg);
+
+  // Rule bodies inside <style>, and the style attribute of any one element.
+  return svg
+    .replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (whole, body: string) =>
+      whole.replace(body, body.replace(/\{([^{}]*)\}/g, (block, declarations: string) =>
+        block.replace(declarations, rewriteOrigin(declarations, view)),
+      )),
+    )
+    .replace(/style\s*=\s*"([^"]*)"/gi, (whole, declarations: string) =>
+      whole.replace(declarations, rewriteOrigin(declarations, view)),
+    );
+}
+
+/** The picture's own coordinate system, which is what an origin is measured in. */
+interface ViewBox {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+function viewBoxOf(svg: string): ViewBox | undefined {
+  const found = /viewBox\s*=\s*["']\s*(-?[\d.]+)[\s,]+(-?[\d.]+)[\s,]+(-?[\d.]+)[\s,]+(-?[\d.]+)/i.exec(svg);
+  if (!found) return undefined;
+
+  return {
+    x: Number(found[1]),
+    y: Number(found[2]),
+    width: Number(found[3]),
+    height: Number(found[4]),
+  };
+}
+
+/** One block of declarations, with its transform wrapped around its origin. */
+function rewriteOrigin(declarations: string, view: ViewBox | undefined): string {
+  const origin = /transform-origin\s*:\s*([^;}]+)/i.exec(declarations);
+  if (!origin?.[1]) return declarations;
+
+  // `transform-origin` starts with `transform` but is not followed by a colon,
+  // so this finds the transform itself wherever the two are written.
+  if (!/transform\s*:/i.test(declarations)) return declarations;
+
+  const point = originPoint(origin[1], view);
+  // Something we cannot work out — `em`, a third value — is left exactly as it
+  // was. A picture drawn slightly wrong beats one not drawn at all.
+  if (!point) return declarations;
+
+  return declarations
+    .replace(
+      /transform\s*:\s*([^;}]+)/i,
+      (_whole, value: string) =>
+        `transform: translate(${point.x}px, ${point.y}px) ${value.trim()} ` +
+        `translate(${-point.x}px, ${-point.y}px)`,
+    )
+    .replace(/transform-origin\s*:\s*[^;}]+;?/i, '');
+}
+
+/** Where a keyword sits along its axis, as the fraction CSS says it is. */
+const KEYWORDS: Readonly<Record<string, number>> = {
+  left: 0,
+  top: 0,
+  center: 0.5,
+  right: 1,
+  bottom: 1,
+};
+
+const VERTICAL = new Set(['top', 'bottom']);
+const HORIZONTAL = new Set(['left', 'right']);
+
+/**
+ * What `transform-origin: 50% 50%` and its relatives come to.
+ *
+ * Percentages and keywords are measured against the **viewBox**, not against
+ * the shape's own box — which is the one surprise here, and was settled by
+ * measuring a browser rather than by reading: `50% 50%`, `center` and a length
+ * at the viewBox centre all rotate a rectangle to exactly the same place.
+ */
+function originPoint(value: string, view: ViewBox | undefined): { x: number; y: number } | undefined {
+  const parts = value.trim().split(/\s+/);
+  if (parts.length > 2) return undefined;
+
+  // A single value sets x and centres y, and two keywords may be written
+  // either way round — `top left` means the same as `left top`.
+  const [first, second = '50%'] = parts as [string, string?];
+  const flipped = VERTICAL.has(first.toLowerCase()) || HORIZONTAL.has(second.toLowerCase());
+  const [alongX, alongY] = flipped ? [second, first] : [first, second];
+
+  const x = resolve(alongX, view?.x, view?.width);
+  const y = resolve(alongY, view?.y, view?.height);
+  if (x === undefined || y === undefined) return undefined;
+
+  // Two decimals: an icon is drawn at 128 pixels and cannot show a third.
+  return { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 };
+}
+
+function resolve(token: string, start: number | undefined, size: number | undefined): number | undefined {
+  const keyword = KEYWORDS[token.toLowerCase()];
+  const fraction = keyword ?? (/^-?[\d.]+%$/.test(token) ? Number(token.slice(0, -1)) / 100 : undefined);
+
+  if (fraction !== undefined) {
+    // A picture with no viewBox has no proportions to take a fraction of.
+    if (start === undefined || size === undefined) return undefined;
+    return start + fraction * size;
+  }
+
+  const length = /^(-?[\d.]+)(px)?$/.exec(token);
+  return length ? Number(length[1]) : undefined;
+}
+
 export function applyIconParams(svg: string, values: Readonly<Record<string, string>>): string {
   let out = svg;
 
@@ -402,7 +538,9 @@ export function applyIconParams(svg: string, values: Readonly<Record<string, str
     },
   );
 
-  return out;
+  // After the substitution, so a rotation fed by a variable is wrapped around
+  // its origin the same way a fixed one is.
+  return expandTransformOrigin(out);
 }
 
 /**

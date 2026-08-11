@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   applyIconParams,
+  expandTransformOrigin,
   iconParamsProblem,
   readIconParams,
   resolveIconParams,
@@ -149,5 +150,81 @@ describe('putting the values into the picture', () => {
   it('leaves an icon with no parameters exactly as it was', () => {
     const svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="#2F80ED"/></svg>';
     assert.equal(applyIconParams(svg, {}), svg);
+  });
+});
+
+describe('pinning a transform to the point it turns about', () => {
+  /*
+   * librsvg ignores `transform-origin` and turns everything about (0, 0), so a
+   * needle pinned to the corner of its dial swings off the picture. Rewriting
+   * it as move-there, turn, move-back is understood by both engines — and the
+   * browser is given the same text, so the two cannot disagree.
+   */
+  const gauge = (origin: string) =>
+    `<svg viewBox="0 0 128 128"><style>.bar{transform-origin: ${origin}; transform: rotate(90deg)}</style>` +
+    '<rect class="bar" x="14" y="124" width="112" height="4"/></svg>';
+
+  it('wraps the transform around a point given as lengths', () => {
+    const drawn = expandTransformOrigin(gauge('126px 126px'));
+
+    assert.match(drawn, /transform: translate\(126px, 126px\) rotate\(90deg\) translate\(-126px, -126px\)/);
+    assert.doesNotMatch(drawn, /transform-origin/, 'or a browser would apply the offset twice');
+  });
+
+  it('measures a percentage against the viewBox, not the shape', () => {
+    // Settled by measuring a browser: `50% 50%`, `center` and the viewBox
+    // centre as a length all put a rectangle in exactly the same place.
+    for (const origin of ['50% 50%', 'center', '64px 64px']) {
+      assert.match(
+        expandTransformOrigin(gauge(origin)),
+        /translate\(64px, 64px\)/,
+        `expected ${origin} to come to the middle of the viewBox`,
+      );
+    }
+  });
+
+  it('reads the keywords, whichever way round they are written', () => {
+    assert.match(expandTransformOrigin(gauge('right bottom')), /translate\(128px, 128px\)/);
+    assert.match(expandTransformOrigin(gauge('bottom right')), /translate\(128px, 128px\)/);
+    assert.match(expandTransformOrigin(gauge('left top')), /translate\(0px, 0px\)/);
+  });
+
+  it('centres the other axis when only one value is given', () => {
+    assert.match(expandTransformOrigin(gauge('10px')), /translate\(10px, 64px\)/);
+  });
+
+  it('leaves alone what it cannot work out, rather than guessing', () => {
+    // A picture drawn slightly wrong beats one not drawn at all.
+    assert.match(expandTransformOrigin(gauge('2em 2em')), /transform-origin: 2em 2em/);
+    assert.match(
+      expandTransformOrigin('<svg><style>.a{transform-origin: 50%; transform: scale(2)}</style></svg>'),
+      /transform-origin: 50%/,
+      'a percentage of nothing, since there is no viewBox to take it of',
+    );
+  });
+
+  it('leaves a transform with no origin alone, because both engines agree', () => {
+    const svg = '<svg viewBox="0 0 128 128"><style>.a{transform: rotate(90deg)}</style></svg>';
+    assert.equal(expandTransformOrigin(svg), svg);
+  });
+
+  it('reaches an origin written on the element itself', () => {
+    const svg =
+      '<svg viewBox="0 0 96 96"><rect style="transform-origin: 48px 48px; transform: rotate(45deg)"/></svg>';
+
+    assert.match(expandTransformOrigin(svg), /translate\(48px, 48px\) rotate\(45deg\) translate\(-48px, -48px\)/);
+  });
+
+  it('is applied by the substitution, so a bound rotation lands right too', () => {
+    // Which is the path a key actually takes: the value arrives, then the
+    // picture is pinned. Doing only the first is what drew an empty dial.
+    const drawn = applyIconParams(
+      '<svg viewBox="0 0 128 128"><style>:root{--value: 0deg}' +
+        '.bar{transform-origin: 126px 126px; transform: rotate(var(--value))}</style></svg>',
+      { value: '90deg' },
+    );
+
+    assert.match(drawn, /translate\(126px, 126px\) rotate\(90deg\) translate\(-126px, -126px\)/);
+    assert.doesNotMatch(drawn, /var\(/);
   });
 });

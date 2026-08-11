@@ -75,8 +75,25 @@ native rasterizer supports `var()`** — measured, not assumed:
 | **librsvg (sharp)** | yes | yes | no | **1.46 ms** |
 
 So the panel path expands the custom properties itself before handing the text
-to librsvg — a small polyfill for the one thing it lacks, with everything else
+to librsvg — a small polyfill for the things it lacks, with everything else
 (classes, transforms, gradients) left to the real implementation.
+
+There are two such gaps, and only two:
+
+- **`var()`**, as above.
+- **`transform-origin`**, which librsvg ignores outright, turning everything
+  about `(0, 0)`. A needle pinned to the corner of its dial swung off the
+  picture: the window showed a gauge, the panel an empty one. The declaration
+  is rewritten into the transform — move there, turn, move back — which both
+  engines understand, and then removed so the browser given the same text does
+  not apply the offset twice.
+
+A transform with *no* origin declared is left alone, because both already agree
+it turns about `(0, 0)` — measured rather than assumed, since the CSS default
+outside SVG is the centre and expecting that here would have been reasonable.
+Percentages and keywords are measured against the **viewBox**, not the shape's
+own box, which was settled the same way: `50% 50%`, `center` and the viewBox
+centre written as a length all put a rectangle in exactly the same place.
 
 The browser could do `var()` natively, and deliberately is not asked to. A
 client fetches the template once — it never changes, so it caches for good —
@@ -188,9 +205,14 @@ and what the panel draws agree, with the exceptions below.
 
 ## What is supported
 
-What librsvg understands. Classes, transforms, gradients, opacity: yes.
-Filters, blend modes, web fonts: expect the browser to show one thing and the
-panel another.
+What librsvg understands, plus the two things above that it does not and we
+write out for it. Classes, transforms, `transform-origin`, gradients, opacity:
+yes. Filters, blend modes, web fonts: expect the browser to show one thing and
+the panel another.
+
+`transform-origin` in `em` or with three values is left as written, which means
+the panel turns the shape about `(0, 0)` and the window does not. Use a length
+in user units, a percentage, or a keyword.
 
 Animation is not supported, and cannot be: a frame is drawn when a variable
 changes, so movement comes from the plugin publishing, not from a timeline.
