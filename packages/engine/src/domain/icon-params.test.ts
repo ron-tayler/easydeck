@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { applyIconParams, readIconParams, resolveIconParams } from './icon-params.js';
+import {
+  applyIconParams,
+  iconParamsProblem,
+  readIconParams,
+  resolveIconParams,
+} from './icon-params.js';
 
 /** A gauge as somebody would actually write one: valid SVG, works in a browser. */
 const NEEDLE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
@@ -26,6 +31,30 @@ describe('what an icon says about itself', () => {
     assert.equal(params[0]?.name, 'angle');
     assert.equal(params[0]?.from, -120);
     assert.equal(params[1]?.type, 'color');
+  });
+
+  it('accepts the other words people write for a type', () => {
+    // `string` is what anyone who has written a JSON schema reaches for, and
+    // `colour` is how our own documentation spells it. Refusing either showed
+    // as a number box where a text box was wanted, which says nothing about
+    // the spelling that caused it.
+    const svg = `<svg><metadata id="easydeck">{"params":[
+      {"name":"caption","type":"string"},
+      {"name":"tint","type":"Colour"},
+      {"name":"count","type":"int"}
+    ]}</metadata></svg>`;
+
+    assert.deepEqual(
+      readIconParams(svg).map((param) => param.type),
+      ['text', 'color', 'number'],
+    );
+  });
+
+  it('says so when a type means nothing, rather than quietly counting', () => {
+    const svg = '<svg><metadata id="easydeck">{"params":[{"name":"on","type":"boolean"}]}</metadata></svg>';
+
+    assert.equal(readIconParams(svg)[0]?.type, undefined, 'left as the default');
+    assert.match(iconParamsProblem(svg) ?? '', /unknown type "boolean"/);
   });
 
   it('treats an ordinary icon as having none, and a broken one likewise', () => {

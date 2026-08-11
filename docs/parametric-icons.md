@@ -135,7 +135,7 @@ Every field a parameter may carry, and what happens without it:
 | `name` | the custom property, without its dashes: `"angle"` ↔ `var(--angle)` |
 | `label` | what the settings window calls it; `en` required, others optional |
 | `description` | a line under it in that window |
-| `type` | `number` (the default), `color`, or `text` |
+| `type` | `number` (the default), `color`, or `text` — `string`/`str`, `colour`, `int`/`float`/`num` are accepted spellings of those three |
 | `from` / `to` | for a number: the range *this parameter* means, in its own units |
 | `unit` | `deg`, `px`, `%`, or nothing at all |
 | `default` | what the picture shows before it is wired to anything |
@@ -174,6 +174,9 @@ from there too, exactly as a browser would.
 - **Strict JSON in the metadata.** No comments, no trailing commas. A comma
   where a colon belongs leaves the icon with no parameters — the gear still
   appears and says what the parser objected to.
+- **A type it does not know is a number.** There are three types and no more;
+  a `"type": "boolean"` falls back to `number` and shows a spinner where you
+  wanted something else. The gear says so rather than leaving you to guess.
 - **Numbers as numbers.** `"from": 0`, not `"from": "0"`. Strings are coerced,
   but only because somebody will type them.
 

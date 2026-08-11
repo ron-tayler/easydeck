@@ -26,7 +26,12 @@ export interface IconParam {
   readonly name: string;
   readonly label?: LocalizedText;
   readonly description?: LocalizedText;
-  /** Defaults to `number`; `color` and `text` are substituted as they are. */
+  /**
+   * Defaults to `number`; `color` and `text` are substituted as they are.
+   *
+   * `readIconParams` normalises what an icon wrote — `string` and `colour` are
+   * accepted spellings — so anything downstream sees one of these three.
+   */
   readonly type?: 'number' | 'color' | 'text';
   /** For `number`: the range this parameter means, in its own units. */
   readonly from?: number;
@@ -65,6 +70,33 @@ export type IconBinding =
     };
 
 const METADATA = /<metadata\b[^>]*\bid=["']easydeck["'][^>]*>([\s\S]*?)<\/metadata>/i;
+
+/**
+ * What somebody may write for `type`, and what it means here.
+ *
+ * Three types, and rather more than three words for them. `string` is what
+ * anyone who has written JSON schema reaches for, and `colour` is how half the
+ * language spells it — including the examples in our own documentation. A
+ * declaration refused over spelling shows as a text box that will only accept
+ * numbers, which is a long way from the mistake that caused it.
+ */
+const TYPES: Readonly<Record<string, 'number' | 'color' | 'text'>> = {
+  number: 'number',
+  num: 'number',
+  int: 'number',
+  float: 'number',
+  color: 'color',
+  colour: 'color',
+  text: 'text',
+  string: 'text',
+  str: 'text',
+};
+
+/** The declared type, whichever word was used for it. */
+function readType(type: unknown): 'number' | 'color' | 'text' | undefined {
+  if (typeof type !== 'string') return undefined;
+  return TYPES[type.trim().toLowerCase()];
+}
 
 /**
  * The text of an SVG, whether it arrived as one or as a data URL.
@@ -173,7 +205,18 @@ export function iconParamsProblem(svg: string): string | undefined {
     const nameless = parsed.params.some(
       (param) => typeof param !== 'object' || param === null || typeof (param as IconParam).name !== 'string',
     );
-    return nameless ? 'A parameter has no "name"' : undefined;
+    if (nameless) return 'A parameter has no "name"';
+
+    // A type nobody recognises falls back to `number`, which shows as a
+    // spinner where a text box was wanted — a symptom with no obvious cause
+    // unless it is said out loud.
+    for (const param of parsed.params as IconParam[]) {
+      if (param.type !== undefined && readType(param.type) === undefined) {
+        return `Parameter "${param.name}" has an unknown type "${String(param.type)}"; use number, color or text`;
+      }
+    }
+
+    return undefined;
   } catch (cause) {
     return cause instanceof Error ? cause.message : 'Metadata is not valid JSON';
   }
@@ -196,13 +239,27 @@ export function readIconParams(svg: string): IconParam[] {
     const parsed = JSON.parse(found[1].trim()) as { params?: unknown };
     if (!Array.isArray(parsed.params)) return [];
 
-    return parsed.params.filter(
-      (param): param is IconParam =>
-        typeof param === 'object' && param !== null && typeof (param as IconParam).name === 'string',
-    );
+    return parsed.params
+      .filter(
+        (param): param is IconParam =>
+          typeof param === 'object' && param !== null && typeof (param as IconParam).name === 'string',
+      )
+      // Normalised here rather than at every reader: the settings window, the
+      // arithmetic and the panel all ask what type a parameter is, and each of
+      // them deciding for itself is three places to disagree.
+      .map((param) => {
+        const type = readType(param.type);
+        return type === undefined ? omitType(param) : { ...param, type };
+      });
   } catch {
     return [];
   }
+}
+
+/** A parameter whose declared type meant nothing, left as the default. */
+function omitType(param: IconParam): IconParam {
+  const { type: _unreadable, ...rest } = param;
+  return rest;
 }
 
 /**
