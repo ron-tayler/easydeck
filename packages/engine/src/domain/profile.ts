@@ -7,7 +7,7 @@ import type { ButtonVisualTemplate } from './visual.js';
  * it, so an old file can be recognised and upgraded instead of failing to
  * load with a confusing validation error.
  */
-export const PROFILE_FORMAT_VERSION = 5;
+export const PROFILE_FORMAT_VERSION = 6;
 
 /**
  * Adding a page is meant to be cheaper than creating a folder, but a scene
@@ -53,6 +53,23 @@ export interface ButtonStateDefinition {
   readonly id: string;
   readonly visual: ButtonVisualTemplate;
   readonly actions?: Partial<Record<ButtonEvent, readonly ActionDescriptor[]>>;
+  /**
+   * Whether this state runs its own script rather than the button's.
+   *
+   * The first state holds the button's script and every other state follows
+   * it. That is the ordinary case by a long way — a key that looks different
+   * when the mic is muted still does the same thing when pressed — and having
+   * to write the same script into each state made a two-state button twice the
+   * work and twice the thing to keep in step.
+   *
+   * A state that genuinely needs to act differently sets this, and then its
+   * own `actions` are used. Absent means "follow the first state", which is
+   * why every state of a profile written before this is marked explicitly on
+   * migration: they all had their own.
+   *
+   * Meaningless on the first state, which is the script it would follow.
+   */
+  readonly ownActions?: boolean;
   /**
    * What the bound variable has to be for this state to show.
    *

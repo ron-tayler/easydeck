@@ -10,6 +10,40 @@ import type { VariableStore, VariableValue } from './variables.js';
 export interface ActionDescriptor {
   readonly type: string;
   readonly params?: Readonly<Record<string, unknown>>;
+  /**
+   * Steps that belong inside this one, by branch name.
+   *
+   * What makes a script a tree rather than a list: `core.if` holds `then` and
+   * `else`, `core.for` holds `do`. Ordinary actions have none, so a profile
+   * written before blocks existed reads exactly as it did.
+   *
+   * Named branches rather than a single list because a fork has two arms and
+   * numbering them would leave the meaning to the reader.
+   */
+  readonly branches?: Readonly<Record<string, readonly ActionDescriptor[]>>;
+}
+
+/**
+ * The steps the engine runs itself rather than handing to a plugin.
+ *
+ * They are structure, not errands: an `if` is not something a deck *does*, it
+ * is how what a deck does is arranged. Keeping them out of the plugin system
+ * means a plugin cannot redefine what a loop means, and the editor can draw
+ * them differently — nested, like blocks — without asking which plugin a step
+ * came from.
+ *
+ * `core.delay` sits here for the same reason, having started life as an action
+ * of the system plugin: waiting is punctuation between steps, and every script
+ * wants it whether or not the system plugin happens to be installed.
+ */
+export const CORE_IF = 'core.if';
+export const CORE_FOR = 'core.for';
+export const CORE_DELAY = 'core.delay';
+
+export const CORE_STEPS: readonly string[] = [CORE_IF, CORE_FOR, CORE_DELAY];
+
+export function isCoreStep(type: string): boolean {
+  return CORE_STEPS.includes(type);
 }
 
 /**
@@ -75,6 +109,24 @@ export interface ActionContext {
    * variable instead, so both ways of changing state stay in agreement.
    */
   setButtonState(buttonId: string, stateId: string): void;
+
+  /**
+   * The state a button is showing, for a condition to ask about.
+   *
+   * Without an id, the button running the script — which is what somebody
+   * means nine times in ten, and saves them looking up their own id.
+   */
+  buttonState?(buttonId?: string): string | undefined;
+
+  /**
+   * Values that exist only inside the step being run.
+   *
+   * `{{loop}}` and `{{loop.left}}` while a `for` is running, and nothing else
+   * so far. Kept apart from the variable store on purpose: a loop counter is
+   * not a fact about the machine, it must not appear in the variables list,
+   * and two decks running the same profile must not share one.
+   */
+  readonly locals?: Readonly<Record<string, VariableValue>>;
 }
 
 export type ActionHandler = (

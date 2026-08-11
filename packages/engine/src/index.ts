@@ -40,6 +40,11 @@ export {
   drawableIcon,
 } from './domain/icon-params.js';
 export { variablesReadBy } from './domain/profile-variables.js';
+export type { Condition, ConditionOperator, ConditionSource } from './domain/condition.js';
+export { evaluateCondition } from './domain/condition.js';
+export { CORE_DELAY, CORE_FOR, CORE_IF, CORE_STEPS, isCoreStep } from './domain/action.js';
+export { MAX_DEPTH, MAX_REPEATS, MAX_STEPS, ScriptLimitError, runScript } from './application/script-runner.js';
+export type { ScriptHost } from './application/script-runner.js';
 export type { KeyboardKey, KeyGroup } from './domain/keyboard-keys.js';
 export {
   KEYBOARD_KEYS,

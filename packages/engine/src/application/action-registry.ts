@@ -153,7 +153,7 @@ export class ActionRegistry {
     const handler = this.handlers.get(action.type);
     if (!handler) throw new UnknownActionError(action.type);
 
-    const params = resolveParams(action.params ?? {}, context.variables);
+    const params = resolveParams(action.params ?? {}, context.variables, context.locals);
     const definition = this.definitions.get(action.type);
     if (definition) assertParams(definition, params);
 
@@ -185,6 +185,7 @@ export class ActionRegistry {
 function resolveParams(
   params: Readonly<Record<string, unknown>>,
   variables: VariableStore,
+  locals?: Readonly<Record<string, VariableValue>>,
 ): Readonly<Record<string, unknown>> {
   let resolved: Record<string, unknown> | undefined;
   let values: Record<string, VariableValue> | undefined;
@@ -193,7 +194,9 @@ function resolveParams(
     if (typeof value !== 'string' || !hasPlaceholders(value)) continue;
 
     resolved ??= { ...params };
-    values ??= variables.snapshot();
+    // Locals over variables: `{{loop}}` inside a loop is the loop's, and a
+    // variable of that name — which nothing should be called — does not win.
+    values ??= { ...variables.snapshot(), ...(locals ?? {}) };
     resolved[name] = renderTemplate(value, values);
   }
 

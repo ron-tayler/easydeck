@@ -1,5 +1,10 @@
 import { PROFILE_FORMAT_VERSION, inferVariableType } from '@easydeck/engine';
-import type { ProfileDefinition, VariableValue } from '@easydeck/engine';
+import type {
+  ActionDescriptor,
+  FolderDefinition,
+  ProfileDefinition,
+  VariableValue,
+} from '@easydeck/engine';
 
 /**
  * Brings a stored profile up to the current format.
@@ -25,7 +30,59 @@ export function migrateProfile(raw: unknown): ProfileDefinition {
   const v3 =
     version < 3 ? migrateV2ToV3(v2 as unknown as Record<string, unknown>) : (v2 as ProfileDefinition);
   const v4 = version < 4 ? migrateV3ToV4(v3) : v3;
-  return migrateV4ToV5(v4);
+  const v5 = version < 5 ? migrateV4ToV5(v4) : v4;
+  return migrateV5ToV6(v5);
+}
+
+/**
+ * Version 6 gives a script blocks, and a button one script by default.
+ *
+ * Two changes, both of which would silently alter what somebody's deck does if
+ * they were left to the reader.
+ *
+ * Waiting stops being an action of the system plugin and becomes part of a
+ * script, because every script wants it and it is punctuation between steps
+ * rather than an errand. Same parameter, new name.
+ *
+ * And a button's first state becomes the one that holds the script: the others
+ * follow it unless they say otherwise. Every state used to carry its own, so
+ * each one that has actions is marked as having its own — the flag is written
+ * in rather than assumed, so a profile written before this keeps doing exactly
+ * what it did.
+ */
+function migrateV5ToV6(profile: ProfileDefinition): ProfileDefinition {
+  const renamed = renameActions(profile, V5_ACTION_TYPES) as ProfileDefinition;
+
+  return {
+    ...renamed,
+    root: markOwnActions(renamed.root),
+    formatVersion: PROFILE_FORMAT_VERSION,
+  };
+}
+
+const V5_ACTION_TYPES: Readonly<Record<string, string>> = {
+  'system.delay': 'core.delay',
+};
+
+/** Walks the tree marking every state that already had a script of its own. */
+function markOwnActions(folder: FolderDefinition): FolderDefinition {
+  return {
+    ...folder,
+    pages: folder.pages.map((page) => ({
+      ...page,
+      buttons: page.buttons.map((button) => ({
+        ...button,
+        states: button.states.map((state, index) => {
+          // The first state is the button's script; it needs no flag.
+          if (index === 0) return state;
+          const scripts = Object.values(state.actions ?? {}) as (readonly ActionDescriptor[] | undefined)[];
+          const hasScript = scripts.some((list) => (list?.length ?? 0) > 0);
+          return hasScript ? { ...state, ownActions: true } : state;
+        }),
+      })),
+    })),
+    ...(folder.folders ? { folders: folder.folders.map(markOwnActions) } : {}),
+  };
 }
 
 /**

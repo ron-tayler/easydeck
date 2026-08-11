@@ -27,6 +27,7 @@ import type { VariableDeclaration, VariableValue } from '../domain/variables.js'
 import type { BackdropSlice, ButtonVisual } from '../domain/visual.js';
 import type { ActionRegistry } from './action-registry.js';
 import { AssetIds } from './asset-ids.js';
+import { runScript } from './script-runner.js';
 import { systemClock } from './ports/clock-port.js';
 import type { ClockPort, TimerHandle } from './ports/clock-port.js';
 import type { PresenterPort } from './ports/presenter-port.js';
@@ -712,27 +713,50 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     const page = this.currentPage;
     if (!page) return [];
 
-    return page.buttons
-      .filter((button) => (this.resolveState(button).actions?.[event]?.length ?? 0) > 0)
-      .map((button) => button.key);
+    return page.buttons.filter((button) => this.scriptFor(button, event).length > 0).map((button) => button.key);
+  }
+
+  /**
+   * The script a button runs for a gesture, which is usually not its state's.
+   *
+   * A button has one script, held by its first state, and every other state
+   * follows it — a key that looks different when the mic is muted still does
+   * the same thing when pressed. A state that genuinely acts differently says
+   * so with `ownActions`, and then its own is used.
+   */
+  private scriptFor(button: ButtonDefinition, event: ButtonEvent): readonly ActionDescriptor[] {
+    const state = this.resolveState(button);
+    const owner = state.ownActions || state === button.states[0] ? state : button.states[0];
+    return owner?.actions?.[event] ?? [];
   }
 
   private async dispatch(button: ButtonDefinition, event: ButtonEvent): Promise<void> {
-    // Resolve the state at dispatch time: an earlier action in this same
-    // batch may have changed it, and the press belongs to what was on screen.
-    const state = this.resolveState(button);
-    const list: readonly ActionDescriptor[] = state.actions?.[event] ?? [];
+    // Resolved at dispatch time: an earlier action in this same batch may have
+    // changed the state, and the press belongs to what was on screen.
+    const list = this.scriptFor(button, event);
     if (list.length === 0) return;
 
     const context = this.actionContext(button);
-    for (const action of list) {
-      try {
-        await this.actions.run(action, context);
-      } catch (error) {
-        // One bad action must not take the deck down with it.
-        this.markFailed(button.key);
-        this.emit('error', error as Error);
-      }
+
+    try {
+      await runScript(list, context, {
+        run: (action, where) => this.actions.run(action, where),
+        values: () => this.variables.snapshot(),
+        onError: (error) => {
+          // One bad step must not take the deck down with it, and the key says
+          // so — which is the same behaviour a flat list of actions had.
+          this.markFailed(button.key);
+          this.emit('error', error);
+        },
+        // Through the deck's own clock, so a test with a fake one does not
+        // spend real seconds on a script full of waits.
+        wait: (ms) => new Promise<void>((resolve) => this.clock.setTimeout(resolve, ms)),
+      });
+    } catch (error) {
+      // A limit, rather than a step: the script is not doing what it says, so
+      // it stopped part-way and the key has to show that.
+      this.markFailed(button.key);
+      this.emit('error', error as Error);
     }
 
     this.requestPaint();
@@ -773,6 +797,12 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
       goHome: () => this.goHome(),
       goBack: () => this.goBack(),
       setButtonState: (buttonId, stateId) => this.setButtonState(buttonId, stateId),
+      // Without an id, the button running the script — which is what a
+      // condition about "this key" means, and saves anybody their own id.
+      buttonState: (buttonId) => {
+        const target = buttonId ? this.findButton(buttonId) : button;
+        return target ? this.resolveState(target).id : undefined;
+      },
     };
   }
 

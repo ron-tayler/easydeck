@@ -373,10 +373,58 @@ describe('FileProfileRepository', () => {
     assert.equal(loaded.formatVersion, PROFILE_FORMAT_VERSION);
     assert.deepEqual(
       actions?.press?.map((action) => action.type),
-      // Navigation never moved, so its name is left alone.
-      ['vars.toggle-variable', 'system.hotkey', 'system.delay', 'easydeck.go-home'],
+      // Navigation never moved, so its name is left alone. Waiting moved
+      // twice: into the system plugin at version 5, and out of the plugins
+      // altogether at version 6, where it became part of a script.
+      ['vars.toggle-variable', 'system.hotkey', 'core.delay', 'easydeck.go-home'],
     );
     assert.equal(actions?.press?.[1]!.params?.['keys'], 'ctrl+m');
+
+    await rm(isolated, { recursive: true, force: true });
+  });
+
+  it('marks every state that had a script of its own before version 6', async () => {
+    /*
+     * Version 6 gives a button one script, held by its first state, which the
+     * others follow. Every state used to carry its own — so each one that has
+     * actions is marked explicitly, or somebody's two-state button would
+     * quietly start doing the first state's thing in both.
+     */
+    const isolated = await mkdtemp(join(tmpdir(), 'easydeck-v5-'));
+    const store = new FileProfileRepository(isolated);
+
+    const legacy = {
+      formatVersion: 5,
+      name: 'V5',
+      layout: { rows: 1, cols: 1 },
+      root: {
+        id: 'root',
+        name: 'Root',
+        pages: [
+          {
+            id: 'main',
+            buttons: [
+              {
+                id: 'b',
+                key: 0,
+                states: [
+                  { id: 'off', visual: {}, actions: { press: [{ type: 'easydeck.go-home' }] } },
+                  { id: 'on', visual: {}, actions: { press: [{ type: 'system.delay', params: { ms: 10 } }] } },
+                  { id: 'plain', visual: {} },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    await writeFile(join(isolated, 'v5.json'), JSON.stringify(legacy), 'utf8');
+
+    const states = (await store.load('v5')).root.pages[0]!.buttons[0]!.states;
+
+    assert.equal(states[0]?.ownActions, undefined, 'the first state is the script others follow');
+    assert.equal(states[1]?.ownActions, true, 'this one really did act differently');
+    assert.equal(states[2]?.ownActions, undefined, 'and this one never had a script at all');
 
     await rm(isolated, { recursive: true, force: true });
   });

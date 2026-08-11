@@ -114,27 +114,14 @@ export const httpManifest: PluginManifest = {
   ],
 };
 
-export const timingActions = [
-  {
-    type: 'system.delay',
-    icon: 'clock',
-    label: { en: 'Wait', ru: 'Подождать' },
-    description: {
-      en: 'Pauses before the next action of the same button',
-      ru: 'Пауза перед следующим действием той же кнопки',
-    },
-    group: { en: 'Flow', ru: 'Поток' },
-    params: [
-      {
-        name: 'ms',
-        type: 'number' as const,
-        label: { en: 'Milliseconds', ru: 'Миллисекунды' },
-        default: 100,
-        min: 0,
-      },
-    ],
-  },
-];
+/*
+ * Waiting used to live here, as `system.delay`.
+ *
+ * It is `core.delay` now, and part of a script rather than an action: every
+ * script wants it, it is punctuation between steps rather than an errand, and
+ * a machine where the system plugin failed to load should still be able to
+ * put a pause between two presses. Profiles are migrated at version 6.
+ */
 
 export function registerSystemActions(registry: ActionRegistry): ActionRegistry {
   registry.installPlugin(systemManifest, {
@@ -178,13 +165,6 @@ export function registerSystemActions(registry: ActionRegistry): ActionRegistry 
       if (!response.ok) {
         throw new Error(`${method} ${url} responded ${response.status} ${response.statusText}`);
       }
-    },
-  });
-
-  registry.extendPlugin('system', timingActions, {
-    'system.delay': async (params) => {
-      const ms = numberParam(params, 'ms', 100);
-      await new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
     },
   });
 
