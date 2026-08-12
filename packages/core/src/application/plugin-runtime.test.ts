@@ -175,6 +175,99 @@ describe('PluginRuntime', () => {
   });
 });
 
+describe('a picture a plugin draws', () => {
+  const withSurface = { ...manifest, surfaces: [{ type: 'demo.graph', label: { en: 'Graph' } }] };
+
+  /*
+   * The bug this exists for: a plugin answered with the text of an SVG, which
+   * is the natural thing to build, and everything below takes a *source* — a
+   * path or a data URL. Handed raw markup the rasterizer went looking for a
+   * file whose name began `<svg`, and the key said the picture could not be
+   * read. The preview in the editor worked, because the window wrapped the
+   * text itself, which is what made it look like a rendering problem.
+   */
+  it('turns the text of an SVG into something that can be read', async () => {
+    const bed = await bench();
+    await bed.runtime.install(withSurface, {
+      start(host: PluginHost) {
+        host.provideSurface('demo.graph', async () => ({ source: '<svg><rect/></svg>' }));
+      },
+    });
+
+    const frame = await bed.runtime.drawSurface({
+      type: 'demo.graph',
+      params: {},
+      cols: 1,
+      rows: 1,
+    });
+
+    assert.ok(frame);
+    assert.match(frame.source, /^data:image\/svg\+xml;base64,/);
+    assert.equal(
+      Buffer.from(frame.source.split(',')[1] ?? '', 'base64').toString('utf8'),
+      '<svg><rect/></svg>',
+    );
+
+    await bed.dispose();
+  });
+
+  it('leaves a picture that already is a data URL alone', async () => {
+    const bed = await bench();
+    const already = 'data:image/png;base64,AAAA';
+
+    await bed.runtime.install(withSurface, {
+      start(host: PluginHost) {
+        host.provideSurface('demo.graph', async () => ({ source: already }));
+      },
+    });
+
+    const frame = await bed.runtime.drawSurface({ type: 'demo.graph', params: {}, cols: 1, rows: 1 });
+    assert.equal(frame?.source, already);
+
+    await bed.dispose();
+  });
+
+  it('answers nothing for a type no plugin claimed', async () => {
+    const bed = await bench();
+    await bed.runtime.install(withSurface, {});
+
+    assert.equal(
+      await bed.runtime.drawSurface({ type: 'nobody.graph', params: {}, cols: 1, rows: 1 }),
+      undefined,
+    );
+    // Declared but never provided: the same answer, since a key can do nothing
+    // useful with the difference.
+    assert.equal(
+      await bed.runtime.drawSurface({ type: 'demo.graph', params: {}, cols: 1, rows: 1 }),
+      undefined,
+    );
+
+    await bed.dispose();
+  });
+
+  it('does not let a plugin that throws take the key down with it', async () => {
+    const bed = await bench();
+    await bed.runtime.install(withSurface, {
+      start(host: PluginHost) {
+        host.setStatus('ready');
+        host.provideSurface('demo.graph', async () => {
+          throw new Error('the graph is on fire');
+        });
+      },
+    });
+
+    assert.equal(
+      await bed.runtime.drawSurface({ type: 'demo.graph', params: {}, cols: 1, rows: 1 }),
+      undefined,
+    );
+    // A picture that failed to draw says nothing about whether the plugin
+    // works, the same as a heartbeat that threw.
+    assert.equal(bed.runtime.status('demo')?.status, 'ready');
+
+    await bed.dispose();
+  });
+});
+
 /*
  * The heartbeat the host keeps for a plugin.
  *

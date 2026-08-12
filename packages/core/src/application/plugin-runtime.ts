@@ -239,7 +239,8 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
     if (!draw) return undefined;
 
     try {
-      return await draw(request);
+      const frame = await draw(request);
+      return frame ? { ...frame, source: asDataUrl(frame.source) } : undefined;
     } catch (cause) {
       this.options.log?.(pluginId, 'warn', `Could not draw '${request.type}': ${describe(cause)}`);
       return undefined;
@@ -519,4 +520,25 @@ function same(a: readonly string[], b: readonly string[]): boolean {
 
 function describe(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
+}
+
+/**
+ * A plugin's picture in the one form everything below this expects.
+ *
+ * A plugin may answer with the text of an SVG, which is the convenient thing
+ * to build and the natural thing to return. Everything downstream — the scene,
+ * the compositor, the rasterizer — takes a *source*, and a source is a path or
+ * a data URL; handed raw markup it goes looking for a file with a name
+ * beginning `<svg`, fails to find one, and the key says the picture could not
+ * be read.
+ *
+ * Converted here rather than asked of every plugin, so the convenience stays
+ * with the plugins and the pipeline keeps one representation. Base64 rather
+ * than percent-encoding because that is the only form `readSource` decodes,
+ * and one encoding that always works beats two that sometimes do.
+ */
+function asDataUrl(source: string): string {
+  if (source.startsWith('data:')) return source;
+
+  return `data:image/svg+xml;base64,${Buffer.from(source, 'utf8').toString('base64')}`;
 }

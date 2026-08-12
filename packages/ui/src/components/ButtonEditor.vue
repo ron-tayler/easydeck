@@ -70,7 +70,8 @@ const props = defineProps<{
    *
    * The picture is the plugin's and changes by the second, so the only honest
    * preview is the real one — and the only thing that can produce it is the
-   * side the plugin runs on.
+   * side the plugin runs on. Answers with a source ready to put in an `img`,
+   * which is the same form the key itself is given.
    */
   drawSurface?: (
     type: string,
@@ -914,12 +915,7 @@ const previewIcon = computed(() => {
             >
               <!-- The widget's own frame, asked of the plugin that draws it,
                    so what is being set up is what will be shown. -->
-              <img
-                v-if="widgetFrame"
-                class="preview-icon"
-                :src="`data:image/svg+xml;utf8,${encodeURIComponent(widgetFrame)}`"
-                alt=""
-              />
+              <img v-if="widgetFrame" class="preview-icon" :src="widgetFrame" alt="" />
               <span v-else-if="state.visual.surface" class="preview-missing">⚠</span>
               <img v-else-if="previewIcon" class="preview-icon" :src="previewIcon" alt="" />
               <!-- The same component the grid uses, so the preview cannot
