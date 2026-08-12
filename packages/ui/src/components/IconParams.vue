@@ -30,6 +30,12 @@ const props = defineProps<{
   declarations: readonly VariableDeclaration[];
   /** Live values, so the row can show what the variable says right now. */
   values: Readonly<Record<string, string | number | boolean>>;
+  /** Asks a plugin what may go in a family's argument; see VariableSelect. */
+  loadOptions?: (
+    pluginId: string,
+    source: string,
+    params: Readonly<Record<string, unknown>>,
+  ) => Promise<readonly { value: string; label?: LocalizedText }[]>;
 }>();
 
 const emit = defineEmits<{
@@ -242,6 +248,7 @@ function type(key: string, raw: string, commit: (value: string) => void): void {
             :model-value="variableOf(param)"
             :values="values"
             :declarations="declarations"
+            :load-options="loadOptions"
             @update:model-value="setVariable(param, $event)"
           />
         </div>

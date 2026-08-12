@@ -351,6 +351,7 @@ function onDrop(event: DragEvent): void {
           :own-button-id="ownButtonId"
           :load-widget-params="loadWidgetParams"
           :load-shape="loadShape"
+          :load-options="loadOptions"
           @update:model-value="setCondition(index, $event)"
         />
       </div>
@@ -374,6 +375,7 @@ function onDrop(event: DragEvent): void {
             :declarations="declarations"
             :placeholder="t('editor.blocks.noVariable')"
             :clear-label="t('editor.blocks.noVariable')"
+            :load-options="loadOptions"
             @update:model-value="setLoop(index, { variable: $event })"
           />
         </label>

@@ -495,6 +495,7 @@ async function dropSecret(param: ParamDefinition, reference: string): Promise<vo
         :values="values"
         :declarations="declarations"
         :placeholder="say(param.placeholder)"
+        :load-options="loadOptions"
         @update:model-value="set(param, $event)"
       />
 

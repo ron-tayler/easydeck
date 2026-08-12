@@ -57,6 +57,18 @@ const props = defineProps<{
     source: string,
     params: Readonly<Record<string, unknown>>,
   ) => Promise<ParamDefinition | undefined>;
+  /**
+   * Asks a plugin what may go in a family's argument.
+   *
+   * `obs.mute` and `clock.timer` are one row in the list however many keys
+   * live under them, so without this an `if` could name a family and have no
+   * way to say which microphone or which timer it meant.
+   */
+  loadOptions?: (
+    pluginId: string,
+    source: string,
+    params: Readonly<Record<string, unknown>>,
+  ) => Promise<readonly { value: string; label?: LocalizedText }[]>;
 }>();
 
 const emit = defineEmits<{ 'update:modelValue': [condition: Condition] }>();
@@ -203,6 +215,7 @@ function setSource(source: ConditionSource): void {
       :values="values"
       :declarations="declarations"
       :placeholder="t('editor.condition.variable')"
+      :load-options="loadOptions"
       @update:model-value="patch({ name: $event })"
     />
 

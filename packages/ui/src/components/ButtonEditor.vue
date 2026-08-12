@@ -12,7 +12,6 @@ import type {
   PluginManifest,
   StateRange,
   SurfaceSpec,
-  VariableArgument,
   VariableDeclaration,
   VariableType,
 } from '@easydeck/core';
@@ -26,7 +25,7 @@ import {
   resolveIconParams,
   svgTextOf,
 } from '@easydeck/engine/icons';
-import { parseVariableKey, variableKey } from '@easydeck/engine/variables';
+import { parseVariableKey } from '@easydeck/engine/variables';
 import { renderTemplate } from '@easydeck/engine/template';
 
 import ActionParams from './ActionParams.vue';
@@ -522,95 +521,18 @@ const binding = computed<VariableDeclaration | undefined>(() => {
   return props.declarations.find((variable) => variable.name === family);
 });
 
-/** The family part of the binding, which is what the list above holds. */
-const boundFamily = computed(() =>
-  draft.value.stateFrom ? parseVariableKey(draft.value.stateFrom).family : '',
-);
-
-/** Each level of argument the chosen family asks for: usually none, rarely two. */
-const boundArguments = computed<VariableArgument[]>(() => {
-  const levels: VariableArgument[] = [];
-  let argument = binding.value?.argument;
-
-  while (argument) {
-    levels.push(argument);
-    argument = argument.then;
-  }
-
-  return levels;
-});
-
-/** What has been filled in for each level, split back out of the key. */
-const boundArgumentValues = computed<string[]>(() => {
-  const name = draft.value.stateFrom;
-  if (!name) return [];
-
-  const { argument } = parseVariableKey(name);
-  if (argument === undefined || argument === '') return [];
-
-  return argument.split(',').map((part) => part.trim());
-});
-
-/** Choices for one level, loaded from the plugin the family belongs to. */
-const argumentOptions = ref<Record<number, readonly { value: string; label?: LocalizedText }[]>>({});
-
-const argumentChoices = (level: number): readonly { value: string; label?: LocalizedText }[] =>
-  argumentOptions.value[level] ?? [];
-
 /**
- * Asks the plugin what may go in each level, passing what came before.
+ * What the binding is set to, key and all.
  *
- * The second level depends on the first — which sources a scene holds — so
- * the earlier answer travels as `argument`, the name a family's loader
- * expects when there are no action parameters to name.
+ * The field below asks for the family and for its argument together — the same
+ * field every other variable is picked with — so this is the whole answer and
+ * nothing here has to take it apart. It used to be assembled here, out of a
+ * select and a row of argument fields this component kept for itself; a
+ * condition wanting the same thing had no way to ask it, which is what gave
+ * `if` a family it could name and never fill in.
  */
-async function loadArgumentOptions(): Promise<void> {
-  const family = boundFamily.value;
-  const pluginId = binding.value?.pluginId;
-  if (!family || !pluginId || !props.loadOptions) {
-    argumentOptions.value = {};
-    return;
-  }
-
-  const loaded: Record<number, readonly { value: string; label?: LocalizedText }[]> = {};
-
-  for (const [level, argument] of boundArguments.value.entries()) {
-    if (!argument.optionsFrom) continue;
-
-    try {
-      loaded[level] = await props.loadOptions(pluginId, argument.optionsFrom, {
-        argument: boundArgumentValues.value[level - 1] ?? '',
-      });
-    } catch {
-      loaded[level] = [];
-    }
-  }
-
-  argumentOptions.value = loaded;
-}
-
-watch([boundFamily, () => boundArgumentValues.value.join(',')], () => void loadArgumentOptions(), {
-  immediate: true,
-});
-
-/** Switching family clears whatever was filled in for the old one. */
-function setFamily(family: string): void {
-  draft.value = { ...draft.value, stateFrom: family || undefined };
-}
-
-/** Rebuilds the key from its parts, so the profile stores one plain string. */
-function setArgument(level: number, value: string): void {
-  const parts = [...boundArgumentValues.value];
-  parts[level] = value;
-
-  // Levels after this one described something inside the old value, so they
-  // are dropped: the sources of one scene are not the sources of another.
-  const kept = parts.slice(0, level + 1).filter((part) => part !== undefined && part !== '');
-
-  draft.value = {
-    ...draft.value,
-    stateFrom: variableKey(boundFamily.value, kept.join(', ')),
-  };
+function setBinding(name: string): void {
+  draft.value = { ...draft.value, stateFrom: name || undefined };
 }
 
 /** Untyped variables still bind — by state name, as they always did. */
@@ -1087,53 +1009,24 @@ const previewIcon = computed(() => {
 
           <label class="field">
             <span>{{ t('editor.stateFrom') }}</span>
-            <!-- Declared families only: which microphone is the next field's
-                 question, so offering every one of them here would be offering
-                 the same answer several times over. -->
+            <!--
+              Declared families only: which microphone is the field beside it,
+              so offering every one of them in the list would be offering the
+              same answer several times over.
+
+              That second field is the picker's own now. It used to be built
+              here, which is why nowhere else that names a variable could ask
+              for an argument.
+            -->
             <VariableSelect
-              :model-value="boundFamily"
+              :model-value="draft.stateFrom ?? ''"
               :values="variables"
               :declarations="declarations"
               mode="declared"
               :placeholder="t('editor.stateFromHint')"
               :clear-label="t('editor.stateFromHint')"
-              @update:model-value="setFamily($event)"
-            />
-          </label>
-
-          <!--
-            The argument of a family, asked for as its own field rather than
-            typed into the name.
-
-            A plugin's variable may name something in another program —
-            `obs.mute(Микрофон)` — and the list above holds one row for the
-            family, not one per microphone. Turning the whole thing into a
-            text box would have cost every ordinary variable its list to give
-            these one; a second field costs nothing to anybody who never
-            picks a family, because it is not there.
-          -->
-          <label v-for="(argument, level) in boundArguments" :key="level" class="field">
-            <span>{{ say(argument.label) }}</span>
-
-            <select
-              v-if="argumentChoices(level).length > 0"
-              :value="boundArgumentValues[level] ?? ''"
-              @change="setArgument(level, ($event.target as HTMLSelectElement).value)"
-            >
-              <option value="" disabled>{{ t('editor.choose') }}</option>
-              <option v-for="choice in argumentChoices(level)" :key="choice.value" :value="choice.value">
-                {{ choice.label ? say(choice.label) : choice.value }}
-              </option>
-            </select>
-
-            <!-- Typed by hand when the plugin cannot say: OBS closed, or a
-                 name it has never heard of because it is about to exist. -->
-            <input
-              v-else
-              type="text"
-              :value="boundArgumentValues[level] ?? ''"
-              :placeholder="say(argument.description)"
-              @input="setArgument(level, ($event.target as HTMLInputElement).value)"
+              :load-options="loadOptions"
+              @update:model-value="setBinding($event)"
             />
           </label>
 
@@ -1293,6 +1186,7 @@ const previewIcon = computed(() => {
     :bindings="state.visual.icon.params"
     :declarations="declarations"
     :values="variables"
+    :load-options="loadOptions"
     @update="setIconParams"
     @close="iconParamsOpen = false"
   />
