@@ -184,7 +184,14 @@ export default {
     /* The three buttons beside the preview. Short on purpose: they stand in a
        column the width of a narrow panel, and each already carries a mark
        saying which of the three it is. */
-    look: { background: 'Fill', picture: 'Picture', text: 'Text' },
+    look: { background: 'Fill', picture: 'Picture', text: 'Text', widget: 'Widget' },
+    widget: {
+      choose: 'Choose a widget',
+      title: 'A widget from a plugin',
+      settings: 'Widget settings',
+      clear: 'Remove the widget',
+      none: 'None of the installed plugins offers a widget.',
+    },
     fontSize: 'Text size',
     position: 'Text position',
     positions: { top: 'Top', center: 'Centre', bottom: 'Bottom' },

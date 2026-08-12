@@ -2,7 +2,14 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { PLUGIN_API_VERSION, PROFILE_FORMAT_VERSION } from '@easydeck/engine';
-import type { KeyView, PluginManifest, ProfileDefinition, VariableValue } from '@easydeck/engine';
+import type {
+  KeyView,
+  PluginManifest,
+  ProfileDefinition,
+  SurfaceFrame,
+  SurfaceRequest,
+  VariableValue,
+} from '@easydeck/engine';
 
 import type { DeckState } from '../domain/api-messages.js';
 import type { Library, LibraryImage } from '../infrastructure/icon-library.js';
@@ -125,6 +132,13 @@ class FakeDeck implements DeckFacade {
       broken: [],
       messages: { ru: { sim: { start: 'Старт' } } },
     };
+  }
+
+  async drawSurface(request: SurfaceRequest): Promise<SurfaceFrame | undefined> {
+    this.calls.push('drawSurface');
+    // Answers for the one it knows and nothing for the rest, which is what a
+    // runtime does with a type no plugin claimed.
+    return request.type === 'demo.graph' ? { source: '<svg/>' } : undefined;
   }
 
   async plugins(): Promise<readonly PluginManifest[]> {

@@ -13,6 +13,8 @@ import type {
   ParamOption,
   PluginManifest,
   PluginStatus,
+  SurfaceFrame,
+  SurfaceRequest,
   ProfileDefinition,
   VariableValue,
 } from '@easydeck/engine';
@@ -348,6 +350,17 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     const runtime = this.options.plugins;
     if (!runtime) return [];
     return runtime.optionsFor(pluginId, source, params);
+  }
+
+  /**
+   * One frame of a widget, drawn on demand rather than for the panel.
+   *
+   * The editor's preview goes through here: the same plugin, the same call,
+   * so what somebody sees while choosing colours is the picture the key will
+   * actually show and not an impression of it.
+   */
+  async drawSurface(request: SurfaceRequest): Promise<SurfaceFrame | undefined> {
+    return this.options.plugins?.drawSurface(request);
   }
 
   /** Where every plugin with a life of its own has got to. */

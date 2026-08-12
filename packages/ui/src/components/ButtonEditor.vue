@@ -10,6 +10,7 @@ import type {
   LocalizedText,
   PluginManifest,
   StateRange,
+  SurfaceSpec,
   VariableArgument,
   VariableDeclaration,
   VariableType,
@@ -27,8 +28,10 @@ import {
 import { parseVariableKey, variableKey } from '@easydeck/engine/variables';
 import { renderTemplate } from '@easydeck/engine/template';
 
+import ActionParams from './ActionParams.vue';
 import IconParams from './IconParams.vue';
 import IconPicker from './IconPicker.vue';
+import WidgetPicker from './WidgetPicker.vue';
 import type { UsedIcon } from './IconLibrary.vue';
 import { TEXT_POSITIONS, textPositionIcon } from '../icons/text-position.js';
 import KeyLabel from './KeyLabel.vue';
@@ -62,6 +65,17 @@ const props = defineProps<{
     source: string,
     params: Readonly<Record<string, unknown>>,
   ) => Promise<readonly { value: string; label?: LocalizedText }[]>;
+  /**
+   * Asks the daemon to draw one frame of a widget, for the preview.
+   *
+   * The picture is the plugin's and changes by the second, so the only honest
+   * preview is the real one — and the only thing that can produce it is the
+   * side the plugin runs on.
+   */
+  drawSurface?: (
+    type: string,
+    params: Readonly<Record<string, unknown>>,
+  ) => Promise<string | undefined>;
   /** Passed through to a password field; the value never comes back. */
   filledSecrets?: readonly string[];
   saveSecret?: (value: string, reference?: string) => Promise<string>;
@@ -416,6 +430,69 @@ function setPicture(icon: IconSpec | undefined): void {
   patchVisual(icon ? { icon } : { icon: undefined });
 }
 
+// --- widgets --------------------------------------------------------------
+
+/**
+ * A picture a plugin draws, in the same slot as the still one.
+ *
+ * The two are alternatives — a key shows one or the other — so choosing a
+ * widget clears the picture and choosing a picture clears the widget. Offering
+ * both at once would raise a question with no good answer and put a rule
+ * between them that nobody asked for.
+ */
+const widgetParamsOpen = ref(false);
+const widgetFrame = ref<string | undefined>();
+
+/** The definition behind what this key chose, if its plugin is still here. */
+const widgetDefinition = computed(() => {
+  const type = state.value.visual.surface?.type;
+  if (!type) return undefined;
+
+  for (const plugin of props.plugins) {
+    const found = (plugin.surfaces ?? []).find((surface) => surface.type === type);
+    if (found) return found;
+  }
+  return undefined;
+});
+
+function setWidget(surface: SurfaceSpec | undefined): void {
+  patchVisual(surface ? { surface, icon: undefined } : { surface: undefined });
+  widgetFrame.value = undefined;
+  if (surface) void refreshWidget();
+}
+
+function setWidgetParams(params: Record<string, unknown>): void {
+  const surface = state.value.visual.surface;
+  if (!surface) return;
+
+  patchVisual({ surface: { ...surface, params } });
+  void refreshWidget();
+}
+
+/**
+ * Asks the daemon for one frame, so the preview shows the real thing.
+ *
+ * A picture that is different every second cannot be chosen blind: somebody
+ * setting the colour of a graph has to see the graph. The same call the panel
+ * makes, answered for this window.
+ */
+async function refreshWidget(): Promise<void> {
+  const surface = state.value.visual.surface;
+  if (!surface || !props.drawSurface) {
+    widgetFrame.value = undefined;
+    return;
+  }
+
+  try {
+    const frame = await props.drawSurface(surface.type, surface.params ?? {});
+    widgetFrame.value = frame;
+  } catch {
+    // A plugin that will not draw is a preview that stays empty; the key
+    // itself says the same thing, and louder.
+    widgetFrame.value = undefined;
+  }
+}
+
 // --- binding --------------------------------------------------------------
 
 /**
@@ -676,6 +753,18 @@ function onLabelInput(text: string): void {
 watch(() => state.value.visual.label?.text, () => void nextTick(fitLabel));
 onMounted(fitLabel);
 
+/*
+ * A graph is a different picture every second, so the preview is asked for
+ * again on a beat of its own rather than only when something is changed.
+ * Slower than the panel's: this is a thumbnail in a window somebody is reading,
+ * not the key itself.
+ */
+onMounted(() => {
+  void refreshWidget();
+  const beat = setInterval(() => void refreshWidget(), 2000);
+  onBeforeUnmount(() => clearInterval(beat));
+});
+
 function insertVariable(name: string): void {
   const token = `{{${name}}}`;
   const element = labelField.value;
@@ -823,7 +912,16 @@ const previewIcon = computed(() => {
               class="preview"
               :style="{ background: preview.background }"
             >
-              <img v-if="previewIcon" class="preview-icon" :src="previewIcon" alt="" />
+              <!-- The widget's own frame, asked of the plugin that draws it,
+                   so what is being set up is what will be shown. -->
+              <img
+                v-if="widgetFrame"
+                class="preview-icon"
+                :src="`data:image/svg+xml;utf8,${encodeURIComponent(widgetFrame)}`"
+                alt=""
+              />
+              <span v-else-if="state.visual.surface" class="preview-missing">⚠</span>
+              <img v-else-if="previewIcon" class="preview-icon" :src="previewIcon" alt="" />
               <!-- The same component the grid uses, so the preview cannot
                    drift from what the key will actually look like. -->
               <KeyLabel
@@ -848,7 +946,14 @@ const previewIcon = computed(() => {
                 @update:model-value="patchVisual({ background: $event })"
               />
 
+              <!--
+                Picture and widget are one slot with two ways into it, so both
+                are offered while it is empty and only the chosen one remains
+                afterwards. Two permanent buttons would suggest a key can carry
+                both, which it cannot.
+              -->
               <IconPicker
+                v-if="!state.visual.surface"
                 :label="t('editor.look.picture')"
                 :icon="state.visual.icon"
                 :background="state.visual.background"
@@ -873,6 +978,27 @@ const previewIcon = computed(() => {
                   </button>
                 </template>
               </IconPicker>
+
+              <WidgetPicker
+                v-if="!state.visual.icon"
+                :label="t('editor.look.widget')"
+                :surface="state.visual.surface"
+                :plugins="plugins"
+                @update="setWidget($event)"
+              >
+                <template #tools>
+                  <button
+                    v-if="widgetDefinition?.params?.length"
+                    type="button"
+                    class="icon-gear"
+                    :title="t('editor.widget.settings')"
+                    :aria-label="t('editor.widget.settings')"
+                    @click="widgetParamsOpen = true"
+                  >
+                    ⚙
+                  </button>
+                </template>
+              </WidgetPicker>
 
               <ColorPicker
                 :label="t('editor.look.text')"
@@ -1151,6 +1277,38 @@ const previewIcon = computed(() => {
     @close="iconParamsOpen = false"
   />
 
+  <!--
+    A widget's form, drawn by the same component an action's is.
+    `SurfaceDefinition` carries the same fields `ActionDefinition` does, so
+    there is one form-drawing component and not two that drift apart.
+  -->
+  <div
+    v-if="widgetParamsOpen && widgetDefinition && state.visual.surface"
+    class="backdrop"
+    @click.self="widgetParamsOpen = false"
+  >
+    <div class="sheet" role="dialog" aria-modal="true">
+      <h2>{{ t('editor.widget.settings') }}</h2>
+
+      <ActionParams
+        :definition="widgetDefinition"
+        :params="state.visual.surface.params ?? {}"
+        :values="variables"
+        :declarations="declarations"
+        :folders="folders"
+        :pages="pages"
+        :buttons="buttons"
+        :own-states="button.states.map((each) => each.id)"
+        :load-options="loadOptions"
+        @update="setWidgetParams"
+      />
+
+      <footer class="sheet-foot">
+        <button type="button" @click="widgetParamsOpen = false">{{ t('plugins.close') }}</button>
+      </footer>
+    </div>
+  </div>
+
   </div>
 </template>
 
@@ -1163,6 +1321,24 @@ const previewIcon = computed(() => {
   place-items: center;
   z-index: 25;
 }
+
+/* A widget's form, which is a panel over the editor rather than a page of it:
+   it is opened from one control and answers to that control alone. */
+.sheet {
+  width: min(460px, 92vw);
+  max-height: 80vh;
+  overflow: auto;
+  padding: 16px 18px 14px;
+  background: var(--surface-0);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px var(--shadow);
+  z-index: 26;
+}
+
+.sheet h2 { margin: 0 0 12px; font-size: 15px; }
+
+.sheet-foot { display: flex; justify-content: flex-end; margin-top: 14px; }
 
 /*
  * The whole window, not a panel floating in it.
@@ -1336,6 +1512,17 @@ h3 {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* A widget that drew nothing: its plugin is gone, or has nothing to show.
+   Which of the two it is, the widget button beside this says. */
+.preview-missing {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 34px;
+  color: var(--warning, #e0a355);
 }
 
 .preview span {

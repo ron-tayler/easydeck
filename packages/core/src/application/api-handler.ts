@@ -116,6 +116,26 @@ export class ApiHandler {
       case 'getInstalledPlugins':
         return this.deck.installedPlugins();
 
+      /*
+       * One frame of a widget, for the editor to show while it is being set up.
+       *
+       * A picture that is different every second cannot be chosen blind:
+       * somebody picking the colour of a graph has to see the graph. The same
+       * call the panel makes, answered for a window instead.
+       */
+      case 'drawSurface': {
+        const request = params as { type?: string; params?: Record<string, unknown> };
+        if (!request.type) throw new TypeError('drawSurface needs a type');
+        return {
+          frame: await this.deck.drawSurface({
+            type: request.type,
+            params: request.params ?? {},
+            cols: 1,
+            rows: 1,
+          }),
+        };
+      }
+
       case 'listIcons': {
         const library = await this.deck.listIcons();
         return { icons: library.images, omitted: library.omitted };

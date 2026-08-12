@@ -4,6 +4,8 @@ import type {
   ParamOption,
   PluginManifest,
   PluginStatus,
+  SurfaceFrame,
+  SurfaceRequest,
   ProfileDefinition,
   VariableValue,
 } from '@easydeck/engine';
@@ -69,6 +71,15 @@ export interface DeckFacade {
    * expects to see listed, and expects to be able to remove.
    */
   installedPlugins(): Promise<InstalledPluginSummary>;
+
+  /**
+   * One frame of a widget, for a window rather than for the panel.
+   *
+   * A picture that is different every second cannot be chosen blind — somebody
+   * setting the colour of a graph has to see the graph — and this is the same
+   * call the panel makes, answered for the editor.
+   */
+  drawSurface(request: SurfaceRequest): Promise<SurfaceFrame | undefined>;
 
   /**
    * What a plugin's settings window needs to draw itself.

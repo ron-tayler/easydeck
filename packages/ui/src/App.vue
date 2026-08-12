@@ -1430,6 +1430,7 @@ onBeforeUnmount(() => {
       :profile-icons="profileIcons"
       :plugin-statuses="deck.pluginStatuses.value"
       :load-options="loadActionOptions"
+      :draw-surface="deck.drawSurface"
       :filled-secrets="filledSecrets"
       :save-secret="saveButtonSecret"
       :clear-secret="clearButtonSecret"

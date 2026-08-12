@@ -387,6 +387,20 @@ export function useDeck() {
       return result.reference;
     },
     clearButtonSecret: (reference: string) => client.call('clearButtonSecret', { reference }),
+
+    /**
+     * One frame of a widget, for the editor's preview.
+     *
+     * Only the daemon can produce it: the plugin runs there, and a picture
+     * that is different every second cannot be chosen from a description.
+     */
+    drawSurface: async (type: string, params: Readonly<Record<string, unknown>>) => {
+      const result = await client.call<{ frame?: { source: string } }>('drawSurface', {
+        type,
+        params,
+      });
+      return result.frame?.source;
+    },
     /* Fetched on demand rather than kept in state: the folder is the user's,
        it changes behind our back, and it only matters while a picker is open. */
     listIcons: async (): Promise<{ images: readonly LibraryImage[]; omitted: number }> => {
