@@ -6,6 +6,7 @@ import type {
   Plugin,
   PluginHost,
   PluginManifest,
+  Ticker,
 } from '@easydeck/engine';
 
 import type { PluginRuntime } from '../../application/plugin-runtime.js';
@@ -223,7 +224,7 @@ const directionOf = (params: Readonly<Record<string, unknown>>): AudioDirection 
  * right now, and publish which device is in use so a key can say so.
  */
 export class AudioPlugin implements Plugin {
-  private timer?: NodeJS.Timeout;
+  private beat?: Ticker;
 
   start(host: PluginHost): void {
     host.provideOptions('devices', (params) => this.devices(params));
@@ -256,13 +257,14 @@ export class AudioPlugin implements Plugin {
     });
 
     void this.readDefaults(host);
-    this.timer = setInterval(() => void this.readDefaults(host), POLL_MS);
-    this.timer.unref?.();
+    // The host keeps the beat, so stopping this plugin really stops it —
+    // and two plugins on the same period wake the machine once.
+    this.beat = host.update(POLL_MS, () => this.readDefaults(host));
   }
 
   stop(): void {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = undefined;
+    this.beat?.stop();
+    this.beat = undefined;
   }
 
   private async devices(params: Readonly<Record<string, unknown>>): Promise<ParamOption[]> {

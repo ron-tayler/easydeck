@@ -109,10 +109,52 @@ export interface PluginHost {
    */
   route(path: string, handle: RouteHandler): () => void;
 
+  /**
+   * Asks to be called back on a schedule the host keeps.
+   *
+   * Every plugin that reports on something needs a heartbeat, and each one
+   * reaching for `setInterval` puts that heartbeat somewhere the host cannot
+   * see: stopping such a plugin only asks it nicely to stop, and one that
+   * forgets a timer goes on running for as long as the daemon does. Handing
+   * the schedule over makes stopping mean stopping.
+   *
+   * It is also the same shape as everything else here — a request, not an
+   * object — so it still works the day plugins run in a process of their own,
+   * where a timer inside one is nothing the host could supervise.
+   *
+   * Register as many as the plugin has rhythms: a fast one for a reading, a
+   * slow one for a list. Each answers only to its own handle.
+   *
+   * Ticks land on the period's own boundary rather than a period after
+   * registration, so two plugins asking for two seconds wake the machine once
+   * and a clock ticks *on* the second. A turn that is still running when the
+   * next is due is not stacked on — that turn is dropped, and the beat carries
+   * on. A turn that throws is logged and changes nothing: whether a failed
+   * reading means the plugin is broken is for the plugin to say with
+   * `setStatus`, not for the host to infer from one bad tick.
+   */
+  update(everyMs: number, run: () => Promise<void> | void): Ticker;
+
   /** Opens a URL in the user's browser: the way into any OAuth flow. */
   openExternal(url: string): void;
 
   log(level: 'info' | 'warn' | 'error', message: string): void;
+}
+
+/**
+ * A running heartbeat, and the two things worth doing to one.
+ *
+ * `every` covers changing one's mind, which turns out to be the common case:
+ * a clock wants a second while a countdown runs and a minute the rest of the
+ * time, and a plugin nothing is reading wants nothing at all — which is what
+ * an interval of zero says. Cheaper to say than to stop and register again,
+ * and it keeps the handle a plugin already holds valid.
+ */
+export interface Ticker {
+  /** Sets how often. Zero, or anything below it, pauses without unregistering. */
+  every(ms: number): void;
+  /** Gives the schedule back for good. */
+  stop(): void;
 }
 
 /**

@@ -9,6 +9,7 @@ import type {
   PluginHost,
   PluginManifest,
   PresetButton,
+  Ticker,
   VariableDeclaration,
 } from '@easydeck/engine';
 
@@ -239,8 +240,8 @@ function gauge(
 }
 
 export class HardwarePlugin implements Plugin {
-  private fast?: NodeJS.Timeout;
-  private slow?: NodeJS.Timeout;
+  private fast?: Ticker;
+  private slow?: Ticker;
   /** The processor counters as they were last time, to subtract from. */
   private previous = sampleCpu();
 
@@ -252,20 +253,18 @@ export class HardwarePlugin implements Plugin {
   start(host: PluginHost): void {
     host.setVariable('hw.memory-total', round(totalmem() / GIB, 1));
 
-    this.fast = setInterval(() => this.readFast(host), this.options.fastIntervalMs ?? FAST_INTERVAL_MS);
-    this.slow = setInterval(() => void this.readDisks(host), this.options.diskIntervalMs ?? DISK_INTERVAL_MS);
-
-    // Neither timer is a reason for the process to stay alive.
-    this.fast.unref?.();
-    this.slow.unref?.();
+    // Two rhythms, registered separately: the host keeps both, and stopping
+    // this plugin is what stops them rather than a promise that it will.
+    this.fast = host.update(this.options.fastIntervalMs ?? FAST_INTERVAL_MS, () => this.readFast(host));
+    this.slow = host.update(this.options.diskIntervalMs ?? DISK_INTERVAL_MS, () => this.readDisks(host));
 
     void this.readDisks(host);
     host.setStatus('ready');
   }
 
   stop(): void {
-    if (this.fast) clearInterval(this.fast);
-    if (this.slow) clearInterval(this.slow);
+    this.fast?.stop();
+    this.slow?.stop();
     this.fast = undefined;
     this.slow = undefined;
   }

@@ -37,6 +37,7 @@ methods hand it anything of ours:
 | `setVariable(name, value)` | publish a value for keys to show and bind to |
 | `setStatus(status, message?)` | `off` / `connecting` / `ready` / `error` |
 | `provideOptions(name, load)` | the choices behind a parameter's `optionsFrom` |
+| `update(everyMs, fn)` | ask to be called back on a schedule the host keeps |
 | `route(path, handler)` | claim `/plugin/<id>/<path>` on the loopback server |
 | `openExternal(url)` | open a browser — the way into any OAuth flow |
 | `log(level, message)` | say something to whoever is watching |
@@ -59,6 +60,39 @@ Two habits belong to the plugin rather than the host:
   every second is a picture pushed over USB every second.
 - **Clear on disconnect.** A key showing the last viewer count of a service
   that dropped an hour ago is the deck stating something untrue.
+
+### Being called back
+
+Almost every plugin that reports on something needs a heartbeat, and none of
+them should keep their own. `update` hands the schedule to the host:
+
+```ts
+const fast = host.update(2000, () => this.readProcessor(host));
+const slow = host.update(60_000, () => this.readDisks(host));
+```
+
+Register as many as the plugin has rhythms. Each returns a `Ticker` with
+`every(ms)` and `stop()`, and every one of them is released when the plugin is
+stopped — which is the reason it exists. A plugin holding its own
+`setInterval` can only be *asked* to stop, and one that forgets a timer goes on
+running for as long as the daemon does. It is also the same shape as every
+other call here, so it still works the day plugins run in a process of their
+own, where a timer inside one is nothing the host could supervise.
+
+Three things it does that are worth knowing:
+
+- **Ticks land on the period's own boundary**, not a period after registering.
+  Two plugins asking for two seconds wake the machine once, and a clock asking
+  for a second ticks *on* the second.
+- **A slow turn is not stacked on.** If a turn is still running when the next
+  falls due, that turn is dropped and the beat carries on.
+- **A throw is logged, not blamed.** A poll that fails while the network is out
+  says nothing about whether the plugin works. Whether a failure matters is for
+  the plugin to declare with `setStatus`.
+
+`every(0)` pauses without unregistering, which is how a plugin goes quiet while
+nothing is reading it — see the clock, whose beat is a second, a minute or
+nothing at all depending on what `onWatched` last reported.
 
 ## Presets
 

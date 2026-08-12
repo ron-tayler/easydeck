@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import { VariableStore } from '@easydeck/engine';
-import type { PluginHost, PluginManifest } from '@easydeck/engine';
+import type { PluginHost, PluginManifest, Ticker } from '@easydeck/engine';
 
 import { PluginSettingsStore } from '../infrastructure/plugins/plugin-settings-store.js';
 import { PluginRuntime } from './plugin-runtime.js';
@@ -171,6 +171,120 @@ describe('PluginRuntime', () => {
     });
 
     assert.equal(bed.runtime.status('demo')?.status, 'error');
+    await bed.dispose();
+  });
+});
+
+/*
+ * The heartbeat the host keeps for a plugin.
+ *
+ * Real timers and short periods rather than a fake clock: the point of moving
+ * these off the plugins is that the host owns actual timers and can be made to
+ * let go of them, and a fake clock would test everything except that.
+ */
+describe('a heartbeat the host keeps', () => {
+  const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  it('calls back until it is stopped, and then does not', async () => {
+    const bed = await bench();
+    let beats = 0;
+    let ticker: Ticker | undefined;
+
+    await bed.runtime.install(manifest, {
+      start(host: PluginHost) {
+        ticker = host.update(20, () => {
+          beats += 1;
+        });
+      },
+    });
+
+    await settle(120);
+    assert.ok(beats >= 3, `expected several beats, got ${beats}`);
+
+    ticker?.stop();
+    const atStop = beats;
+    await settle(80);
+    assert.equal(beats, atStop, 'a stopped heartbeat is stopped');
+
+    await bed.dispose();
+  });
+
+  it('pauses on an interval of nothing, and picks up again', async () => {
+    const bed = await bench();
+    let beats = 0;
+    let ticker: Ticker | undefined;
+
+    await bed.runtime.install(manifest, {
+      start(host: PluginHost) {
+        ticker = host.update(20, () => {
+          beats += 1;
+        });
+      },
+    });
+
+    await settle(80);
+    ticker?.every(0);
+    const paused = beats;
+
+    await settle(80);
+    assert.equal(beats, paused, 'nothing above zero means nothing');
+
+    // The same handle, still good: this is how the clock goes quiet when
+    // nothing is reading it and comes back when something is.
+    ticker?.every(20);
+    await settle(80);
+    assert.ok(beats > paused, 'and it beats again when asked');
+
+    await bed.dispose();
+  });
+
+  it('lets go when the plugin is stopped, whatever the plugin does', async () => {
+    const bed = await bench();
+    let beats = 0;
+
+    // Deliberately keeps no handle and clears nothing in `stop`: the whole
+    // point is that a plugin can no longer leave a timer running behind it.
+    await bed.runtime.install(manifest, {
+      start(host: PluginHost) {
+        host.update(20, () => {
+          beats += 1;
+        });
+      },
+    });
+
+    await settle(80);
+    assert.ok(beats > 0);
+
+    await bed.runtime.stopAll();
+    const atStop = beats;
+    await settle(80);
+    assert.equal(beats, atStop, 'stopping the plugin stopped its heartbeat');
+
+    await bed.dispose();
+  });
+
+  it('does not blame the plugin for one bad beat', async () => {
+    const bed = await bench();
+    let beats = 0;
+
+    await bed.runtime.install(manifest, {
+      start(host: PluginHost) {
+        host.setStatus('ready');
+        host.update(20, () => {
+          beats += 1;
+          throw new Error('the network is out');
+        });
+      },
+    });
+
+    await settle(80);
+
+    // A poll failing while a router reboots says nothing about whether the
+    // plugin works, and a status event every twenty milliseconds would say it
+    // very loudly. Whether a failure matters is the plugin's to declare.
+    assert.ok(beats >= 2, 'it keeps beating');
+    assert.equal(bed.runtime.status('demo')?.status, 'ready');
+
     await bed.dispose();
   });
 });

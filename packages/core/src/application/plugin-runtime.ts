@@ -9,6 +9,7 @@ import type {
   PluginManifest,
   PluginStatus,
   RouteHandler,
+  Ticker,
   VariableStore,
   VariableValue,
 } from '@easydeck/engine';
@@ -64,6 +65,8 @@ interface Entry {
   readonly listeners: Array<(settings: Readonly<Record<string, VariableValue>>) => void>;
   readonly options: Map<string, OptionLoader>;
   readonly routes: Array<() => void>;
+  /** Heartbeats the host is keeping for it, so stopping can really stop them. */
+  readonly tickers: Array<() => void>;
   readonly variables: Set<string>;
   /** Families this plugin declared, which take an argument. */
   readonly families: Set<string>;
@@ -110,6 +113,7 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
       listeners: [],
       options: new Map(),
       routes: [],
+      tickers: [],
       variables: new Set(
         (manifest.variables ?? [])
           .filter((variable) => variable.argument === undefined)
@@ -249,6 +253,10 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
   async stopAll(): Promise<void> {
     for (const entry of [...this.entries.values()].reverse()) {
       for (const release of entry.routes.splice(0)) release();
+      // Before `stop` rather than after: a heartbeat that fired while the
+      // plugin was shutting down would arrive at a plugin that had already
+      // let go of whatever the tick was about.
+      for (const release of entry.tickers.splice(0)) release();
       entry.listeners.length = 0;
 
       // Its variables go with it. Leaving the last scene name on a key after
@@ -368,6 +376,8 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
         return release;
       },
 
+      update: (everyMs, run) => this.beat(entry, everyMs, run),
+
       openExternal: (url) => {
         if (!this.options.openExternal) {
           throw new Error(`Plugin '${id}' asked to open '${url}', but nothing can open it here`);
@@ -377,6 +387,77 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
 
       log: (level, message) => this.options.log?.(id, level, message),
     };
+  }
+
+  /**
+   * A heartbeat the host keeps on a plugin's behalf.
+   *
+   * Three decisions live in here, and all three are the reason this is worth
+   * taking off the plugins.
+   *
+   * *Aligned, not offset.* The next tick is the next boundary of the period,
+   * not a period from now. Two plugins asking for two seconds then land on the
+   * same instant and wake the machine once, and a clock asking for a second
+   * ticks on the second rather than a little after whenever it started.
+   *
+   * *Dropped, not stacked.* A turn still running when the next falls due loses
+   * that turn. A plugin polling something that has become slow would otherwise
+   * accumulate turns it can never catch up on, and the queue is the failure.
+   *
+   * *Logged, not blamed.* A throw does not put the plugin in `error`. A poll
+   * that fails while the network is out says nothing about whether the plugin
+   * works, and the plugin knows which of its failures matter — that is what
+   * `setStatus` is for. The alternative was a status event every two seconds
+   * for as long as a router was rebooting.
+   */
+  private beat(entry: Entry, everyMs: number, run: () => Promise<void> | void): Ticker {
+    let period = 0;
+    let timer: NodeJS.Timeout | undefined;
+    let inside = false;
+    let done = false;
+
+    const arm = (): void => {
+      if (timer) clearTimeout(timer);
+      timer = undefined;
+      if (done || period <= 0) return;
+
+      timer = setTimeout(fire, period - (Date.now() % period));
+      // A plugin's heartbeat is never a reason for the daemon to stay up.
+      timer.unref?.();
+    };
+
+    const fire = (): void => {
+      timer = undefined;
+      // Re-armed before the work, so a slow turn delays nothing but itself.
+      arm();
+      if (inside) return;
+
+      inside = true;
+      void (async () => {
+        try {
+          await run();
+        } catch (cause) {
+          this.options.log?.(entry.manifest.id, 'error', describe(cause));
+        } finally {
+          inside = false;
+        }
+      })();
+    };
+
+    const ticker: Ticker = {
+      every: (ms) => {
+        period = Number.isFinite(ms) ? Math.max(0, Math.floor(ms)) : 0;
+        arm();
+      },
+      stop: () => {
+        done = true;
+        arm();
+      },
+    };
+
+    ticker.every(everyMs);
+    entry.tickers.push(() => ticker.stop());
+    return ticker;
   }
 
   /** Runs a plugin's own code, turning a throw into a status it can explain. */
