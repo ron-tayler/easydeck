@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
-import { VariableStore, createActionRegistry } from '@easydeck/engine';
+import { VariableStore, createActionRegistry, parseVariableKey } from '@easydeck/engine';
 
 import { PluginRuntime } from '../../../application/plugin-runtime.js';
 import { PluginSettingsStore } from '../plugin-settings-store.js';
@@ -37,7 +37,6 @@ async function bench(startingAt = Date.parse('2026-08-12T09:41:07Z')) {
   });
 
   return {
-    registry,
     played,
     /** Fills in the plugin's settings the way the settings window would. */
     configure: (values: Record<string, string | number | boolean>) =>
@@ -51,6 +50,7 @@ async function bench(startingAt = Date.parse('2026-08-12T09:41:07Z')) {
     watch: (...keys: string[]) => runtime.setWatched(keys),
     /** The list a configurator would put behind a field. */
     options: (name: string) => runtime.optionsFor(CLOCK_PLUGIN_ID, name),
+    registry,
     run: (type: string, params: Record<string, unknown> = {}) =>
       registry.run({ type, params }, context()),
     value: (name: string) => variables.snapshot()[name],
@@ -97,95 +97,285 @@ describe('a clock nobody is looking at', () => {
   });
 });
 
-describe('the stopwatch', () => {
+describe('a stopwatch', () => {
+  const KEYS = ['clock.stopwatch(Секундомер)', 'clock.stopwatch-seconds(Секундомер)', 'clock.stopwatch-running(Секундомер)'];
+  const press = (what: string) => ({ name: 'Секундомер', do: what });
+
   it('starts, counts and pauses where it stands', async () => {
     const clock = await bench();
-    clock.watch('clock.stopwatch', 'clock.stopwatch-seconds', 'clock.stopwatch-running');
+    clock.watch(...KEYS);
 
-    await clock.run('clock.stopwatch', { do: 'start' });
-    assert.equal(clock.value('clock.stopwatch'), '0:00');
-    assert.equal(clock.value('clock.stopwatch-running'), true);
+    await clock.run('clock.stopwatch', press('start'));
+    assert.equal(clock.value('clock.stopwatch(Секундомер)'), '0:00');
+    assert.equal(clock.value('clock.stopwatch-running(Секундомер)'), true);
 
     clock.travel(75);
-    await clock.run('clock.stopwatch', { do: 'stop' });
+    await clock.run('clock.stopwatch', press('stop'));
 
-    assert.equal(clock.value('clock.stopwatch'), '1:15');
-    assert.equal(clock.value('clock.stopwatch-seconds'), 75);
-    assert.equal(clock.value('clock.stopwatch-running'), false);
+    assert.equal(clock.value('clock.stopwatch(Секундомер)'), '1:15');
+    assert.equal(clock.value('clock.stopwatch-seconds(Секундомер)'), 75);
+    assert.equal(clock.value('clock.stopwatch-running(Секундомер)'), false);
 
     // Paused means paused: the clock moving on does not move it.
     clock.travel(600);
     clock.tick();
-    assert.equal(clock.value('clock.stopwatch'), '1:15');
+    assert.equal(clock.value('clock.stopwatch(Секундомер)'), '1:15');
+
+    await clock.dispose();
   });
 
   it('carries on from where it was paused', async () => {
     const clock = await bench();
-    clock.watch('clock.stopwatch');
+    clock.watch(...KEYS);
 
-    await clock.run('clock.stopwatch', { do: 'start' });
+    await clock.run('clock.stopwatch', press('start'));
     clock.travel(10);
-    await clock.run('clock.stopwatch', { do: 'toggle' });
+    await clock.run('clock.stopwatch', press('toggle'));
     clock.travel(300);
-    await clock.run('clock.stopwatch', { do: 'toggle' });
+    await clock.run('clock.stopwatch', press('toggle'));
     clock.travel(5);
-    await clock.run('clock.stopwatch', { do: 'stop' });
+    await clock.run('clock.stopwatch', press('stop'));
 
-    assert.equal(clock.value('clock.stopwatch'), '0:15');
+    assert.equal(clock.value('clock.stopwatch(Секундомер)'), '0:15');
+    await clock.dispose();
+  });
+
+  it('goes back to nothing when it is cleared', async () => {
+    // The action a hold gets, beside the press that starts it. It asks for a
+    // name and nothing else, because clearing has no length to it.
+    const clock = await bench();
+    clock.watch(...KEYS);
+
+    await clock.run('clock.stopwatch', press('start'));
+    clock.travel(42);
+    await clock.run('clock.stopwatch-reset', { name: 'Секундомер' });
+
+    assert.equal(clock.value('clock.stopwatch(Секундомер)'), '0:00');
+    assert.equal(clock.value('clock.stopwatch-running(Секундомер)'), false);
+
+    await clock.dispose();
   });
 });
 
-describe('the countdown', () => {
+describe('a timer', () => {
+  const KEYS = ['clock.timer(Таймер)', 'clock.timer-seconds(Таймер)', 'clock.timer-running(Таймер)'];
+  const press = (what: string, minutes = 5, seconds = 0) => ({
+    name: 'Таймер',
+    do: what,
+    minutes,
+    seconds,
+  });
+
   it('takes its length from the key that started it', async () => {
     const clock = await bench();
-    clock.watch('clock.countdown');
+    clock.watch(...KEYS);
 
-    await clock.run('clock.countdown', { do: 'restart', minutes: 2, seconds: 30 });
-    assert.equal(clock.value('clock.countdown'), '2:30');
+    await clock.run('clock.timer', press('restart', 2, 30));
+    assert.equal(clock.value('clock.timer(Таймер)'), '2:30');
 
     clock.travel(90);
     clock.tick();
-    assert.equal(clock.value('clock.countdown'), '1:00');
+    assert.equal(clock.value('clock.timer(Таймер)'), '1:00');
+
+    await clock.dispose();
   });
 
   /*
-   * The one the roadmap wanted answered: a countdown arriving has to be
-   * something a handler can act on. It is, twice over — the number stops at
-   * exactly zero and stays there, and the running flag turns over. Both are
-   * edges, so a handler fires once rather than every second afterwards.
+   * The one the roadmap wanted answered: a timer arriving has to be something
+   * a handler can act on. It is, twice over — the number stops at exactly zero
+   * and stays there, and the running flag turns over. Both are edges, so a
+   * handler fires once rather than every second afterwards.
    */
   it('lands on zero, stops itself, and stays there', async () => {
     const clock = await bench();
-    clock.watch('clock.countdown-seconds', 'clock.countdown-running');
+    clock.watch(...KEYS);
 
-    await clock.run('clock.countdown', { do: 'restart', minutes: 0, seconds: 30 });
-    assert.equal(clock.value('clock.countdown-running'), true);
+    await clock.run('clock.timer', press('restart', 0, 30));
+    assert.equal(clock.value('clock.timer-running(Таймер)'), true);
 
     clock.travel(30);
     clock.tick();
 
-    assert.equal(clock.value('clock.countdown-seconds'), 0);
-    assert.equal(clock.value('clock.countdown-running'), false);
+    assert.equal(clock.value('clock.timer-seconds(Таймер)'), 0);
+    assert.equal(clock.value('clock.timer-running(Таймер)'), false);
 
     clock.travel(3600);
     clock.tick();
-    assert.equal(clock.value('clock.countdown-seconds'), 0);
+    assert.equal(clock.value('clock.timer-seconds(Таймер)'), 0);
+
+    await clock.dispose();
   });
 
-  it('does not silently lengthen one that was only paused', async () => {
+  it('starts, pauses and resumes from one key pressed three times', async () => {
+    /*
+     * What the whole shape is for. One binding, no conditions: the first press
+     * starts it at the length the key names, the second pauses it where it
+     * stands, the third carries on from there — and the length on the key is
+     * pointedly *not* taken again, or resuming would silently lengthen it.
+     */
     const clock = await bench();
-    clock.watch('clock.countdown');
+    clock.watch(...KEYS);
 
-    await clock.run('clock.countdown', { do: 'restart', minutes: 1, seconds: 0 });
+    await clock.run('clock.timer', press('toggle', 1, 0));
+    assert.equal(clock.value('clock.timer-running(Таймер)'), true);
+
     clock.travel(20);
-    await clock.run('clock.countdown', { do: 'stop' });
-    assert.equal(clock.value('clock.countdown'), '0:40');
+    await clock.run('clock.timer', press('toggle', 1, 0));
+    assert.equal(clock.value('clock.timer(Таймер)'), '0:40');
+    assert.equal(clock.value('clock.timer-running(Таймер)'), false);
 
-    // Resuming carries the duration it already had, whatever this key says.
-    await clock.run('clock.countdown', { do: 'start', minutes: 9, seconds: 0 });
+    clock.travel(300);
+    await clock.run('clock.timer', press('toggle', 9, 0));
     clock.travel(10);
     clock.tick();
-    assert.equal(clock.value('clock.countdown'), '0:30');
+
+    assert.equal(clock.value('clock.timer(Таймер)'), '0:30', 'not nine minutes');
+    await clock.dispose();
+  });
+
+  it('is cleared by its own action, which asks for no length', async () => {
+    // What a hold gets, beside the press that starts it: back to the full
+    // length it was last given, and stopped.
+    const clock = await bench();
+    clock.watch(...KEYS);
+
+    await clock.run('clock.timer', press('toggle', 2, 0));
+    clock.travel(30);
+    await clock.run('clock.timer-reset', { name: 'Таймер' });
+
+    assert.equal(clock.value('clock.timer(Таймер)'), '2:00');
+    assert.equal(clock.value('clock.timer-running(Таймер)'), false);
+
+    // And pressing again starts that same length over.
+    await clock.run('clock.timer', press('toggle', 2, 0));
+    assert.equal(clock.value('clock.timer-running(Таймер)'), true);
+
+    await clock.dispose();
+  });
+});
+
+describe('which timers exist', () => {
+  it('is the settings list, and a fresh install has one of each', async () => {
+    const clock = await bench();
+
+    assert.deepEqual(
+      (await clock.options('timers')).map((option) => option.value),
+      ['Таймер'],
+    );
+    assert.deepEqual(
+      (await clock.options('stopwatches')).map((option) => option.value),
+      ['Секундомер'],
+    );
+
+    await clock.dispose();
+  });
+
+  it('follows what the settings say, and one added starts idle', async () => {
+    const clock = await bench();
+    await clock.configure({ timers: 'Кофе\nЧай' });
+
+    assert.deepEqual(
+      (await clock.options('timers')).map((option) => option.value),
+      ['Кофе', 'Чай'],
+    );
+
+    clock.watch('clock.timer(Кофе)', 'clock.timer-running(Кофе)');
+    clock.tick();
+    assert.equal(clock.value('clock.timer-running(Кофе)'), false);
+
+    await clock.dispose();
+  });
+
+  it('takes a removed one off the keys rather than freezing it there', async () => {
+    /*
+     * A key still showing `2:14` for a timer nobody can reach any more is a key
+     * lying about the present. Renaming is this and an add together, which is
+     * the honest reading of it.
+     */
+    const clock = await bench();
+    await clock.configure({ timers: 'Кофе' });
+    clock.watch('clock.timer(Кофе)', 'clock.timer-running(Кофе)');
+
+    await clock.run('clock.timer', { name: 'Кофе', do: 'toggle', minutes: 5, seconds: 0 });
+    assert.equal(clock.value('clock.timer(Кофе)'), '5:00');
+
+    await clock.configure({ timers: 'Чай' });
+
+    assert.equal(clock.value('clock.timer(Кофе)'), undefined);
+    assert.equal(clock.value('clock.timer-running(Кофе)'), undefined);
+
+    await clock.dispose();
+  });
+
+  it('does nothing, quietly, about a name that is not in the list', async () => {
+    // A profile outlives a settings edit, so a key can name a timer somebody
+    // has since deleted. That is worth no fuss on the key.
+    const clock = await bench();
+    clock.watch('clock.timer(Призрак)');
+
+    await clock.run('clock.timer', { name: 'Призрак', do: 'toggle', minutes: 1, seconds: 0 });
+    assert.equal(clock.value('clock.timer(Призрак)'), undefined);
+
+    await clock.dispose();
+  });
+
+  it('is one timer per name, and two names are two timers', async () => {
+    const clock = await bench();
+    await clock.configure({ timers: 'Кофе\nЧай' });
+    clock.watch(
+      'clock.timer(Кофе)',
+      'clock.timer-running(Кофе)',
+      'clock.timer(Чай)',
+      'clock.timer-running(Чай)',
+    );
+
+    await clock.run('clock.timer', { name: 'Кофе', do: 'toggle', minutes: 5, seconds: 0 });
+    clock.travel(60);
+    await clock.run('clock.timer', { name: 'Чай', do: 'toggle', minutes: 2, seconds: 0 });
+    clock.travel(30);
+    clock.tick();
+
+    assert.equal(clock.value('clock.timer(Кофе)'), '3:30');
+    assert.equal(clock.value('clock.timer(Чай)'), '1:30');
+
+    // The same name is the same timer, which is how a start key and a display
+    // key on the other side of the profile are about one thing.
+    await clock.run('clock.timer', { name: 'Кофе', do: 'stop', minutes: 5, seconds: 0 });
+    assert.equal(clock.value('clock.timer-running(Кофе)'), false);
+    assert.equal(clock.value('clock.timer-running(Чай)'), true);
+
+    await clock.dispose();
+  });
+
+  it('publishes nothing for one no key is showing', async () => {
+    // The whole reason these are a family: a profile may name a dozen and a
+    // page shows one.
+    const clock = await bench();
+    await clock.configure({ timers: 'Кофе\nЧай' });
+    clock.watch('clock.timer(Кофе)');
+
+    await clock.run('clock.timer', { name: 'Кофе', do: 'toggle', minutes: 5, seconds: 0 });
+    await clock.run('clock.timer', { name: 'Чай', do: 'toggle', minutes: 5, seconds: 0 });
+
+    assert.equal(clock.value('clock.timer(Кофе)'), '5:00');
+    assert.equal(clock.value('clock.timer(Чай)'), undefined);
+    assert.equal(clock.value('clock.timer-seconds(Кофе)'), undefined);
+
+    await clock.dispose();
+  });
+
+  it('drops a blank row and a name typed twice', async () => {
+    // Both are what a list somebody is editing looks like mid-edit; neither is
+    // a timer.
+    const clock = await bench();
+    await clock.configure({ timers: 'Кофе\n\n  \nКофе\nЧай' });
+
+    assert.deepEqual(
+      (await clock.options('timers')).map((option) => option.value),
+      ['Кофе', 'Чай'],
+    );
+
+    await clock.dispose();
   });
 });
 
@@ -232,183 +422,12 @@ describe('the pomodoro', () => {
   });
 });
 
-describe('timers somebody named', () => {
-  const KEYS = (name: string) => [
-    `clock.timer(${name})`,
-    `clock.timer-seconds(${name})`,
-    `clock.timer-running(${name})`,
-  ];
-
-  it('comes into existence by being named, and counts down from what it was given', async () => {
-    const clock = await bench();
-    clock.watch(...KEYS('Кофе'));
-
-    // There is no list of timers anywhere else; this is what creates one.
-    await clock.run('clock.start-timer', { name: 'Кофе', minutes: 3, seconds: 30 });
-    assert.equal(clock.value('clock.timer(Кофе)'), '3:30');
-    assert.equal(clock.value('clock.timer-running(Кофе)'), true);
-
-    clock.travel(90);
-    clock.tick();
-    assert.equal(clock.value('clock.timer(Кофе)'), '2:00');
-    assert.equal(clock.value('clock.timer-seconds(Кофе)'), 120);
-
-    await clock.dispose();
-  });
-
-  it('counts up instead when it was given no length', async () => {
-    // The difference between a stopwatch and a countdown, and the only one.
-    const clock = await bench();
-    clock.watch(...KEYS('Стрим'));
-
-    await clock.run('clock.start-timer', { name: 'Стрим' });
-    clock.travel(75);
-    clock.tick();
-
-    assert.equal(clock.value('clock.timer(Стрим)'), '1:15');
-    assert.equal(clock.value('clock.timer-seconds(Стрим)'), 75);
-
-    await clock.dispose();
-  });
-
-  it('is one timer per name, and two names are two timers', async () => {
-    const clock = await bench();
-    clock.watch(...KEYS('Кофе'), ...KEYS('Чай'));
-
-    await clock.run('clock.start-timer', { name: 'Кофе', minutes: 5 });
-    clock.travel(60);
-    await clock.run('clock.start-timer', { name: 'Чай', minutes: 2 });
-    clock.travel(30);
-    clock.tick();
-
-    assert.equal(clock.value('clock.timer(Кофе)'), '3:30');
-    assert.equal(clock.value('clock.timer(Чай)'), '1:30');
-
-    // The same name is the same timer, which is how a start key and a display
-    // key on the other side of the profile are about one thing.
-    await clock.run('clock.timer', { name: 'Кофе', do: 'stop' });
-    assert.equal(clock.value('clock.timer-running(Кофе)'), false);
-    assert.equal(clock.value('clock.timer-running(Чай)'), true);
-
-    await clock.dispose();
-  });
-
-  it('offers what is running, and nothing before anything is', async () => {
-    const clock = await bench();
-
-    // What the fields behind "pause" and `clock.timer(…)` are filled from.
-    assert.deepEqual(await clock.options('timers'), []);
-
-    await clock.run('clock.start-timer', { name: 'Чай', minutes: 2 });
-    await clock.run('clock.start-timer', { name: 'Кофе', minutes: 5 });
-
-    assert.deepEqual(
-      (await clock.options('timers')).map((option) => option.value),
-      ['Кофе', 'Чай'],
-    );
-
-    await clock.dispose();
-  });
-
-  it('is gone from the list and off the keys once it is deleted', async () => {
-    // The way out of a typo, which is what a name typed by hand makes instead
-    // of an error.
-    const clock = await bench();
-    clock.watch(...KEYS('Кофн'));
-
-    await clock.run('clock.start-timer', { name: 'Кофн', minutes: 5 });
-    assert.equal(clock.value('clock.timer(Кофн)'), '5:00');
-
-    await clock.run('clock.timer', { name: 'Кофн', do: 'forget' });
-
-    assert.deepEqual(await clock.options('timers'), []);
-    assert.equal(clock.value('clock.timer(Кофн)'), undefined);
-    assert.equal(clock.value('clock.timer-running(Кофн)'), undefined);
-
-    await clock.dispose();
-  });
-
-  it('does nothing, quietly, about a timer that is not there', async () => {
-    /*
-     * Timers do not outlive the daemon but the profile does, so every "pause
-     * the coffee timer" key spends the time before its timer is started
-     * pointing at nothing. That is the ordinary state of affairs rather than a
-     * mistake worth marking a key for.
-     */
-    const clock = await bench();
-    await clock.run('clock.timer', { name: 'Кофе', do: 'stop' });
-
-    assert.deepEqual(await clock.options('timers'), []);
-    await clock.dispose();
-  });
-
-  it('refuses to make one with no name', async () => {
-    // The other side of the same coin: a key that could never do anything,
-    // where the warning on it is the only way anybody would find out.
-    const clock = await bench();
-
-    await assert.rejects(() => clock.run('clock.start-timer', { name: '  ' }));
-    await clock.dispose();
-  });
-
-  it('lands on zero, stops itself, and says so', async () => {
-    const clock = await bench();
-    clock.watch(...KEYS('Пауза'));
-
-    await clock.run('clock.start-timer', { name: 'Пауза', minutes: 0, seconds: 20 });
-    clock.travel(20);
-    clock.tick();
-
-    assert.equal(clock.value('clock.timer-seconds(Пауза)'), 0);
-    assert.equal(clock.value('clock.timer-running(Пауза)'), false);
-
-    // And stays there rather than going negative or starting over.
-    clock.travel(600);
-    clock.tick();
-    assert.equal(clock.value('clock.timer-seconds(Пауза)'), 0);
-
-    await clock.dispose();
-  });
-
-  it('makes the countdown noise when a named one arrives', async () => {
-    const clock = await bench();
-
-    await clock.run('clock.start-timer', { name: 'Кофе', minutes: 0, seconds: 10 });
-    clock.travel(10);
-    clock.tick();
-
-    assert.deepEqual(clock.played, ['Notification.Reminder']);
-
-    // Once, not every beat afterwards.
-    clock.travel(30);
-    clock.tick();
-    assert.equal(clock.played.length, 1);
-
-    await clock.dispose();
-  });
-
-  it('publishes nothing for a timer no key is showing', async () => {
-    // The whole reason these are a family: a profile may name a dozen and a
-    // page shows one.
-    const clock = await bench();
-    clock.watch('clock.timer(Кофе)');
-
-    await clock.run('clock.start-timer', { name: 'Кофе', minutes: 5 });
-    await clock.run('clock.start-timer', { name: 'Чай', minutes: 5 });
-
-    assert.equal(clock.value('clock.timer(Кофе)'), '5:00');
-    assert.equal(clock.value('clock.timer(Чай)'), undefined);
-    assert.equal(clock.value('clock.timer-seconds(Кофе)'), undefined);
-
-    await clock.dispose();
-  });
-});
 
 describe('the noise a finished timer makes', () => {
   it('sounds when the countdown arrives, and once', async () => {
     const clock = await bench();
 
-    await clock.run('clock.countdown', { do: 'restart', minutes: 0, seconds: 10 });
+    await clock.run('clock.timer', { name: 'Таймер', do: 'restart', minutes: 0, seconds: 10 });
     assert.deepEqual(clock.played, [], 'nothing yet');
 
     clock.travel(10);
@@ -464,7 +483,7 @@ describe('the noise a finished timer makes', () => {
     const clock = await bench();
     await clock.configure({ countdownSound: '', pomodoroSound: '' });
 
-    await clock.run('clock.countdown', { do: 'restart', minutes: 0, seconds: 5 });
+    await clock.run('clock.timer', { name: 'Таймер', do: 'restart', minutes: 0, seconds: 5 });
     clock.travel(5);
     clock.tick();
 
@@ -476,7 +495,7 @@ describe('the noise a finished timer makes', () => {
     const clock = await bench();
     await clock.configure({ countdownSound: 'Notification.Looping.Alarm' });
 
-    await clock.run('clock.countdown', { do: 'restart', minutes: 0, seconds: 5 });
+    await clock.run('clock.timer', { name: 'Таймер', do: 'restart', minutes: 0, seconds: 5 });
     clock.travel(5);
     clock.tick();
 
@@ -495,9 +514,11 @@ describe('what the plugin offers', () => {
     const text = JSON.stringify(manifest.presets ?? []);
 
     // A preset naming a variable the manifest forgot puts a key on the grid
-    // that shows an empty space for ever, and says nothing about why.
-    for (const match of text.matchAll(/\{\{([\w.-]+)\}\}/g)) {
-      const name = match[1] ?? '';
+    // that shows an empty space for ever, and says nothing about why. Compared
+    // by family, because a key naming one of a family carries its argument:
+    // `clock.timer(Таймер)` is declared once, as `clock.timer`.
+    for (const match of text.matchAll(/\{\{([^}]+)\}\}/g)) {
+      const name = parseVariableKey(match[1] ?? '').family;
       assert.ok(declared.has(name), `preset reads undeclared ${name}`);
     }
   });
@@ -510,7 +531,36 @@ describe('what the plugin offers', () => {
     for (const preset of manifest?.presets ?? []) {
       const from: string | undefined = preset.button.stateFrom;
       if (from === undefined) continue;
-      assert.ok(declared.has(from), `preset '${preset.name}' binds to undeclared ${from}`);
+
+      const family = parseVariableKey(from).family;
+      assert.ok(declared.has(family), `preset '${preset.name}' binds to undeclared ${family}`);
     }
+  });
+
+  it('points its presets at names the settings actually ship with', async () => {
+    /*
+     * The other half of the same worry. A preset naming a family is declared,
+     * and still a dead key if the argument it names is not in the list a fresh
+     * install has — which is the one thing the check above cannot see.
+     */
+    const clock = await bench();
+    const manifest = clock.registry.plugins().find((each) => each.id === CLOCK_PLUGIN_ID);
+    const text = JSON.stringify(manifest?.presets ?? []);
+
+    const lists: Record<string, readonly string[]> = {
+      'clock.timer': (await clock.options('timers')).map((option) => option.value),
+      'clock.stopwatch': (await clock.options('stopwatches')).map((option) => option.value),
+    };
+
+    for (const match of text.matchAll(/\{\{([^}]+)\}\}/g)) {
+      const { family, argument } = parseVariableKey(match[1] ?? '');
+      const base = family.replace(/-(seconds|running)$/, '');
+      const expected = lists[base];
+      if (!expected || argument === undefined) continue;
+
+      assert.ok(expected.includes(argument), `preset names '${argument}', which is not in the list`);
+    }
+
+    await clock.dispose();
   });
 });

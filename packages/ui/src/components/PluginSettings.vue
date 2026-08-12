@@ -3,6 +3,8 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { LocalizedText, ParamDefinition, PluginManifest, VariableValue } from '@easydeck/core';
 
+import NameList from './NameList.vue';
+
 /**
  * What a plugin needs to be told, drawn from what it declared.
  *
@@ -153,6 +155,15 @@ function save(): void {
               {{ say(option.label) }}
             </option>
           </select>
+
+          <!-- Rows with an add button, because "one per line in a textarea" is
+               a storage detail and not something to hand to anybody. -->
+          <NameList
+            v-else-if="field.type === 'list'"
+            :model-value="draft[field.name] ?? ''"
+            :placeholder="say(field.placeholder)"
+            @update:model-value="set(field, $event)"
+          />
 
           <input
             v-else-if="field.secret"

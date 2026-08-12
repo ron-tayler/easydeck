@@ -175,21 +175,37 @@ without any of this document's machinery.
 Two keys with the same name are one timer, which is how a start key and a
 display key work; two names are two independent timers, which is the point.
 
-A timer comes into existence by being named. There is no list of timers in the
-plugin's settings, because that would be a second place where they exist and it
-would go stale — a name in a macro and a name in a list are one thing too many.
+A timer comes into existence by being **listed in the plugin's settings**, and
+this is the second answer to that question. The first was that naming one in
+the macro that started it brought it into being — no list anywhere, nothing to
+go stale. It read well and worked badly:
 
-Which is why the name is **typed** in the action that starts one and **chosen**
-everywhere else. The typing is not a fallback: it is where somebody works out
-that naming a timer is what makes it. Every other question is about a timer
-that already exists, and there a list is both easier and the only way to be
-sure of writing the same name twice. The cost stands — a typo makes a second
-timer rather than an error — so the governing action can delete one.
+- a typo made a second timer rather than an error;
+- every other key had nothing to choose from until the first press had happened;
+- what existed was scattered across the profile, so there was nowhere to look.
 
-Timers do not survive a restart of the daemon: a running stopwatch is a fact
-about this session, and one that came back saying fourteen hours is rubbish
-nobody started. The keys that govern one therefore spend the time before it is
-started pointing at nothing, and do nothing, quietly.
+A list in the settings is the thing that was argued against, and it turns out to
+be right for exactly the reason it was argued against: it is a *second* place
+only if timers also exist somewhere else. They do not. The list is where they
+exist, every field that names one is an ordinary select, and a name is either
+right or not there.
+
+The lists brought a `list` parameter type with them — rows with an add button,
+stored one per line, because a setting is a scalar. `readList` reads it back,
+and nothing else parses it.
+
+What a timer is *doing* does not survive a restart of the daemon — a running
+stopwatch is a fact about this session, and one that came back saying fourteen
+hours is rubbish nobody started. Which one exists does survive, because that is
+a fact about the setup. So a name in the list comes back idle.
+
+Two actions apiece rather than one with five verbs on it. Clearing a timer has
+nothing to do with how long it runs, so one action offering both would ask for a
+duration and then ignore it. That line happens to be how a key is used anyway: a
+press starts and pauses, a hold clears. The duration lives on the press, and is
+taken only when a timer begins at the top — otherwise resuming a paused one
+would silently lengthen it, and the single-key start-pause-resume would not
+work.
 
 ## What this does not decide
 

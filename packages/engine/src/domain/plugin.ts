@@ -41,6 +41,20 @@ export type ParamType =
   | 'boolean'
   | 'select'
   | 'color'
+  /**
+   * A list of names the user keeps: added to, renamed, taken from.
+   *
+   * For the case where a plugin needs to know *which things exist* before
+   * anything can be pointed at them. The clock's timers are the first: a key
+   * that pauses one has to choose from somewhere, and the alternative — the
+   * name typed into whichever macro creates it — makes a typo into a second
+   * timer rather than an error.
+   *
+   * Stored as one entry per line, because a setting is a single value and
+   * `VariableValue` is a scalar. `readList` is the counterpart that reads it,
+   * and nothing else should be parsing it by hand.
+   */
+  | 'list'
   /** A variable name, offered from the ones the profile already has. */
   | 'variable'
   /** A folder of the current profile. */
@@ -296,4 +310,31 @@ export interface PluginManifest {
 /** Picks the best translation available, falling back to English. */
 export function localized(text: LocalizedText, locale: string): string {
   return text[locale] ?? text.en;
+}
+
+/**
+ * Reads a `list` back into the entries somebody typed.
+ *
+ * One line per entry, trimmed, blanks dropped, and duplicates with them: two
+ * timers with one name are one timer under two rows, and the second row can
+ * only ever be a mistake.
+ *
+ * Takes a real array too. A list arrives as text from a form, but a plugin's
+ * defaults and a test are both better written as an array than as a string
+ * with newlines in it.
+ */
+export function readList(value: unknown): string[] {
+  const entries = Array.isArray(value)
+    ? value.map(String)
+    : typeof value === 'string'
+      ? value.split('\n')
+      : [];
+
+  const kept: string[] = [];
+  for (const entry of entries) {
+    const name = entry.trim();
+    if (name !== '' && !kept.includes(name)) kept.push(name);
+  }
+
+  return kept;
 }
