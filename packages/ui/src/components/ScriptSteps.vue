@@ -58,6 +58,10 @@ const props = defineProps<{
   ownStates: readonly string[];
   /** The button being edited; see ActionParams for why a form needs it. */
   ownButtonId?: string;
+  /** The settings a key's widget declares; see ConditionInput. */
+  loadWidgetParams?: (
+    buttonId: string,
+  ) => Promise<readonly { value: string; label?: LocalizedText }[]>;
   /** Asks what shape a field should take; see ActionParams. */
   loadShape?: (
     source: string,
@@ -91,6 +95,20 @@ const { t, locale } = useI18n();
 
 const say = (text: LocalizedText | undefined): string =>
   text === undefined ? '' : (text[locale.value] ?? text.en);
+
+/**
+ * Built here rather than in the template, and passed as values rather than
+ * written into the message.
+ *
+ * The names it shows are real `{{…}}` placeholders, and both the template
+ * compiler and the translation library would try to substitute them: the first
+ * because a mustache in a template is an expression, the second because `{{ }}`
+ * is its own placeholder syntax and it refuses to nest one. A value handed in
+ * is re-read by neither.
+ */
+const loopHint = computed(() =>
+  t('editor.blocks.loopHint', { a: '{{loop}}', b: '{{loop.left}}', c: '{{loop.total}}' }),
+);
 
 const NO_PARAMS: Readonly<Record<string, unknown>> = Object.freeze({});
 
@@ -329,6 +347,8 @@ function onDrop(event: DragEvent): void {
           :values="values"
           :buttons="buttons"
           :own-states="ownStates"
+          :own-button-id="ownButtonId"
+          :load-widget-params="loadWidgetParams"
           @update:model-value="setCondition(index, $event)"
         />
       </div>
@@ -354,7 +374,7 @@ function onDrop(event: DragEvent): void {
             @input="setLoop(index, { variable: ($event.target as HTMLInputElement).value })"
           />
         </label>
-        <p class="muted small">{{ t('editor.blocks.loopHint') }}</p>
+        <p class="muted small">{{ loopHint }}</p>
       </div>
 
       <div v-else-if="isOpen(index) && step.type === CORE_DELAY" class="fields row">
@@ -382,6 +402,7 @@ function onDrop(event: DragEvent): void {
         :own-button-id="ownButtonId"
         :load-options="loadOptions"
         :load-shape="loadShape"
+        :load-widget-params="loadWidgetParams"
         :filled-secrets="filledSecrets"
         :save-secret="saveSecret"
         :clear-secret="clearSecret"
@@ -413,6 +434,7 @@ function onDrop(event: DragEvent): void {
             :plugin-statuses="pluginStatuses"
             :load-options="loadOptions"
             :load-shape="loadShape"
+            :load-widget-params="loadWidgetParams"
             :filled-secrets="filledSecrets"
             :save-secret="saveSecret"
             :clear-secret="clearSecret"

@@ -784,6 +784,19 @@ const configuringStatus = computed(() => {
  * which is what turns the field into a box the name can be typed into,
  * instead of a dead end.
  */
+/**
+ * The settings a key's widget declares, for a condition to choose from.
+ *
+ * The same list the widget action offers, asked the same way — the daemon
+ * answers this one itself, since it is a question about the profile and the
+ * loaded manifests together.
+ */
+async function loadWidgetParams(
+  buttonId: string,
+): Promise<readonly { value: string; label?: LocalizedText }[]> {
+  return loadActionOptions('vars', 'widget-params', { buttonId });
+}
+
 async function loadActionOptions(
   pluginId: string,
   source: string,
@@ -1431,6 +1444,7 @@ onBeforeUnmount(() => {
       :plugin-statuses="deck.pluginStatuses.value"
       :load-options="loadActionOptions"
       :load-shape="deck.loadParamShape"
+      :load-widget-params="loadWidgetParams"
       :draw-surface="deck.drawSurface"
       :filled-secrets="filledSecrets"
       :save-secret="saveButtonSecret"

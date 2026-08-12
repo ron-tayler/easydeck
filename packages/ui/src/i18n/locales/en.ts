@@ -260,7 +260,7 @@
       noVariable: 'not set',
       ms: 'Milliseconds',
       loopHint:
-        'The variable is read once and copied, so the loop does not spend it. A negative value runs that many times. Inside, {{loop}}, {{loop.left}} and {{loop.total}} are available.',
+        'The variable is read once and copied, so the loop does not spend it. A negative value runs that many times. Inside, {a}, {b} and {c} are available.',
       dropHere: 'Drop a step here',
     },
     condition: {
@@ -270,7 +270,7 @@
         'widget-param': 'Widget setting',
         template: 'Template',
       },
-      widgetParam: 'setting',
+      noWidget: 'that key has no widget',
       operator: {
         '==': 'is',
         '!=': 'is not',
@@ -286,7 +286,7 @@
       },
       variable: 'variable name',
       value: 'value',
-      templateHint: 'for example {{obs.scene}}',
+      templateHint: 'for example {example}',
     },
     passwordNew: 'New password',
     passwordSave: 'Save',

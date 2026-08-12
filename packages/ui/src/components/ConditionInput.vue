@@ -1,8 +1,14 @@
 ﻿<script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { THIS_BUTTON } from '@easydeck/engine/actions';
-import type { Condition, ConditionOperator, ConditionSource, VariableDeclaration } from '@easydeck/core';
+import type {
+  Condition,
+  ConditionOperator,
+  ConditionSource,
+  LocalizedText,
+  VariableDeclaration,
+} from '@easydeck/core';
 
 /**
  * What an `if` asks about, as three controls.
@@ -25,11 +31,23 @@ const props = defineProps<{
   buttons: readonly { id: string; name: string }[];
   /** States of the button being edited, for a condition about itself. */
   ownStates: readonly string[];
+  /** The key being edited, which is what `this_btn` means while a form is open. */
+  ownButtonId?: string;
+  /**
+   * The settings the widget on a key declares.
+   *
+   * Asked for rather than typed: nobody knows a widget's parameter names by
+   * heart, and a name typed wrong answers nothing at run time without saying
+   * why. The same list the action that changes a widget offers.
+   */
+  loadWidgetParams?: (
+    buttonId: string,
+  ) => Promise<readonly { value: string; label?: LocalizedText }[]>;
 }>();
 
 const emit = defineEmits<{ 'update:modelValue': [condition: Condition] }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const SOURCES: readonly ConditionSource[] = [
   'variable',
@@ -63,6 +81,43 @@ const variableNames = computed(() => {
   ]);
   return [...names].sort();
 });
+
+/**
+ * The settings the chosen key's widget offers, fetched as it is chosen.
+ *
+ * Empty means either "no widget there" or "nobody can be asked"; the field says
+ * so rather than falling back to a box, because there is no name anybody could
+ * usefully type into it.
+ */
+const widgetParams = ref<readonly { value: string; label?: LocalizedText }[]>([]);
+
+watch(
+  () => [condition.value.source, condition.value.name, props.ownButtonId] as const,
+  async ([source, chosen]) => {
+    if (source !== 'widget-param' || !props.loadWidgetParams) {
+      widgetParams.value = [];
+      return;
+    }
+
+    // `this_btn` is the key being edited while a form is open — the same
+    // substitution an action's form makes, and for the same reason.
+    const buttonId = chosen === THIS_BUTTON ? props.ownButtonId : chosen;
+    if (!buttonId) {
+      widgetParams.value = [];
+      return;
+    }
+
+    try {
+      widgetParams.value = await props.loadWidgetParams(buttonId);
+    } catch {
+      widgetParams.value = [];
+    }
+  },
+  { immediate: true },
+);
+
+const say = (text: LocalizedText | undefined): string =>
+  text === undefined ? '' : (text[locale.value] ?? text.en ?? '');
 
 function patch(change: Partial<Condition>): void {
   emit('update:modelValue', { ...condition.value, ...change });
@@ -106,7 +161,7 @@ function setSource(source: ConditionSource): void {
       type="text"
       class="wide"
       :value="condition.text ?? ''"
-      :placeholder="t('editor.condition.templateHint')"
+      :placeholder="t('editor.condition.templateHint', { example: '{{obs.scene}}' })"
       @input="patch({ text: ($event.target as HTMLInputElement).value })"
     />
 
@@ -124,17 +179,24 @@ function setSource(source: ConditionSource): void {
       </option>
     </select>
 
-    <!-- And which of that widget's settings. Typed rather than chosen: this
-         component has no way to ask the daemon, and a name typed here is
-         checked against nothing at run time either — an unknown setting simply
-         answers nothing, which `empty` can test for. -->
-    <input
-      v-if="condition.source === 'widget-param'"
-      type="text"
+    <!-- And which of that widget's settings, offered rather than typed:
+         nobody knows a widget's parameter names by heart. -->
+    <select
+      v-if="condition.source === 'widget-param' && widgetParams.length > 0"
       :value="condition.param ?? ''"
-      :placeholder="t('editor.condition.widgetParam')"
-      @input="patch({ param: ($event.target as HTMLInputElement).value })"
-    />
+      @change="patch({ param: ($event.target as HTMLSelectElement).value })"
+    >
+      <option value="" disabled>{{ t('editor.choose') }}</option>
+      <option v-for="param in widgetParams" :key="param.value" :value="param.value">
+        {{ param.label ? say(param.label) : param.value }}
+      </option>
+    </select>
+
+    <!-- No widget on that key, or nobody to ask. A box would invite a name
+         that cannot be right. -->
+    <span v-else-if="condition.source === 'widget-param'" class="note">
+      {{ t('editor.condition.noWidget') }}
+    </span>
 
     <select
       :value="condition.operator"
@@ -183,6 +245,12 @@ function setSource(source: ConditionSource): void {
 .condition input {
   min-width: 7em;
   flex: 1 1 7em;
+}
+
+.condition .note {
+  flex: 1 1 7em;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .condition .wide {

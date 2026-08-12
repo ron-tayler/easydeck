@@ -60,6 +60,10 @@ const props = defineProps<{
   omittedIcons?: number;
   /** Where each plugin that holds a connection has got to. */
   pluginStatuses?: Readonly<Record<string, { status: string; message?: LocalizedText }>>;
+  /** The settings a key's widget declares; see ConditionInput. */
+  loadWidgetParams?: (
+    buttonId: string,
+  ) => Promise<readonly { value: string; label?: LocalizedText }[]>;
   /** Asks what shape a field should take; see ActionParams. */
   loadShape?: (
     source: string,
@@ -1250,6 +1254,7 @@ const previewIcon = computed(() => {
             :plugin-statuses="pluginStatuses"
             :load-options="loadOptions"
             :load-shape="loadShape"
+            :load-widget-params="loadWidgetParams"
             :filled-secrets="filledSecrets"
             :save-secret="saveSecret"
             :clear-secret="clearSecret"
@@ -1311,6 +1316,7 @@ const previewIcon = computed(() => {
         :own-button-id="button.id"
         :load-options="loadOptions"
         :load-shape="loadShape"
+        :load-widget-params="loadWidgetParams"
         @update="setWidgetParams"
       />
 

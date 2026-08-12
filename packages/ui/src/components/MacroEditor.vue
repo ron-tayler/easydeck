@@ -51,6 +51,10 @@ const props = defineProps<{
   ownStates: readonly string[];
   /** The button being edited; see ActionParams for why a form needs it. */
   ownButtonId?: string;
+  /** The settings a key's widget declares; see ConditionInput. */
+  loadWidgetParams?: (
+    buttonId: string,
+  ) => Promise<readonly { value: string; label?: LocalizedText }[]>;
   /** Asks what shape a field should take; see ActionParams. */
   loadShape?: (
     source: string,
@@ -472,6 +476,7 @@ function onTabDrop(which: Trigger): void {
         :plugin-statuses="pluginStatuses"
         :load-options="loadOptions"
         :load-shape="loadShape"
+        :load-widget-params="loadWidgetParams"
         :filled-secrets="filledSecrets"
         :save-secret="saveSecret"
         :clear-secret="clearSecret"
