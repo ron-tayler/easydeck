@@ -3,20 +3,24 @@ import { DEFAULT_WRITES_PER_SECOND } from './ports/panel-port.js';
 /**
  * How fast the panel actually swallows tiles, learned from watching it.
  *
- * This is the binding constraint on anything animated, and it is easy to
- * measure but impossible to argue with: a 30fps picture stretched over fifteen
- * keys asks for 451 images a second, and the hardware tops out around 233. The
- * old path queued the writes anyway. Each tick added 64ms of work on a 33ms
- * schedule, so the queue grew without bound and the panel fell seconds behind
- * the clock — with every key press queued behind it.
+ * Learned rather than declared, because the rate is not a property of the
+ * device alone: it falls by more than three to one between a flat tile and a
+ * photograph, and moves again with the USB controller, the driver and whether
+ * this is a debug build. See `DEFAULT_WRITES_PER_SECOND` for the measurements
+ * and for the shape behind them.
  *
- * The answer is to play at the rate the bus can carry. Frames are chosen from
- * the clock, so a slower tick shows every second frame rather than running
- * slow: the animation keeps time, and only smoothness is lost.
+ * What this exists to prevent is the queue. Ask the bus for more than it can
+ * carry and each tick adds more work than the next tick's schedule allows, so
+ * the backlog grows without bound and the panel falls seconds behind the clock
+ * — with every key press queued behind it. Playing at the rate the bus can
+ * carry costs smoothness instead, and frames are chosen from the clock, so a
+ * slow tick shows every second frame rather than running late.
  *
- * Measured rather than assumed, because 233 is one capture of one device on
- * one machine — a different revision, a busy USB controller or a debug build
- * all move it, and guessing high is exactly the failure this prevents.
+ * A single rate is a simplification of a straight line — a fixed cost per
+ * write plus the payload — and the honest version of this class would budget
+ * in bytes as well. What saves the simplification is that it is observed: on a
+ * panel showing photographs it settles low, on one showing flat keys it
+ * settles high, because that is what it was told.
  */
 export class WriteBudget {
   private rate: number;
