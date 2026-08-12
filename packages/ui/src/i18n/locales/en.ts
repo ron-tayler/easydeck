@@ -99,6 +99,10 @@ export default {
     centre: 'Centre',
     fill: 'Fill the key',
     apply: 'Place',
+    add: 'Add a picture',
+    forward: 'Bring forward',
+    back: 'Send back',
+    remove: 'Remove',
   },
   color: {
     open: 'Choose colour',

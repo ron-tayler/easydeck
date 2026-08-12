@@ -253,6 +253,9 @@ function replace(): void {
       v-if="placing"
       :source="placing.source"
       :background="background"
+      :user-icons="userIcons"
+      :profile-icons="profileIcons"
+      :omitted-icons="omittedIcons"
       @apply="placed"
       @cancel="placing = undefined"
     />
