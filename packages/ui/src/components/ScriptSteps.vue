@@ -349,6 +349,7 @@ function onDrop(event: DragEvent): void {
           :own-states="ownStates"
           :own-button-id="ownButtonId"
           :load-widget-params="loadWidgetParams"
+          :load-shape="loadShape"
           @update:model-value="setCondition(index, $event)"
         />
       </div>

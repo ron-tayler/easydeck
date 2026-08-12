@@ -7,8 +7,11 @@ import type {
   ConditionOperator,
   ConditionSource,
   LocalizedText,
+  ParamDefinition,
   VariableDeclaration,
 } from '@easydeck/core';
+
+import ColorPicker from './ColorPicker.vue';
 
 /**
  * What an `if` asks about, as three controls.
@@ -43,6 +46,16 @@ const props = defineProps<{
   loadWidgetParams?: (
     buttonId: string,
   ) => Promise<readonly { value: string; label?: LocalizedText }[]>;
+  /**
+   * The declaration of the setting being compared, for the value box.
+   *
+   * The same question the widget action asks, and the same answer: that
+   * setting's own control, its options and its bounds.
+   */
+  loadShape?: (
+    source: string,
+    params: Readonly<Record<string, unknown>>,
+  ) => Promise<ParamDefinition | undefined>;
 }>();
 
 const emit = defineEmits<{ 'update:modelValue': [condition: Condition] }>();
@@ -91,30 +104,74 @@ const variableNames = computed(() => {
  */
 const widgetParams = ref<readonly { value: string; label?: LocalizedText }[]>([]);
 
+/**
+ * The chosen setting's own declaration, for the box to compare it with.
+ *
+ * A period is one of four numbers, a colour wants a picker, a thickness has
+ * bounds. Borrowed rather than restated, exactly as the action that changes a
+ * widget borrows it — so what somebody sets and what somebody tests against
+ * offer the same answers.
+ */
+const valueShape = ref<ParamDefinition | undefined>();
+
+/** The key this condition is about, with `this_btn` resolved. */
+const askedButton = computed<string | undefined>(() => {
+  if (condition.value.source !== 'widget-param') return undefined;
+  const chosen = condition.value.name;
+  return chosen === THIS_BUTTON ? props.ownButtonId : chosen || undefined;
+});
+
+/**
+ * Answers arriving out of order must not win.
+ *
+ * Both of these are fetched as somebody clicks through a list, so a slow reply
+ * about the key they were on can land after a quick one about the key they are
+ * on. Stamping each request and dropping stale replies is the whole guard.
+ */
+let asking = 0;
+
 watch(
-  () => [condition.value.source, condition.value.name, props.ownButtonId] as const,
-  async ([source, chosen]) => {
-    if (source !== 'widget-param' || !props.loadWidgetParams) {
+  () => [askedButton.value, condition.value.param] as const,
+  async ([buttonId, param]) => {
+    const mine = ++asking;
+    const stale = (): boolean => mine !== asking;
+
+    if (!buttonId) {
       widgetParams.value = [];
+      valueShape.value = undefined;
       return;
     }
 
-    // `this_btn` is the key being edited while a form is open — the same
-    // substitution an action's form makes, and for the same reason.
-    const buttonId = chosen === THIS_BUTTON ? props.ownButtonId : chosen;
-    if (!buttonId) {
-      widgetParams.value = [];
+    if (props.loadWidgetParams) {
+      try {
+        const options = await props.loadWidgetParams(buttonId);
+        if (!stale()) widgetParams.value = options;
+      } catch {
+        if (!stale()) widgetParams.value = [];
+      }
+    }
+
+    if (!param || !props.loadShape) {
+      if (!stale()) valueShape.value = undefined;
       return;
     }
 
     try {
-      widgetParams.value = await props.loadWidgetParams(buttonId);
+      const shape = await props.loadShape('widget-param-shape', { buttonId, param });
+      if (!stale()) valueShape.value = shape;
     } catch {
-      widgetParams.value = [];
+      if (!stale()) valueShape.value = undefined;
     }
   },
   { immediate: true },
 );
+
+/** Keeps a number a number, so `>` compares as one rather than as text. */
+function numberOrText(raw: string): string | number {
+  if (raw === '') return raw;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : raw;
+}
 
 const say = (text: LocalizedText | undefined): string =>
   text === undefined ? '' : (text[locale.value] ?? text.en ?? '');
@@ -215,6 +272,39 @@ function setSource(source: ConditionSource): void {
       <option value="" disabled>{{ t('editor.choose') }}</option>
       <option v-for="stateId in ownStates" :key="stateId" :value="stateId">{{ stateId }}</option>
     </select>
+
+    <!--
+      A widget's setting knows what it accepts, so the box to compare it with
+      is that setting's own control: a list of periods, a colour picker, a
+      number with the bounds it declared. Typing into a box was asking somebody
+      to guess which of four numbers the graph's period is spelled as.
+    -->
+    <select
+      v-else-if="needsValue && valueShape?.options?.length"
+      :value="String(condition.value ?? '')"
+      @change="patch({ value: ($event.target as HTMLSelectElement).value })"
+    >
+      <option value="" disabled>{{ t('editor.choose') }}</option>
+      <option v-for="option in valueShape.options" :key="option.value" :value="option.value">
+        {{ option.label ? say(option.label) : option.value }}
+      </option>
+    </select>
+
+    <input
+      v-else-if="needsValue && valueShape?.type === 'number'"
+      type="number"
+      :value="String(condition.value ?? '')"
+      :min="valueShape.min"
+      :max="valueShape.max"
+      :step="valueShape.step"
+      @input="patch({ value: numberOrText(($event.target as HTMLInputElement).value) })"
+    />
+
+    <ColorPicker
+      v-else-if="needsValue && valueShape?.type === 'color'"
+      :model-value="String(condition.value ?? '')"
+      @update:model-value="patch({ value: $event })"
+    />
 
     <input
       v-else-if="needsValue"
