@@ -9,7 +9,7 @@ import type {
   VariableValue,
 } from '@easydeck/core';
 import { renderTemplate } from '@easydeck/engine/template';
-import { CORE_DELAY, CORE_FOR, CORE_IF, CORE_ON } from '@easydeck/engine/actions';
+import { CORE_DELAY, CORE_FOR, CORE_IF } from '@easydeck/engine/actions';
 
 import { actionIconPath, isDrawnIcon } from '../icons/action-icons.js';
 
@@ -87,19 +87,26 @@ const say = (text: LocalizedText | undefined): string =>
   text === undefined ? '' : (text[locale.value] ?? text.en);
 
 /**
- * The three steps the engine runs itself, offered like any other.
+ * The steps the engine runs itself, offered like any other.
  *
  * They travel as an ordinary action drag, so the editor needs no second way of
  * receiving them: what lands is a step of that type, and the editor already
  * knows which types are blocks.
+ *
+ * `core.on` is deliberately absent. It is not a step — it is a handler, and it
+ * only means anything at the top of the "on event" tab. Offering it here let
+ * one be dropped into a press, where it would sit looking like it did
+ * something and do nothing. That tab has a button of its own instead.
  */
-const BLOCKS: readonly string[] = [CORE_IF, CORE_FOR, CORE_DELAY, CORE_ON];
+const BLOCKS: readonly string[] = [CORE_IF, CORE_FOR, CORE_DELAY];
 
 const BLOCK_ICONS: Readonly<Record<string, string>> = {
   [CORE_IF]: '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M4 5h6v2H6.4l4 5H20v2h-10L6.4 19H4v-2h1.4l3.2-4-3.2-4H4z"/></svg>',
   [CORE_FOR]: '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 5a7 7 0 1 0 6.3 4h-2.3A5 5 0 1 1 12 7V5z"/><path fill="currentColor" d="M11 3l4 3-4 3z"/></svg>',
-  [CORE_DELAY]: '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9 9 9 0 0 0-9-9zm1 9V7h-2v7h6v-2z"/></svg>',
-  [CORE_ON]: '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>',
+  // A stopwatch: a crown, a button and a hand, which reads as "a measured
+  // wait" where a clock face reads as "the time".
+  [CORE_DELAY]:
+    '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M9 1h6v2H9zM19.03 6.39l1.42-1.42-1.42-1.41-1.41 1.41A9 9 0 1 0 19.03 6.39zM13 13h-2V7h2z"/></svg>',
 };
 
 const blockIcon = (type: string): string => BLOCK_ICONS[type] ?? '';

@@ -266,6 +266,7 @@ export default {
       doublePress: 'On double press',
       event: 'On event',
     },
+    addHandler: 'Add a handler',
     eventHint:
       'Not a sequence: each “When” watches on its own and fires the moment its condition becomes true. It works from any page of the profile, even when the button is not on screen.',
     save: 'Save',

@@ -12,6 +12,7 @@ import type {
 } from '@easydeck/core';
 
 import { insertStep, moveStep, removeStep, stepAt, updateStep } from '@easydeck/engine/script';
+import { CORE_ON } from '@easydeck/engine/actions';
 import type { StepPath } from '@easydeck/core';
 
 import ScriptSteps from './ScriptSteps.vue';
@@ -238,6 +239,13 @@ function apply(next: ActionDescriptor[]): void {
  * palette beside the editor shows what each one does and drops it exactly
  * where it is wanted, so the dropdown had nothing left to offer.
  */
+/** Adds a watcher at the end of the list, which is where a new one belongs. */
+function addHandler(): void {
+  const at = list.value.length;
+  apply(insertStep(list.value, TOP, at, { type: CORE_ON }));
+  openPath.value = [at];
+}
+
 function onInsert(where: StepPath, at: number, type: string): void {
   apply(insertStep(list.value, where, at, { type }));
   // Opened where it landed: a step just dropped is one about to be filled in.
@@ -357,8 +365,22 @@ function onEmptyDragOver(event: DragEvent): void {
 
 /** Dropping on another trigger's tab moves the step there — the usual fix
     for having built a sequence under the wrong one. */
+/**
+ * Whether a step may live under a given trigger.
+ *
+ * A handler only means anything in the event list, and everything else is dead
+ * weight there — it would sit in the tab looking like part of the script and
+ * never run. Refusing the drag is kinder than accepting it and doing nothing.
+ */
+function belongsUnder(step: ActionDescriptor | undefined, which: Trigger): boolean {
+  if (!step) return false;
+  return which === 'event' ? step.type === CORE_ON : step.type !== CORE_ON;
+}
+
 function onTabDragOver(which: Trigger, event: DragEvent): void {
   if (dragPath.value === undefined || which === trigger.value) return;
+  if (!belongsUnder(stepAt(list.value, dragPath.value), which)) return;
+
   event.preventDefault();
   tabOver.value = which;
 }
@@ -372,12 +394,12 @@ function onTabDrop(which: Trigger): void {
   // Whatever was picked up, branches and all, moved to the end of the other
   // gesture's script.
   const moved = stepAt(list.value, from);
-  if (!moved) return;
+  if (!belongsUnder(moved, which)) return;
 
   emit('update', {
     ...props.actions,
     [source]: removeStep(list.value, from),
-    [which]: [...(props.actions[which] ?? []), moved],
+    [which]: [...(props.actions[which] ?? []), moved!],
   });
   trigger.value = which;
 }
@@ -405,6 +427,13 @@ function onTabDrop(which: Trigger): void {
     <!-- Said once, at the top, because a list of handlers looks exactly like a
          sequence and is not one. -->
     <p v-if="trigger === 'event'" class="muted hint">{{ t('editor.eventHint') }}</p>
+
+    <!-- A button rather than something to drag from the palette: a handler
+         only means anything here, and offering it beside the blocks let one be
+         dropped into a press, where it looked like it did something. -->
+    <button v-if="trigger === 'event'" type="button" class="add-handler" @click="addHandler">
+      ＋ {{ t('editor.addHandler') }}
+    </button>
 
     <p
       v-if="list.length === 0"
@@ -530,6 +559,21 @@ function onTabDrop(which: Trigger): void {
 .tab.over {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+/* Full width and dashed, so it reads as "there is room for another" rather
+   than as a control that does something to what is already there. */
+.add-handler {
+  align-self: stretch;
+  padding: 6px;
+  border-style: dashed;
+  background: none;
+  color: var(--text-muted);
+}
+
+.add-handler:hover {
+  border-color: var(--accent);
+  color: var(--text);
 }
 
 .count {
