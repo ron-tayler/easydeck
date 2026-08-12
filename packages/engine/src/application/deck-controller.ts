@@ -676,10 +676,27 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
           }
         : visual.icon;
 
+    /*
+     * A widget's frame becomes the picture, here and not further down.
+     *
+     * Everything that asks what a key looks like — the scene the panel is
+     * built from, and the views a window and a tablet draw — goes through this
+     * one method. Substituting at the end means all three see a picture and
+     * none of them needs to know that a plugin drew it, which is the whole
+     * reason a widget can sit in the same slot as a still.
+     *
+     * Doing it only in the scene is what the first attempt did, and the panel
+     * showed the graph while the configurator showed an empty key.
+     */
+    const live = visual.surface ? this.drawn.get(surfaceKey(visual.surface)) : undefined;
+    // Only the source: what identifies the picture to the tile cache is the
+    // frame's own id, and the scene reads that from the frame in `pictureOf`.
+    const picture = live ? { source: live.source } : icon;
+
     return {
       ...visual,
       ...(label ? { label } : {}),
-      ...(icon ? { icon } : {}),
+      ...(picture ? { icon: picture } : {}),
     };
   }
 
@@ -1173,8 +1190,11 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   private async gatherSurfaces(): Promise<void> {
     const provider = this.surfaces;
     const page = this.currentPage;
-    this.drawn.clear();
-    if (!provider || !page) return;
+
+    if (!provider || !page) {
+      this.drawn.clear();
+      return;
+    }
 
     const wanted = new Map<string, SurfaceRequest>();
 
@@ -1193,16 +1213,29 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
       });
     }
 
+    /*
+     * Filled aside and swapped in at the end, rather than cleared first.
+     *
+     * `keys` reads these too — a window and a tablet are asking what the deck
+     * looks like, at any moment and not only after a paint — and a map emptied
+     * for the duration of the drawing is a window that catches the keys blank
+     * every couple of seconds.
+     */
+    const fresh = new Map<string, SurfaceFrame>();
+
     await Promise.all(
       [...wanted].map(async ([key, request]) => {
         try {
           const frame = await provider(request);
-          if (frame) this.drawn.set(key, frame);
+          if (frame) fresh.set(key, frame);
         } catch (cause) {
           this.emit('error', cause instanceof Error ? cause : new Error(String(cause)));
         }
       }),
     );
+
+    this.drawn.clear();
+    for (const [key, frame] of fresh) this.drawn.set(key, frame);
   }
 
   private keysOfRegion(key: number, cols: number, rows: number): number[] {
