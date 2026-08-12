@@ -54,6 +54,8 @@ export const ACTION_ICONS: Readonly<Record<string, string>> = {
   // A box with a cone in it: the device the sound comes out of, as opposed to
   // the loudness of it, which the speaker-with-waves above already means.
   speaker: 'M6 2h12v20H6zm6 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm0 8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
+  // The one shape everything that records has used since tape.
+  record: 'M12 5a7 7 0 100 14 7 7 0 000-14z',
 
   // Programs and the world outside
   app: 'M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z',

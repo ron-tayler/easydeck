@@ -26,6 +26,7 @@ Written as plugins, and deliberately using nothing a third party could not:
 | `obs` | a socket, a password, dynamic option lists, feedback by event |
 | `vts` | authorising that needs a person in front of the screen, and `remember` |
 | `clock` | a plugin on its own schedule, and `onWatched` as correctness rather than thrift |
+| `soundpad` | a program that says nothing on its own — polling, with `onWatched` gating the questions |
 
 The plugins folder currently loads the passive half of a plugin — icons,
 translations, `.streamDeckIconPack` archives. It does not yet load anybody's
@@ -110,13 +111,28 @@ Families of variables at a scale nothing has tried: a house with two hundred
 entities, of which a deck shows six. `onWatched` was designed for exactly this
 and has so far only been asked about a dozen sensors.
 
-### 7. Soundboard — play a file into an output device
+### ~~7. Soundboard — play a file into an output device~~ — written, sideways
 
-Consistently the most-asked-for feature in this class of program, and the one
-that needs something the project does not have: audio output, device
-enumeration, and in practice a virtual cable so the sound reaches a stream.
-Cheap to want, not cheap to build. Sequence it by whether the audience is
-streamers.
+Consistently the most-asked-for feature in this class of program, and it was
+described here as the expensive one: audio output, device enumeration, and in
+practice a virtual cable so the sound reaches a stream.
+
+Answered by not building any of that. Soundpad already is a soundboard, already
+owns the virtual cable, and already has the list of sounds somebody has spent
+time arranging — so the `soundpad` plugin drives it over its named pipe and the
+project stays out of the audio business entirely. The lesson generalises: for a
+class of feature that needs a driver, the cheapest plugin is the one that talks
+to whoever already wrote it.
+
+What it cost instead is the awkwardness that makes it worth reading: Soundpad
+addresses sounds by row number, so the whole ergonomic problem was *naming* one,
+and the answer is the same dynamic option list OBS uses. And it says nothing on
+its own — no events at all — which makes it the first plugin where `onWatched`
+gates the *questions* rather than the answers, because each value costs a round
+trip of its own.
+
+Still open, and now clearly separate: playing a file the deck itself holds, for
+somebody with no Soundpad.
 
 ### Beyond that, in rough order of demand
 

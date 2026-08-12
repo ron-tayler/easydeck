@@ -23,6 +23,7 @@ import { PluginSettingsStore } from './infrastructure/plugins/plugin-settings-st
 import { registerClockPlugin } from './infrastructure/plugins/clock/clock-plugin.js';
 import { registerHardwarePlugin } from './infrastructure/plugins/hardware-plugin.js';
 import { registerObsPlugin } from './infrastructure/plugins/obs/obs-plugin.js';
+import { registerSoundpadPlugin } from './infrastructure/plugins/soundpad/soundpad-plugin.js';
 import { registerVtsPlugin } from './infrastructure/plugins/vts/vts-plugin.js';
 import { openTarget } from './infrastructure/actions/system-actions.js';
 import type { DeviceDirectory } from './application/device-directory.js';
@@ -187,6 +188,7 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
       await registerClockPlugin(actions, plugins);
       await registerHardwarePlugin(actions, plugins);
       await registerObsPlugin(actions, plugins);
+      await registerSoundpadPlugin(actions, plugins);
       await registerVtsPlugin(actions, plugins);
     }
 
