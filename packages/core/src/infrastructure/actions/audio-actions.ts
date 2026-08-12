@@ -39,6 +39,20 @@ const DIRECTIONS: readonly ParamOption[] = [
   { value: 'input', label: { en: 'Recording', ru: 'Запись' } },
 ];
 
+/**
+ * "Whatever the system is using", as something that can be picked.
+ *
+ * Letting an application go is a choice like any other and needs a line of its
+ * own in the list. It used to be expressed by leaving the field empty, which
+ * was unreachable: the blank entry in a select is the placeholder, and it is
+ * disabled the moment anything has been chosen.
+ *
+ * A word rather than an empty string for the same reason — the empty value
+ * already means "nothing picked yet". Windows names endpoints `{0.0.0.…}`, so
+ * nothing it reports can collide with this.
+ */
+const SYSTEM_DEFAULT = 'default';
+
 export const audioActions: ActionDefinition[] = [
   {
     type: 'media.set-default-device',
@@ -171,11 +185,10 @@ export const audioActions: ActionDefinition[] = [
         name: 'device',
         type: 'select',
         label: { en: 'Device', ru: 'Устройство' },
-        optionsFrom: 'devices',
-        required: false,
+        optionsFrom: 'app-devices',
         description: {
-          en: 'Leave empty to put it back on the system default',
-          ru: 'Оставьте пустым, чтобы вернуть системное умолчание',
+          en: 'Pick "System default" to hand the application back to whatever everything else uses',
+          ru: 'Выберите «По умолчанию», чтобы вернуть приложение на общее устройство системы',
         },
       },
     ],
@@ -213,19 +226,22 @@ export class AudioPlugin implements Plugin {
   private timer?: NodeJS.Timeout;
 
   start(host: PluginHost): void {
-    host.provideOptions('devices', async (params) => {
-      const devices = await listDevices(directionOf(params));
+    host.provideOptions('devices', (params) => this.devices(params));
 
-      return devices.map<ParamOption>((device) => ({
-        value: device.id,
-        // The two defaults are marked where they are chosen: "which of these
-        // five is the one in use" is the question somebody has open.
-        label: {
-          en: device.isDefault ? `${device.name} — default` : device.name,
-          ru: device.isDefault ? `${device.name} — сейчас` : device.name,
-        },
-      }));
-    });
+    /*
+     * The same list with one more line at the top.
+     *
+     * A separate source rather than a flag on the parameter: "let it go" is
+     * only an answer for a single application. Offering it where the *system*
+     * default is chosen would be asking Windows to default to its default.
+     */
+    host.provideOptions('app-devices', async (params) => [
+      {
+        value: SYSTEM_DEFAULT,
+        label: { en: 'System default', ru: 'По умолчанию' },
+      },
+      ...(await this.devices(params)),
+    ]);
 
     host.provideOptions('apps', async () => {
       forgetProcessNames();
@@ -247,6 +263,20 @@ export class AudioPlugin implements Plugin {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+  }
+
+  private async devices(params: Readonly<Record<string, unknown>>): Promise<ParamOption[]> {
+    const devices = await listDevices(directionOf(params));
+
+    return devices.map<ParamOption>((device) => ({
+      value: device.id,
+      // The two defaults are marked where they are chosen: "which of these
+      // five is the one in use" is the question somebody has open.
+      label: {
+        en: device.isDefault ? `${device.name} — default` : device.name,
+        ru: device.isDefault ? `${device.name} — сейчас` : device.name,
+      },
+    }));
   }
 
   /**
@@ -318,7 +348,10 @@ export async function registerAudioActions(
 
     'media.set-app-device': async (params) => {
       const device = typeof params['device'] === 'string' ? params['device'] : '';
-      await setAppDevice(stringParam(params, 'app'), device, directionOf(params));
+      // An empty id is how Windows is told to stop routing this program, and
+      // both the chosen word and an unfilled field mean exactly that.
+      const endpoint = device === SYSTEM_DEFAULT ? '' : device;
+      await setAppDevice(stringParam(params, 'app'), endpoint, directionOf(params));
     },
   });
 
