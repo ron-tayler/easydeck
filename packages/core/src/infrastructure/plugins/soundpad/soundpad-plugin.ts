@@ -184,8 +184,8 @@ export const soundpadManifest: PluginManifest = {
       icon: 'play-pause',
       label: { en: 'Play a sound', ru: 'Проиграть звук' },
       description: {
-        en: 'Chosen from your Soundpad list, which is read afresh every time this field is opened',
-        ru: 'Выбирается из списка Soundpad — список читается заново при каждом открытии поля',
+        en: 'Held by name, so rearranging your Soundpad list does not change what a key plays',
+        ru: 'Хранится по названию — поэтому перетаскивание списка в Soundpad не меняет, что играет клавиша',
       },
       params: [
         {
@@ -193,9 +193,9 @@ export const soundpadManifest: PluginManifest = {
           type: 'select',
           optionsFrom: 'sounds',
           label: { en: 'Sound', ru: 'Звук' },
-          // Nothing to list means Soundpad is closed, and typing a row number
-          // is a perfectly good answer — so no `emptyNote` here.
-          placeholder: { en: 'Row number in Soundpad', ru: 'Номер строки в Soundpad' },
+          // Nothing to list means Soundpad is closed, and the name is a fine
+          // thing to type — so no `emptyNote` here.
+          placeholder: { en: 'Name, tag or file name', ru: 'Название, тег или имя файла' },
         },
         {
           name: 'lines',
@@ -522,16 +522,20 @@ export class SoundpadPlugin implements Plugin {
   // --- the lists a configurator offers -------------------------------------
 
   /**
-   * The sounds Soundpad has, by the number that plays them.
+   * The sounds Soundpad has, by name.
    *
    * Read when somebody opens the field rather than kept: the list is theirs to
    * edit while the deck runs, and a copy of it here would be a second version
    * of the truth that goes stale the first time they drag a row.
    *
-   * The value is the row number, because that is all `DoPlaySound` understands.
-   * Which means reordering the list in Soundpad does move what a key plays —
-   * unavoidable, and the reason the title is shown beside the number rather
-   * than instead of it.
+   * The value stored is the *name*, not the row number, even though the number
+   * is the only thing `DoPlaySound` understands. Soundpad's list is meant to be
+   * dragged about, and a number is a promise that breaks the moment somebody
+   * does — silently, and into playing the wrong sound rather than none. The row
+   * is looked up again at the moment the key is pressed; see `findSound`.
+   *
+   * The number still appears in the label, because it is how you find the row
+   * in Soundpad's own window while you are setting a key up.
    */
   private registerOptions(host: PluginHost): void {
     host.provideOptions('sounds', async () => {
@@ -542,25 +546,40 @@ export class SoundpadPlugin implements Plugin {
 
   // --- what a key asked for -------------------------------------------------
 
+  /**
+   * Plays what a key names, whatever row it happens to be on now.
+   *
+   * The list is read on every press rather than remembered. It costs one round
+   * trip down a local pipe, and the alternative is a copy that disagrees with
+   * Soundpad exactly when it matters — the press after somebody rearranged
+   * their sounds. If a list ever grows big enough for that to be felt, this is
+   * the place for a cache, and it will need a reason to be safe.
+   *
+   * A plain number is still taken as a row number, for anybody who wants one.
+   */
   async play(sound: string, lines: string): Promise<void> {
-    const index = Number(sound);
-    if (!Number.isFinite(index) || index < 1) {
-      throw new TypeError(`'${sound}' is not a Soundpad row number`);
-    }
+    const wanted = sound.trim();
+    if (wanted === '') throw new TypeError('No sound was named');
 
-    const whole = Math.round(index);
+    const index = /^\d+$/.test(wanted)
+      ? Number(wanted)
+      : findSound(await this.require().ask('GetSoundlist()'), wanted);
+
+    if (index === undefined || index < 1) {
+      throw new Error(`Soundpad has no sound called '${wanted}'`);
+    }
 
     // No third and fourth argument at all for "as Soundpad is set up": the
     // one-argument form is what Soundpad does by itself, and passing its own
     // setting back to it would be this plugin guessing what that setting is.
     if (lines === '' || lines === undefined) {
-      await this.require().tell(`DoPlaySound(${whole})`);
+      await this.require().tell(`DoPlaySound(${index})`);
       return;
     }
 
     const speakers = lines !== 'microphone';
     const microphone = lines !== 'speakers';
-    await this.require().tell(`DoPlaySound(${whole}, ${speakers}, ${microphone})`);
+    await this.require().tell(`DoPlaySound(${index}, ${speakers}, ${microphone})`);
   }
 
   async simple(command: string): Promise<void> {
@@ -732,33 +751,93 @@ export async function registerSoundpadPlugin(
   return plugin;
 }
 
+/** One row of Soundpad's list, as much of it as anything here needs. */
+interface Row {
+  readonly index: number;
+  readonly title: string;
+  readonly tag: string;
+  readonly file: string;
+}
+
 /**
- * The rows of a sound list, as choices.
+ * The rows of a sound list.
  *
  * Parsed with a regular expression rather than an XML library, which is the
  * same trade the rest of this package makes: the document is two attributes
  * deep, generated by one program, and a dependency to read it would be more to
  * carry than to gain.
- *
- * A sound with no title falls back to its file name — Soundpad leaves the title
- * empty for a file with no tags, and a list of blank rows is no list at all.
  */
-export function soundOptions(xml: string): ParamOption[] {
-  const found: ParamOption[] = [];
+function rows(xml: string): Row[] {
+  const found: Row[] = [];
 
   for (const row of xml.matchAll(/<Sound\b([^>]*)\/>/g)) {
     const attributes = row[1] ?? '';
-    const index = attribute(attributes, 'index');
-    if (index === undefined || index === '') continue;
+    const index = Number(attribute(attributes, 'index') ?? '');
+    if (!Number.isFinite(index) || index < 1) continue;
 
-    const title = attribute(attributes, 'title') ?? '';
-    const url = attribute(attributes, 'url') ?? '';
-    const name = title !== '' ? title : fileName(url);
-
-    found.push({ value: index, label: { en: `${index}. ${name}` } });
+    found.push({
+      index,
+      title: attribute(attributes, 'title') ?? '',
+      tag: attribute(attributes, 'tag') ?? '',
+      file: fileName(attribute(attributes, 'url') ?? ''),
+    });
   }
 
   return found;
+}
+
+/**
+ * The choices a field offers, held by name.
+ *
+ * A sound with no title falls back to its file name — Soundpad leaves the title
+ * empty for a file with no tags, and a list of blank rows is no list at all.
+ * Whatever is shown is what gets stored, so the thing somebody picked is the
+ * thing that will be looked for.
+ */
+export function soundOptions(xml: string): ParamOption[] {
+  return rows(xml)
+    .map((row) => ({ row, name: nameOf(row) }))
+    .filter(({ name }) => name !== '')
+    .map(({ row, name }) => ({ value: name, label: { en: `${row.index}. ${name}` } }));
+}
+
+/**
+ * The row a name refers to, or nothing.
+ *
+ * Three things count as a name, in the order somebody would expect them to:
+ * the title Soundpad shows, the tag it searches by, and the file on disk. Then
+ * the same three again ignoring case, because a name typed by hand rarely
+ * matches the capitals of a file somebody downloaded.
+ *
+ * The lowest row wins where several match. Titles are not unique — two copies
+ * of the same file are an ordinary thing to have — and picking the first is at
+ * least the same answer every time, which "whichever" would not be.
+ */
+export function findSound(xml: string, wanted: string): number | undefined {
+  const all = rows(xml);
+  const needle = wanted.trim();
+  const folded = needle.toLowerCase();
+
+  const attempts: readonly ((row: Row) => boolean)[] = [
+    (row) => row.title === needle,
+    (row) => row.tag === needle,
+    (row) => row.file === needle,
+    (row) => row.title.toLowerCase() === folded,
+    (row) => row.tag.toLowerCase() === folded,
+    (row) => row.file.toLowerCase() === folded,
+  ];
+
+  for (const matches of attempts) {
+    const hit = all.filter(matches).sort((a, b) => a.index - b.index)[0];
+    if (hit) return hit.index;
+  }
+
+  return undefined;
+}
+
+/** What a row is called: its title, or the file it came from. */
+function nameOf(row: Row): string {
+  return row.title !== '' ? row.title : row.file;
 }
 
 function attribute(attributes: string, name: string): string | undefined {

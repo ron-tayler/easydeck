@@ -101,13 +101,14 @@ export class FakeSoundpad {
 
 /** A sound list of the shape Soundpad really produces, for the fake to hand over. */
 export function soundlist(
-  sounds: readonly { index: number; title?: string; url?: string }[],
+  sounds: readonly { index: number; title?: string; url?: string; tag?: string }[],
 ): string {
   const rows = sounds
     .map(
       (sound) =>
         `  <Sound index="${sound.index}" url="${sound.url ?? ''}" artist="" ` +
-        `title="${sound.title ?? ''}" duration="0:02" playCount="0" tag=""/>`,
+        `title="${sound.title ?? ''}" duration="0:02" playCount="0" ` +
+        `tag="${sound.tag ?? sound.title ?? ''}"/>`,
     )
     .join('\n');
 

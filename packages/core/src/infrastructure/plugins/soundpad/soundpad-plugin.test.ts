@@ -13,6 +13,7 @@ import { FakeSoundpad, soundlist } from './fake-soundpad.js';
 import { isComplete } from './soundpad-connection.js';
 import {
   SOUNDPAD_PLUGIN_ID,
+  findSound,
   registerSoundpadPlugin,
   soundOptions,
   soundpadManifest,
@@ -59,7 +60,9 @@ const ANSWERS: Record<string, string> = {
     { index: 2, title: '', url: 'C:\\sounds\\firework.mp3' },
     { index: 3, title: 'Кофе & чай' },
   ]),
+  'DoPlaySound(1)': 'R-200',
   'DoPlaySound(2)': 'R-200',
+  'DoPlaySound(3)': 'R-200',
   'DoPlaySound(2, true, false)': 'R-200',
   'DoPlaySound(2, false, true)': 'R-200',
   'DoPlaySound(2, true, true)': 'R-200',
@@ -174,17 +177,71 @@ describe('the Soundpad plugin', () => {
     await bed.dispose();
   });
 
-  it('plays the row a key names, and lets the refusal show', async () => {
+  it('plays the sound a key names, by looking up which row it is on', async () => {
+    const bed = await bench();
+    await bed.until('a connection', () => bed.value('soundpad.connected') === true);
+
+    await bed.run('soundpad.play', { sound: 'ba dum tss' });
+    assert.ok(bed.soundpad.commands.includes('DoPlaySound(1)'));
+
+    await bed.dispose();
+  });
+
+  it('plays the same sound after the list has been rearranged', async () => {
+    /*
+     * The whole reason a key holds a name. Soundpad's list is meant to be
+     * dragged about, and a row number is a promise that breaks the moment
+     * somebody does — silently, and into playing the wrong sound rather than
+     * none, which is the worse of the two.
+     */
+    const bed = await bench();
+    await bed.until('a connection', () => bed.value('soundpad.connected') === true);
+
+    await bed.run('soundpad.play', { sound: 'Кофе & чай' });
+    assert.ok(bed.soundpad.commands.includes('DoPlaySound(3)'));
+
+    // The same three sounds, dragged into a different order.
+    bed.soundpad.answers['GetSoundlist()'] = soundlist([
+      { index: 1, title: 'Кофе & чай' },
+      { index: 2, title: 'ba dum tss' },
+      { index: 3, title: '', url: 'C:\\sounds\\firework.mp3' },
+    ]);
+
+    await bed.run('soundpad.play', { sound: 'Кофе & чай' });
+    assert.ok(bed.soundpad.commands.includes('DoPlaySound(1)'), 'it followed the sound, not the row');
+
+    await bed.dispose();
+  });
+
+  it('still takes a plain row number, for anybody who wants one', async () => {
     const bed = await bench();
     await bed.until('a connection', () => bed.value('soundpad.connected') === true);
 
     await bed.run('soundpad.play', { sound: '2' });
     assert.ok(bed.soundpad.commands.includes('DoPlaySound(2)'));
+    assert.ok(
+      !bed.soundpad.commands.includes('GetSoundlist()'),
+      'a number needs no looking up',
+    );
+
+    await bed.dispose();
+  });
+
+  it('says so rather than playing something else when the name is gone', async () => {
+    // A sound deleted from the list since the profile named it. A key that
+    // quietly did nothing is the one failure a deck cannot afford.
+    const bed = await bench();
+    await bed.until('a connection', () => bed.value('soundpad.connected') === true);
+
+    assert.match(
+      await refusal(() => bed.run('soundpad.play', { sound: 'что-то удалённое' })),
+      /no sound called/i,
+    );
 
     /*
-     * A sound deleted from the list since the profile named it. Soundpad
-     * answers `R-204`, and a key that quietly did nothing is the one failure a
-     * deck cannot afford — so this reaches the caller and marks the key.
+     * And a row number that is out of range, which is the one thing the number
+     * path cannot check for itself: Soundpad answers `R-204` and that reaches
+     * the caller.
      */
     assert.match(await refusal(() => bed.run('soundpad.play', { sound: '99' })), /R-204/);
 
@@ -200,10 +257,10 @@ describe('the Soundpad plugin', () => {
     const bed = await bench();
     await bed.until('a connection', () => bed.value('soundpad.connected') === true);
 
-    await bed.run('soundpad.play', { sound: '2', lines: '' });
-    await bed.run('soundpad.play', { sound: '2', lines: 'microphone' });
-    await bed.run('soundpad.play', { sound: '2', lines: 'speakers' });
-    await bed.run('soundpad.play', { sound: '2', lines: 'both' });
+    await bed.run('soundpad.play', { sound: 'firework.mp3', lines: '' });
+    await bed.run('soundpad.play', { sound: 'firework.mp3', lines: 'microphone' });
+    await bed.run('soundpad.play', { sound: 'firework.mp3', lines: 'speakers' });
+    await bed.run('soundpad.play', { sound: 'firework.mp3', lines: 'both' });
 
     assert.deepEqual(
       bed.soundpad.commands.filter((command) => command.startsWith('DoPlaySound')),
@@ -218,15 +275,20 @@ describe('the Soundpad plugin', () => {
     await bed.dispose();
   });
 
-  it('offers the sounds Soundpad has, by the number that plays them', async () => {
+  it('offers the sounds Soundpad has, held by name', async () => {
     const bed = await bench();
     await bed.until('a connection', () => bed.value('soundpad.connected') === true);
 
     const sounds = await bed.options('sounds');
     assert.deepEqual(
       sounds.map((option) => option.value),
-      ['1', '2', '3'],
-      'the value is the row number, because that is all DoPlaySound understands',
+      ['ba dum tss', 'firework.mp3', 'Кофе & чай'],
+      'the name is what survives the list being rearranged',
+    );
+    assert.deepEqual(
+      sounds.map((option) => option.label?.en),
+      ['1. ba dum tss', '2. firework.mp3', '3. Кофе & чай'],
+      'the number is still shown, for finding the row in Soundpad itself',
     );
 
     await bed.dispose();
@@ -420,6 +482,42 @@ describe('reading what Soundpad says', () => {
 
     // A document with nothing in it is already finished.
     assert.equal(isComplete('<?xml version="1.0"?>\n<Categories/>'), true);
+  });
+
+  it('finds a row by its title, its tag or its file', () => {
+    const list = soundlist([
+      { index: 1, title: 'Fanfare', tag: 'победа' },
+      { index: 2, title: '', url: 'D:\\audio\\airhorn.mp3' },
+    ]);
+
+    assert.equal(findSound(list, 'Fanfare'), 1);
+    assert.equal(findSound(list, 'победа'), 1, 'the tag Soundpad searches by');
+    assert.equal(findSound(list, 'airhorn.mp3'), 2);
+    // A name typed by hand rarely matches the capitals of a downloaded file.
+    assert.equal(findSound(list, 'fanfare'), 1);
+    assert.equal(findSound(list, 'AIRHORN.MP3'), 2);
+    assert.equal(findSound(list, 'nothing like it'), undefined);
+  });
+
+  it('prefers a title to a tag, and the lowest row where several match', () => {
+    /*
+     * Titles are not unique — two copies of the same file are an ordinary
+     * thing to have — so "whichever" is not an answer. The first row is at
+     * least the same answer every time.
+     */
+    const list = soundlist([
+      { index: 1, title: 'Applause', tag: 'Horn' },
+      { index: 2, title: 'Horn', tag: 'brass' },
+      { index: 3, title: 'Horn', tag: 'brass' },
+    ]);
+
+    assert.equal(findSound(list, 'Horn'), 2, 'the one titled that, not the one tagged that');
+
+    const twice = soundlist([
+      { index: 4, title: 'Boo' },
+      { index: 7, title: 'Boo' },
+    ]);
+    assert.equal(findSound(twice, 'Boo'), 4);
   });
 
   it('falls back to the file name where Soundpad has no title for a row', () => {
