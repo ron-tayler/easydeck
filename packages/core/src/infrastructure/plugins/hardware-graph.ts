@@ -64,43 +64,106 @@ export function drawGraph(
   cols = 1,
   rows = 1,
 ): string {
+  const { background, max, ...rest } = style;
+  return drawGraphs([{ readings, ...rest }], { max, ...(background ? { background } : {}) }, cols, rows);
+}
+
+/** One series of a graph: its numbers and how it is drawn. */
+export interface Series {
+  readonly readings: readonly number[];
+  readonly line: string;
+  readonly fill?: string;
+  readonly thickness: number;
+}
+
+/** What the whole picture shares, whatever is drawn on it. */
+export interface GraphFrame {
+  /** Drawn behind the lines, at the value the readings are measured against. */
+  readonly max: number;
+  readonly background?: string;
+}
+
+/**
+ * Several series on one picture, sharing a ceiling and an axis.
+ *
+ * Sharing the ceiling is the whole point of drawing them together: what a
+ * download and an upload on one key are *for* is comparing them, and two
+ * graphs each scaled to their own peak would show a trickle and a torrent as
+ * the same shape.
+ *
+ * Drawn in the order given, so whatever is listed last sits on top. The caller
+ * decides; here that is the upload, because it is usually the smaller of the
+ * two and would otherwise be buried under the download's shading.
+ */
+export function drawGraphs(
+  series: readonly Series[],
+  frame: GraphFrame,
+  cols = 1,
+  rows = 1,
+): string {
   const width = 100 * cols;
   const height = 100 * rows;
-  const ceiling = style.max > 0 ? style.max : 100;
+  const ceiling = frame.max > 0 ? frame.max : 100;
 
   const parts: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">`,
   ];
 
-  if (style.background) {
-    parts.push(`<rect width="${width}" height="${height}" fill="${escape(style.background)}"/>`);
+  if (frame.background) {
+    parts.push(`<rect width="${width}" height="${height}" fill="${escape(frame.background)}"/>`);
   }
 
-  if (readings.length >= 2) {
-    const step = width / (readings.length - 1);
+  for (const one of series) {
+    if (one.readings.length < 2) continue;
+
+    const step = width / (one.readings.length - 1);
     const at = (value: number, index: number): string => {
       const y = height - (clamp(value, 0, ceiling) / ceiling) * height;
       return `${round(index * step)},${round(y)}`;
     };
 
-    const line = readings.map(at).join(' ');
+    const line = one.readings.map(at).join(' ');
 
     // The fill is the same line closed along the bottom. Drawn first so the
     // line itself sits on top of its own shading rather than under it.
-    if (style.fill) {
+    if (one.fill) {
       parts.push(
-        `<polygon points="0,${height} ${line} ${width},${height}" fill="${escape(style.fill)}"/>`,
+        `<polygon points="0,${height} ${line} ${width},${height}" fill="${escape(one.fill)}"/>`,
       );
     }
 
     parts.push(
-      `<polyline points="${line}" fill="none" stroke="${escape(style.line)}"` +
-        ` stroke-width="${style.thickness}" stroke-linejoin="round" stroke-linecap="round"/>`,
+      `<polyline points="${line}" fill="none" stroke="${escape(one.line)}"` +
+        ` stroke-width="${one.thickness}" stroke-linejoin="round" stroke-linecap="round"/>`,
     );
   }
 
   parts.push('</svg>');
   return parts.join('');
+}
+
+/**
+ * A ceiling that fits what is being drawn, for a reading with no natural one.
+ *
+ * Rounded up to something a person would say — 1, 2, 5, 10, 20, 50 — so the
+ * scale stops jittering with every sample and a graph redrawn a second later
+ * is the same graph. A quarter of headroom above the peak keeps the busiest
+ * moment off the top edge.
+ *
+ * Never zero: an adapter carrying nothing would otherwise divide by it.
+ */
+export function busiest(readings: readonly number[]): number {
+  const peak = readings.reduce((most, value) => Math.max(most, value), 0);
+  if (peak <= 0) return 1;
+
+  const wanted = peak * 1.25;
+  const decade = 10 ** Math.floor(Math.log10(wanted));
+
+  for (const step of [1, 2, 5, 10]) {
+    if (wanted <= step * decade) return step * decade;
+  }
+
+  return 10 * decade;
 }
 
 function clamp(value: number, low: number, high: number): number {

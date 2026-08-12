@@ -1,7 +1,9 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import { KOFFI, loadCom } from './win32-com.js';
+import { KOFFI } from './win32-com.js';
+import { PdhQuery } from './win32-pdh.js';
+import type { CounterItem } from './win32-pdh.js';
 
 /**
  * What the graphics card is doing, as Windows itself measures it.
@@ -31,49 +33,13 @@ export interface GpuReading {
   readonly memoryTotal?: number;
 }
 
-/** One instance of a counter, as PDH hands it back. */
-export interface CounterItem {
-  readonly name: string;
-  readonly value: number;
-}
-
-/** `PDH_FMT_DOUBLE`, and the status that means "the buffer was too small". */
-const PDH_FMT_DOUBLE = 0x0000_0200;
-const PDH_MORE_DATA = 0x800007d2 | 0;
-
-/**
- * `LPWSTR szName; DWORD CStatus; <padding>; double value;` on 64-bit.
- *
- * Read by hand at these offsets rather than described to koffi as a struct:
- * the union in the middle is what makes it awkward to declare and trivial to
- * decode.
- */
-const ITEM_BYTES = 24;
-const VALUE_AT = 16;
-
 const HKEY_LOCAL_MACHINE = 0x8000_0002;
 const RRF_RT_REG_QWORD = 0x0000_0040;
 const DISPLAY_CLASS = 'SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}';
 
 const GIB = 1024 ** 3;
 
-interface Pdh {
-  readonly open: (source: unknown, user: number, out: unknown[]) => number;
-  readonly add: (query: unknown, path: string, user: number, out: unknown[]) => number;
-  readonly collect: (query: unknown) => number;
-  readonly array: (
-    counter: unknown,
-    format: number,
-    size: unknown[],
-    count: unknown[],
-    buffer: unknown,
-  ) => number;
-}
-
-let pdh: Pdh | undefined;
-let query: unknown;
-let engines: unknown;
-let adapters: unknown;
+let query: PdhQuery | undefined;
 let primed = false;
 let opened = false;
 
@@ -84,94 +50,24 @@ let opened = false;
  * has to outlive a single reading — which is also why the first reading has no
  * load in it. Kept as module state rather than in the plugin, because there is
  * one set of counters on the machine however many things ask.
+ *
+ * A Windows old enough to lack the GPU counters — they arrived in 10 1709 —
+ * leaves the plugin without these three variables and with the rest.
  */
 async function open(): Promise<boolean> {
-  if (opened) return pdh !== undefined;
+  if (opened) return query !== undefined;
   opened = true;
 
-  if (!(await loadCom())) return false;
+  query = await PdhQuery.open({
+    engines: '\\GPU Engine(*)\\Utilization Percentage',
+    adapters: '\\GPU Adapter Memory(*)\\Dedicated Usage',
+  });
 
-  try {
-    const library = KOFFI.load('pdh.dll');
-    const out = KOFFI.out;
-    const inout = KOFFI.inout;
-    const pointer = KOFFI.pointer;
-
-    const api: Pdh = {
-      open: library.func('__stdcall', 'PdhOpenQueryW', 'long', [
-        'char16_t *',
-        'uintptr_t',
-        out(pointer('void *')),
-      ]) as Pdh['open'],
-      // The English form, so a Russian or German Windows is asked the same
-      // question: the localised names differ and the counter does not.
-      add: library.func('__stdcall', 'PdhAddEnglishCounterW', 'long', [
-        'void *',
-        'char16_t *',
-        'uintptr_t',
-        out(pointer('void *')),
-      ]) as Pdh['add'],
-      collect: library.func('__stdcall', 'PdhCollectQueryData', 'long', ['void *']) as Pdh['collect'],
-      array: library.func('__stdcall', 'PdhGetFormattedCounterArrayW', 'long', [
-        'void *',
-        'uint32',
-        inout(pointer('uint32')),
-        out(pointer('uint32')),
-        'void *',
-      ]) as Pdh['array'],
-    };
-
-    const handle: unknown[] = [null];
-    if (api.open(null, 0, handle) !== 0) return false;
-
-    const engineOut: unknown[] = [null];
-    const adapterOut: unknown[] = [null];
-    const engineStatus = api.add(handle[0], '\\GPU Engine(*)\\Utilization Percentage', 0, engineOut);
-    const adapterStatus = api.add(handle[0], '\\GPU Adapter Memory(*)\\Dedicated Usage', 0, adapterOut);
-
-    // A Windows old enough to lack the GPU counters — they arrived in 10 1709
-    // — leaves the plugin without these three variables and with the rest.
-    if (engineStatus !== 0 && adapterStatus !== 0) return false;
-
-    pdh = api;
-    query = handle[0];
-    engines = engineStatus === 0 ? engineOut[0] : undefined;
-    adapters = adapterStatus === 0 ? adapterOut[0] : undefined;
-    return true;
-  } catch {
-    pdh = undefined;
-    return false;
-  }
+  return query !== undefined;
 }
 
 export async function gpuAvailable(): Promise<boolean> {
   return open();
-}
-
-/** Every instance of one counter, or nothing if it cannot be read this time. */
-function items(counter: unknown): CounterItem[] {
-  if (!pdh || !counter) return [];
-
-  const size: unknown[] = [0];
-  const count: unknown[] = [0];
-
-  // Asked twice on purpose: the first call is how PDH says how much room the
-  // answer needs, and the number of instances changes with every program that
-  // opens or closes.
-  if (pdh.array(counter, PDH_FMT_DOUBLE, size, count, null) !== PDH_MORE_DATA) return [];
-
-  const buffer = Buffer.alloc(Number(size[0]));
-  if (pdh.array(counter, PDH_FMT_DOUBLE, size, count, buffer) !== 0) return [];
-
-  const found: CounterItem[] = [];
-  for (let index = 0; index < Number(count[0]); index++) {
-    const at = index * ITEM_BYTES;
-    const name = KOFFI.decode(KOFFI.decode(buffer, at, 'void *'), 'char16_t', -1) as unknown as string;
-    const value = KOFFI.decode(buffer, at + VALUE_AT, 'double') as unknown as number;
-    found.push({ name, value });
-  }
-
-  return found;
 }
 
 /**
@@ -216,9 +112,9 @@ export function usedFromAdapters(instances: readonly CounterItem[]): number | un
  * to subtract, and there has only been one.
  */
 export async function readGpu(): Promise<GpuReading> {
-  if (!(await open()) || !pdh) return {};
+  if (!(await open()) || !query) return {};
 
-  if (pdh.collect(query) !== 0) return {};
+  if (!query.collect()) return {};
 
   const total = await totalMemory();
   const size = total === undefined ? {} : { memoryTotal: total };
@@ -230,8 +126,8 @@ export async function readGpu(): Promise<GpuReading> {
     return size;
   }
 
-  const load = loadFromEngines(items(engines));
-  const used = usedFromAdapters(items(adapters));
+  const load = loadFromEngines(query.items('engines'));
+  const used = usedFromAdapters(query.items('adapters'));
 
   return {
     ...size,

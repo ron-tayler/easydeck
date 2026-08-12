@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { History, drawGraph } from './hardware-graph.js';
+import { History, busiest, drawGraph, drawGraphs } from './hardware-graph.js';
 
 describe('a history of readings', () => {
   it('keeps the newest and drops the oldest', () => {
@@ -82,5 +82,71 @@ describe('drawing it', () => {
 
     assert.doesNotMatch(svg, /<script>/);
     assert.match(svg, /stroke="&#34;/);
+  });
+});
+
+describe('two series on one picture', () => {
+  const down = { readings: [0, 50], line: '#6ea8fe', thickness: 3 };
+  const up = { readings: [0, 25], line: '#f0a35e', thickness: 3 };
+
+  it('measures both against one ceiling', () => {
+    /*
+     * The whole reason for drawing them together. Scaled to their own peaks,
+     * a trickle and a torrent would be the same shape, and comparing them is
+     * what putting them on one key is for.
+     */
+    const svg = drawGraphs([down, up], { max: 100 });
+
+    assert.match(svg, /points="0,100 100,50" fill="none" stroke="#6ea8fe"/);
+    assert.match(svg, /points="0,100 100,75" fill="none" stroke="#f0a35e"/);
+  });
+
+  it('draws them in the order given, so the last one is on top', () => {
+    const svg = drawGraphs([down, up], { max: 100 });
+    assert.ok(svg.indexOf('#6ea8fe') < svg.indexOf('#f0a35e'));
+  });
+
+  it('leaves out a series with nothing in it', () => {
+    // What "in only" asks for: one line, not one line and an empty element.
+    const svg = drawGraphs([down, { ...up, readings: [] }], { max: 100 });
+
+    assert.match(svg, /#6ea8fe/);
+    assert.doesNotMatch(svg, /#f0a35e/);
+  });
+
+  it('is still one graph when only one series was given', () => {
+    // `drawGraph` is this with a list of one, so the older widget cannot drift
+    // away from the newer one.
+    assert.equal(
+      drawGraph([0, 50], { line: '#6ea8fe', max: 100, thickness: 3 }),
+      drawGraphs([down], { max: 100 }),
+    );
+  });
+});
+
+describe('a ceiling for a reading that has none', () => {
+  it('rounds up to a number a person would say', () => {
+    // So the scale stops jittering with every sample: a graph redrawn a second
+    // later has to be the same graph, or the line dances against a moving axis.
+    assert.equal(busiest([70]), 100);
+    assert.equal(busiest([100]), 200);
+    assert.equal(busiest([1_500_000]), 2_000_000);
+    // The ladder goes 1, 2, 5, 10, so a peak that wants 5.6 gets 10 rather
+    // than a rung invented for it. The line sits lower; the axis holds still.
+    assert.equal(busiest([4_500_000]), 10_000_000);
+    assert.equal(busiest([4_000_000]), 5_000_000);
+  });
+
+  it('keeps the busiest moment off the top edge', () => {
+    // A peak drawn exactly at the ceiling is a line along the top, which reads
+    // as clipped rather than as full.
+    assert.ok(busiest([80]) > 80);
+  });
+
+  it('never answers zero, whatever it is given', () => {
+    // An adapter carrying nothing is the ordinary state of most of them, and
+    // dividing by that ceiling is what draws the line.
+    assert.equal(busiest([]), 1);
+    assert.equal(busiest([0, 0, 0]), 1);
   });
 });

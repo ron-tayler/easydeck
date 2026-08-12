@@ -18,7 +18,9 @@ import type {
 
 import type { PluginRuntime } from '../../application/plugin-runtime.js';
 import { gpuAvailable, readGpu, readGpuTemperature } from '../actions/win32-gpu.js';
-import { History, drawGraph } from './hardware-graph.js';
+import { formatRate, networkAvailable, readNetwork } from '../actions/win32-network.js';
+import { History, busiest, drawGraph, drawGraphs } from './hardware-graph.js';
+import type { Series } from './hardware-graph.js';
 
 /**
  * What the machine is doing, on a key.
@@ -105,6 +107,7 @@ export interface GpuSupport {
 export function hardwareManifest(
   disks: readonly Disk[],
   gpu: GpuSupport = { counters: false, temperature: false },
+  network = false,
 ): PluginManifest {
   const variables: VariableDeclaration[] = [
     {
@@ -196,6 +199,54 @@ export function hardwareManifest(
     });
   }
 
+  /*
+   * The network, as families rather than one pair of variables.
+   *
+   * A machine has several adapters and which one matters is the user's
+   * business — a cable, a Wi-Fi card, a VPN tunnel — so the key carries which:
+   * `hw.net-down(Intel[R] Ethernet Controller [3] I225-V)`. And a family is
+   * what makes that affordable, since only the adapters a profile mentions are
+   * ever published.
+   *
+   * Both the number and the text of it: the number is for a handler to compare
+   * against, the text is what a label can show without doing arithmetic in a
+   * template.
+   */
+  if (network) {
+    const adapter = { label: { en: 'Adapter', ru: 'Адаптер' }, optionsFrom: 'adapters' };
+
+    variables.push(
+      {
+        name: 'hw.net-down',
+        type: 'string',
+        label: { en: 'Network in', ru: 'Сеть, приём' },
+        argument: adapter,
+      },
+      {
+        name: 'hw.net-up',
+        type: 'string',
+        label: { en: 'Network out', ru: 'Сеть, отдача' },
+        argument: adapter,
+      },
+      {
+        name: 'hw.net-down-bytes',
+        type: 'number',
+        label: { en: 'Network in, bytes/s', ru: 'Сеть, приём, байт/с' },
+        description: {
+          en: 'The number behind the text, for a handler to compare against',
+          ru: 'Число за подписью — чтобы обработчик мог его сравнить',
+        },
+        argument: adapter,
+      },
+      {
+        name: 'hw.net-up-bytes',
+        type: 'number',
+        label: { en: 'Network out, bytes/s', ru: 'Сеть, отдача, байт/с' },
+        argument: adapter,
+      },
+    );
+  }
+
   /**
    * What a graph can be drawn of: every reading that is a percentage.
    *
@@ -281,6 +332,119 @@ export function hardwareManifest(
             type: 'number',
             label: { en: 'Line thickness', ru: 'Толщина линии' },
             default: 4,
+            min: 1,
+            max: 20,
+          },
+        ],
+      },
+
+      /*
+       * The network, as a widget of its own rather than another reading in the
+       * one above.
+       *
+       * They are different subjects — what the machine is doing to itself, and
+       * what it is saying to the world — and they are different *shapes*: a
+       * percentage has a ceiling of a hundred and one line, a rate has no
+       * natural ceiling at all and wants two lines that must share one. Folding
+       * the second into the first would have meant a form where half the fields
+       * are inert depending on the first answer.
+       */
+      {
+        type: 'hardware.network',
+        label: { en: 'Network speed', ru: 'Скорость сети' },
+        description: {
+          en: 'What an adapter is carrying, in and out, over the last few seconds or minutes',
+          ru: 'Что несёт адаптер — приём и отдача — за последние секунды или минуты',
+        },
+        icon: 'globe',
+        params: [
+          {
+            name: 'adapter',
+            type: 'select',
+            optionsFrom: 'adapters',
+            label: { en: 'Adapter', ru: 'Сетевой адаптер' },
+            emptyNote: {
+              en: 'No adapter is up, or this is not Windows',
+              ru: 'Ни один адаптер не поднят, либо это не Windows',
+            },
+          },
+          {
+            name: 'show',
+            type: 'select',
+            label: { en: 'What to draw', ru: 'Что рисовать' },
+            default: 'both',
+            options: [
+              { value: 'both', label: { en: 'In and out', ru: 'Приём и отдача' } },
+              { value: 'down', label: { en: 'In only', ru: 'Только приём' } },
+              { value: 'up', label: { en: 'Out only', ru: 'Только отдача' } },
+            ],
+          },
+          {
+            name: 'period',
+            type: 'select',
+            label: { en: 'Over', ru: 'За период' },
+            default: '60',
+            options: [
+              { value: '15', label: { en: '15 seconds', ru: '15 секунд' } },
+              { value: '60', label: { en: 'A minute', ru: 'Минуту' } },
+              { value: '300', label: { en: 'Five minutes', ru: 'Пять минут' } },
+              { value: '900', label: { en: 'Fifteen minutes', ru: '15 минут' } },
+            ],
+          },
+          {
+            /*
+             * A rate has no ceiling the way a percentage does, so the graph
+             * scales itself to the busiest moment on screen. Which is right
+             * nearly always and wrong in one case: an idle line, where the
+             * scale follows the noise and a trickle looks like a torrent. A
+             * number here pins it.
+             */
+            name: 'ceiling',
+            type: 'number',
+            label: { en: 'Full scale, Mbit/s', ru: 'Потолок шкалы, Мбит/с' },
+            default: 0,
+            min: 0,
+            max: 100_000,
+            required: false,
+            description: {
+              en: 'Zero scales to the busiest moment shown',
+              ru: 'Ноль — подстраиваться под самый занятый момент на экране',
+            },
+          },
+          {
+            name: 'down',
+            type: 'color',
+            label: { en: 'In', ru: 'Приём' },
+            default: '#6ea8fe',
+          },
+          {
+            name: 'up',
+            type: 'color',
+            label: { en: 'Out', ru: 'Отдача' },
+            default: '#f0a35e',
+          },
+          {
+            name: 'fill',
+            type: 'boolean',
+            label: { en: 'Shade under the lines', ru: 'Заливка под линиями' },
+            default: true,
+            required: false,
+          },
+          {
+            name: 'background',
+            type: 'color',
+            label: { en: 'Behind the graph', ru: 'Фон графика' },
+            required: false,
+            description: {
+              en: "Empty lets the key's own background show through",
+              ru: 'Пусто — виден собственный фон клавиши',
+            },
+          },
+          {
+            name: 'thickness',
+            type: 'number',
+            label: { en: 'Line thickness', ru: 'Толщина линии' },
+            default: 3,
             min: 1,
             max: 20,
           },
@@ -503,10 +667,21 @@ export class HardwarePlugin implements Plugin {
    */
   private readonly history = new Map<string, History>();
 
+  /**
+   * What each adapter has been carrying, in and out.
+   *
+   * Kept for every adapter that is up rather than only the ones on screen, for
+   * the same reason the percentages are: a graph has to be able to show the
+   * last five minutes the moment somebody turns to that page, and five minutes
+   * cannot be collected after the question is asked.
+   */
+  private readonly traffic = new Map<string, { down: History; up: History }>();
+
   constructor(
     private readonly disks: readonly Disk[],
     private readonly gpu: GpuSupport = { counters: false, temperature: false },
     private readonly options: HardwareOptions = {},
+    private readonly network = false,
   ) {}
 
   start(host: PluginHost): void {
@@ -518,6 +693,25 @@ export class HardwarePlugin implements Plugin {
      * for a folder nobody has open.
      */
     host.provideSurface('hardware.graph', async (request) => this.graph(request));
+    host.provideSurface('hardware.network', async (request) => this.networkGraph(request));
+
+    /*
+     * The adapters that are up, asked afresh whenever somebody opens the
+     * field: a cable is unplugged and a tunnel is raised while the deck runs.
+     *
+     * Asked of the counters when nothing has been recorded yet, rather than
+     * answered from what has. A form opened in the first two seconds of the
+     * daemon's life would otherwise be told there are no adapters — which is
+     * the one moment the note saying so is certainly wrong.
+     */
+    host.provideOptions('adapters', async () => {
+      if (this.network && this.traffic.size === 0) await this.readNetwork(host);
+
+      return [...this.traffic.keys()].sort((a, b) => a.localeCompare(b)).map((name) => ({
+        value: name,
+        label: { en: name },
+      }));
+    });
 
     /*
      * Three rhythms, registered separately, because the three cost different
@@ -536,6 +730,10 @@ export class HardwarePlugin implements Plugin {
     }
 
     void this.readDisks(host);
+    // Straight away as well as on the beat, so the adapters are known before
+    // anybody opens a form — and so the first graph has a point in it.
+    if (this.network) void this.readNetwork(host);
+
     host.setStatus('ready');
   }
 
@@ -571,6 +769,36 @@ export class HardwarePlugin implements Plugin {
     host.setVariable('hw.memory-free', round(free / GIB, 1));
 
     if (this.gpu.counters) await this.readGraphics(host);
+    if (this.network) await this.readNetwork(host);
+  }
+
+  /**
+   * Every adapter that is up, recorded and published.
+   *
+   * An adapter that has gone — a cable pulled, a tunnel dropped — stops being
+   * offered and stops being written, but its history is kept: unplugging for
+   * ten seconds should not throw away the five minutes before it.
+   */
+  private async readNetwork(host: PluginHost): Promise<void> {
+    const reading = await readNetwork();
+    const beat = (this.options.fastIntervalMs ?? FAST_INTERVAL_MS) / 1000;
+
+    for (const [name, rates] of reading) {
+      let kept = this.traffic.get(name);
+      if (!kept) {
+        const capacity = Math.ceil(LONGEST_GRAPH_SECONDS / beat) + 1;
+        kept = { down: new History(capacity), up: new History(capacity) };
+        this.traffic.set(name, kept);
+      }
+
+      kept.down.push(rates.down);
+      kept.up.push(rates.up);
+
+      host.setFamily('hw.net-down-bytes', name, rates.down);
+      host.setFamily('hw.net-up-bytes', name, rates.up);
+      host.setFamily('hw.net-down', name, formatRate(rates.down));
+      host.setFamily('hw.net-up', name, formatRate(rates.up));
+    }
   }
 
   /**
@@ -652,6 +880,66 @@ export class HardwarePlugin implements Plugin {
     return { source };
   }
 
+  /**
+   * The same picture for an adapter, with two lines instead of one.
+   *
+   * The ceiling is worked out from what is on screen rather than declared,
+   * because a rate has none: a hundred megabits is the whole key on one
+   * machine and a flat line on the next. Which is right nearly always and
+   * wrong on an idle adapter, where the scale follows the noise — hence the
+   * setting that pins it.
+   *
+   * Both lines share that ceiling, since comparing them is what putting them
+   * on one key is for.
+   */
+  private networkGraph(request: SurfaceRequest): SurfaceFrame | undefined {
+    const adapter = String(request.params['adapter'] ?? '');
+    const kept = this.traffic.get(adapter);
+    if (!kept) return undefined;
+
+    const seconds = Number(request.params['period']) || 60;
+    const beat = (this.options.fastIntervalMs ?? FAST_INTERVAL_MS) / 1000;
+    const points = Math.max(2, Math.round(seconds / beat));
+
+    const show = String(request.params['show'] ?? 'both');
+    const down = show === 'up' ? [] : kept.down.recent(points);
+    const up = show === 'down' ? [] : kept.up.recent(points);
+
+    const thickness = Number(request.params['thickness']) || 3;
+    const shade = request.params['fill'] !== false;
+    const colour = (key: string, fallback: string): string =>
+      typeof request.params[key] === 'string' && request.params[key] !== ''
+        ? (request.params[key] as string)
+        : fallback;
+
+    const pinned = Number(request.params['ceiling']) || 0;
+    // Megabits on the form, bytes in the counters: the form speaks the unit
+    // an internet connection is sold in, and this is where that is undone.
+    const ceiling = pinned > 0 ? (pinned * 1_000_000) / 8 : busiest([...down, ...up]);
+
+    const background = colour('background', '');
+    const series: Series[] = [];
+    // Down first, so an upload — usually the smaller of the two — is drawn on
+    // top rather than buried under the download's shading.
+    for (const [readings, key, fallback] of [
+      [down, 'down', '#6ea8fe'],
+      [up, 'up', '#f0a35e'],
+    ] as const) {
+      if (readings.length === 0) continue;
+      const line = colour(key, fallback);
+      series.push({ readings, line, thickness, ...(shade ? { fill: `${line}40` } : {}) });
+    }
+
+    const source = drawGraphs(
+      series,
+      { max: ceiling, ...(background ? { background } : {}) },
+      request.cols,
+      request.rows,
+    );
+
+    return { source };
+  }
+
   private async readHeat(host: PluginHost): Promise<void> {
     const degrees = await readGpuTemperature();
     if (degrees !== undefined) host.setVariable('hw.gpu-temperature', degrees);
@@ -712,13 +1000,14 @@ export async function registerHardwarePlugin(
 ): Promise<void> {
   const disks = await findDisks();
   const gpu = await findGpu();
-  const manifest = hardwareManifest(disks, gpu);
+  const network = await networkAvailable();
+  const manifest = hardwareManifest(disks, gpu, network);
 
   // Registered with the action registry as well, despite having no actions:
   // that is where variable declarations come from, and without it the
   // configurator would have no idea `hw.cpu` exists until it first changed.
   registry.installPlugin(manifest, {});
-  await runtime.install(manifest, new HardwarePlugin(disks, gpu, options));
+  await runtime.install(manifest, new HardwarePlugin(disks, gpu, options, network));
 }
 
 /**
