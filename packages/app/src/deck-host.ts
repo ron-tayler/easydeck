@@ -12,7 +12,7 @@ import {
   startApiServer,
 } from '@easydeck/core';
 import { electronSecretVault } from './secret-vault.js';
-import type { ApiSource, AppFolder, DeckEvents, DeckService, DeckState, InstalledPluginSummary, KeyView, Library, LibraryImage, PluginManifest, ProfileDefinition, ProfileSummary, RunningApiServer, VariableValue } from '@easydeck/core';
+import type { ApiSource, AppFolder, DeckEvents, DeckService, DeckState, InstalledPluginSummary, KeyView, Library, LibraryImage, PluginManifest, ProfileDefinition, ProfileSummary, RunningApiServer, SurfaceFrame, SurfaceRequest, VariableValue } from '@easydeck/core';
 
 export type HostStatus =
   | { readonly state: 'starting' }
@@ -261,6 +261,17 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
 
   installedPlugins(): Promise<InstalledPluginSummary> {
     return this.require().installedPlugins();
+  }
+
+  /**
+   * Nothing rather than a failure while the deck is released.
+   *
+   * The editor asks for this to draw a preview, and a window left open over a
+   * locked workstation should show a widget with no picture — which is what is
+   * true — rather than an error about the deck being away.
+   */
+  async drawSurface(request: SurfaceRequest): Promise<SurfaceFrame | undefined> {
+    return this.deck?.drawSurface(request);
   }
 
   pluginSettings(pluginId: string) {
