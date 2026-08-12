@@ -1,7 +1,7 @@
 import { PanelCompositor } from '@easydeck/compositor';
 import type { Surface } from '@easydeck/device';
 import { DeckController } from '@easydeck/engine';
-import type { ActionRegistry, VariableStore } from '@easydeck/engine';
+import type { ActionRegistry, SurfaceProvider, VariableStore } from '@easydeck/engine';
 import { CanvasPanelComposer, TileEncoder, createJpegEncoder } from '@easydeck/renderer';
 
 import { toComposerPort } from './composer-adapter.js';
@@ -15,6 +15,14 @@ export interface PhysicalDeckOptions {
   readonly actions: ActionRegistry;
   /** Shared across every deck; see DeckRegistry. */
   readonly variables: VariableStore;
+  /**
+   * Draws the pictures plugins own.
+   *
+   * Shared like the variables and for the same reason: one plugin draws for
+   * whichever deck is showing its key, and a graph asked for by two panels is
+   * one graph.
+   */
+  readonly surfaces?: SurfaceProvider;
 }
 
 /**
@@ -50,7 +58,11 @@ export async function createPhysicalDeck(options: PhysicalDeckOptions): Promise<
   const controller = new DeckController(
     toPresenterPort(options.surface, compositor),
     options.actions,
-    { variables: options.variables, deckId: options.id },
+    {
+      variables: options.variables,
+      deckId: options.id,
+      ...(options.surfaces ? { surfaces: options.surfaces } : {}),
+    },
   );
 
   return {

@@ -13,6 +13,7 @@
  */
 
 import type { IconBinding } from './icon-params.js';
+import type { SurfaceSpec } from './surface-spec.js';
 
 export interface IconSpec {
   /**
@@ -92,6 +93,18 @@ export interface ButtonVisual {
   /** Drawn behind everything else: it belongs to the region, not the button. */
   readonly backdrop?: BackdropSlice;
   readonly icon?: IconSpec;
+  /**
+   * A picture drawn by a plugin rather than stored in the profile.
+   *
+   * Takes precedence over `icon` when it answers, and falls back to it when it
+   * does not — so a key can carry a still to show while nothing is playing,
+   * and the two need no rule between them beyond "the live one first".
+   *
+   * On the state rather than the button, like everything else here: "album art
+   * while it plays, a plain icon while it is paused" is then two states, which
+   * is what states are for.
+   */
+  readonly surface?: SurfaceSpec;
   readonly label?: LabelSpec;
   /**
    * The last press of this key ended in an error, and it says so.

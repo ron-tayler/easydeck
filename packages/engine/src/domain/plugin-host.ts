@@ -1,4 +1,5 @@
 import type { LocalizedText, ParamOption } from './plugin.js';
+import type { SurfaceProvider } from './surface-spec.js';
 import type { VariableValue } from './variables.js';
 
 /**
@@ -108,6 +109,19 @@ export interface PluginHost {
    * back; the server stops listening when the last route is gone.
    */
   route(path: string, handle: RouteHandler): () => void;
+
+  /**
+   * Draws one of the pictures this plugin declared in `surfaces`.
+   *
+   * Called only while a key showing it is on screen, which is the whole of the
+   * thrift here: a graph is never drawn for a folder nobody has open, and the
+   * plugin needs no `onWatched` of its own to know it.
+   *
+   * Answering `undefined` is normal — nothing is playing, the program is
+   * closed — and leaves the key showing whatever still it was given, or
+   * nothing. It is not an error and is not reported as one.
+   */
+  provideSurface(type: string, draw: SurfaceProvider): () => void;
 
   /**
    * Asks to be called back on a schedule the host keeps.

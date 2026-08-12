@@ -8,13 +8,17 @@ import type {
   Plugin,
   PluginHost,
   PluginManifest,
+  ParamOption,
   PresetButton,
+  SurfaceFrame,
+  SurfaceRequest,
   Ticker,
   VariableDeclaration,
 } from '@easydeck/engine';
 
 import type { PluginRuntime } from '../../application/plugin-runtime.js';
 import { gpuAvailable, readGpu, readGpuTemperature } from '../actions/win32-gpu.js';
+import { History, drawGraph } from './hardware-graph.js';
 
 /**
  * What the machine is doing, on a key.
@@ -52,6 +56,9 @@ const DISK_INTERVAL_MS = 60_000;
  * a key still tells you a game got the fans going.
  */
 const HEAT_INTERVAL_MS = 10_000;
+
+/** The longest window a graph offers, and therefore how much to remember. */
+const LONGEST_GRAPH_SECONDS = 900;
 
 const GIB = 1024 ** 3;
 
@@ -189,8 +196,97 @@ export function hardwareManifest(
     });
   }
 
+  /**
+   * What a graph can be drawn of: every reading that is a percentage.
+   *
+   * Built from the same list the variables are, so a machine without a
+   * graphics card offers no graph of one — and adding a reading later puts it
+   * in both places at once.
+   */
+  const graphable: ParamOption[] = variables
+    .filter((variable) => (variable.label?.en ?? '').includes('%'))
+    .map((variable) => ({
+      value: variable.name,
+      label: {
+        en: (variable.label?.en ?? variable.name).replace(', %', ''),
+        ru: (variable.label?.ru ?? variable.name).replace(', %', ''),
+      },
+    }));
+
   return {
     id: HARDWARE_PLUGIN_ID,
+    surfaces: [
+      {
+        type: 'hardware.graph',
+        label: { en: 'Graph over time', ru: 'График во времени' },
+        description: {
+          en: 'How a reading has moved over the last few seconds or minutes',
+          ru: 'Как показатель менялся за последние секунды или минуты',
+        },
+        icon: 'variable',
+        params: [
+          {
+            name: 'reading',
+            type: 'select',
+            label: { en: 'What to draw', ru: 'Что рисовать' },
+            default: 'hw.cpu',
+            options: graphable,
+          },
+          {
+            name: 'period',
+            type: 'select',
+            label: { en: 'Over', ru: 'За период' },
+            default: '60',
+            options: [
+              { value: '15', label: { en: '15 seconds', ru: '15 секунд' } },
+              { value: '60', label: { en: 'A minute', ru: 'Минуту' } },
+              { value: '300', label: { en: 'Five minutes', ru: 'Пять минут' } },
+              { value: '900', label: { en: 'Fifteen minutes', ru: '15 минут' } },
+            ],
+          },
+          {
+            name: 'line',
+            type: 'color',
+            label: { en: 'Line', ru: 'Линия' },
+            default: '#6ea8fe',
+          },
+          {
+            name: 'fill',
+            type: 'color',
+            label: { en: 'Under the line', ru: 'Заливка под линией' },
+            required: false,
+            default: '#6ea8fe40',
+            description: {
+              en: 'Leave empty for a line alone',
+              ru: 'Оставьте пустым, чтобы осталась только линия',
+            },
+          },
+          {
+            /*
+             * Transparent by default, so the key's own background shows
+             * through and the graph is one layer of the face rather than the
+             * whole of it.
+             */
+            name: 'background',
+            type: 'color',
+            label: { en: 'Behind the graph', ru: 'Фон графика' },
+            required: false,
+            description: {
+              en: "Empty lets the key's own background show through",
+              ru: 'Пусто — виден собственный фон клавиши',
+            },
+          },
+          {
+            name: 'thickness',
+            type: 'number',
+            label: { en: 'Line thickness', ru: 'Толщина линии' },
+            default: 4,
+            min: 1,
+            max: 20,
+          },
+        ],
+      },
+    ],
     name: { en: 'Hardware', ru: 'Железо' },
     description: {
       en: 'Processor, memory and disks, for keys that show them',
@@ -397,6 +493,15 @@ export class HardwarePlugin implements Plugin {
   private heat?: Ticker;
   /** The processor counters as they were last time, to subtract from. */
   private previous = sampleCpu();
+  /**
+   * What each percentage has been doing, kept whether or not anything shows it.
+   *
+   * Recorded unconditionally on purpose. A graph is only *drawn* while its key
+   * is on screen, but it has to be able to show the last five minutes the
+   * moment somebody turns to that page — and five minutes of history cannot be
+   * collected after the question is asked.
+   */
+  private readonly history = new Map<string, History>();
 
   constructor(
     private readonly disks: readonly Disk[],
@@ -406,6 +511,13 @@ export class HardwarePlugin implements Plugin {
 
   start(host: PluginHost): void {
     host.setVariable('hw.memory-total', round(totalmem() / GIB, 1));
+
+    /*
+     * Asked for only while a key showing it is on screen, so nothing here
+     * needs to know whether anybody is looking — the question never arrives
+     * for a folder nobody has open.
+     */
+    host.provideSurface('hardware.graph', async (request) => this.graph(request));
 
     /*
      * Three rhythms, registered separately, because the three cost different
@@ -450,11 +562,11 @@ export class HardwarePlugin implements Plugin {
     const idle = now.idle - this.previous.idle;
     this.previous = now;
 
-    if (busy > 0) host.setVariable('hw.cpu', Math.round((1 - idle / busy) * 100));
+    if (busy > 0) this.publish(host, 'hw.cpu', Math.round((1 - idle / busy) * 100));
 
     const total = totalmem();
     const free = freemem();
-    host.setVariable('hw.memory', Math.round(((total - free) / total) * 100));
+    this.publish(host, 'hw.memory', Math.round(((total - free) / total) * 100));
     host.setVariable('hw.memory-used', round((total - free) / GIB, 1));
     host.setVariable('hw.memory-free', round(free / GIB, 1));
 
@@ -473,18 +585,71 @@ export class HardwarePlugin implements Plugin {
   private async readGraphics(host: PluginHost): Promise<void> {
     const reading = await readGpu();
 
-    if (reading.load !== undefined) host.setVariable('hw.gpu', reading.load);
+    if (reading.load !== undefined) this.publish(host, 'hw.gpu', reading.load);
     if (reading.memoryUsed !== undefined) host.setVariable('hw.gpu-memory-used', reading.memoryUsed);
     if (reading.memoryTotal !== undefined) {
       host.setVariable('hw.gpu-memory-total', reading.memoryTotal);
     }
 
     if (reading.memoryUsed !== undefined && reading.memoryTotal) {
-      host.setVariable(
-        'hw.gpu-memory',
-        Math.round((reading.memoryUsed / reading.memoryTotal) * 100),
-      );
+      this.publish(host, 'hw.gpu-memory', Math.round((reading.memoryUsed / reading.memoryTotal) * 100));
     }
+  }
+
+  /**
+   * Publishes a percentage and remembers it.
+   *
+   * One call for both, so a reading that gets a variable also gets a history
+   * and nobody has to keep the two lists in step by hand.
+   */
+  private publish(host: PluginHost, name: string, value: number): void {
+    host.setVariable(name, value);
+
+    let kept = this.history.get(name);
+    if (!kept) {
+      const beat = (this.options.fastIntervalMs ?? FAST_INTERVAL_MS) / 1000;
+      kept = new History(Math.ceil(LONGEST_GRAPH_SECONDS / beat) + 1);
+      this.history.set(name, kept);
+    }
+    kept.push(value);
+  }
+
+  /**
+   * The picture for one key, from the history this plugin has been keeping.
+   *
+   * The history is kept per reading and at the fast beat's resolution, so the
+   * period the key asks for is a slice off the end rather than a different
+   * recording. A key that wants fifteen seconds and one that wants fifteen
+   * minutes read the same buffer.
+   */
+  private graph(request: SurfaceRequest): SurfaceFrame | undefined {
+    const name = typeof request.params['reading'] === 'string' ? request.params['reading'] : 'hw.cpu';
+    const history = this.history.get(name);
+    if (!history) return undefined;
+
+    const seconds = Number(request.params['period']) || 60;
+    const beat = (this.options.fastIntervalMs ?? FAST_INTERVAL_MS) / 1000;
+    const text = (key: string): string | undefined =>
+      typeof request.params[key] === 'string' && request.params[key] !== ''
+        ? (request.params[key] as string)
+        : undefined;
+
+    const source = drawGraph(
+      history.recent(Math.max(2, Math.round(seconds / beat))),
+      {
+        line: text('line') ?? '#6ea8fe',
+        ...(text('fill') ? { fill: text('fill')! } : {}),
+        ...(text('background') ? { background: text('background')! } : {}),
+        max: 100,
+        thickness: Number(request.params['thickness']) || 4,
+      },
+      request.cols,
+      request.rows,
+    );
+
+    // No id: every frame of a graph is its own picture and will never be
+    // wanted again, so there is nothing worth recognising.
+    return { source };
   }
 
   private async readHeat(host: PluginHost): Promise<void> {

@@ -9,6 +9,9 @@ import type {
   PluginManifest,
   PluginStatus,
   RouteHandler,
+  SurfaceFrame,
+  SurfaceProvider,
+  SurfaceRequest,
   Ticker,
   VariableStore,
   VariableValue,
@@ -64,6 +67,8 @@ interface Entry {
   settings: Record<string, VariableValue>;
   readonly listeners: Array<(settings: Readonly<Record<string, VariableValue>>) => void>;
   readonly options: Map<string, OptionLoader>;
+  /** Live pictures this plugin draws, by the type a key names. */
+  readonly surfaces: Map<string, SurfaceProvider>;
   readonly routes: Array<() => void>;
   /** Heartbeats the host is keeping for it, so stopping can really stop them. */
   readonly tickers: Array<() => void>;
@@ -112,6 +117,7 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
       settings: await this.options.settings.load(manifest.id),
       listeners: [],
       options: new Map(),
+      surfaces: new Map(),
       routes: [],
       tickers: [],
       variables: new Set(
@@ -212,6 +218,31 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
     } catch (cause) {
       this.options.log?.(pluginId, 'warn', `Could not list '${source}': ${describe(cause)}`);
       return [];
+    }
+  }
+
+  /**
+   * Draws a live picture, whichever plugin owns it.
+   *
+   * The type is qualified with the plugin's id, exactly as an action's is, so
+   * the owner is read off the name rather than searched for.
+   *
+   * A type nobody claims answers `undefined` and the key falls back to its own
+   * picture. That is deliberately the *same* answer as "the plugin is here and
+   * has nothing to show": telling a missing plugin from an idle one is the
+   * configurator's job, where the manifests are, and not something to decide
+   * from a blank frame. See `docs/live-surfaces.md`.
+   */
+  async drawSurface(request: SurfaceRequest): Promise<SurfaceFrame | undefined> {
+    const pluginId = request.type.slice(0, request.type.indexOf('.'));
+    const draw = this.entries.get(pluginId)?.surfaces.get(request.type);
+    if (!draw) return undefined;
+
+    try {
+      return await draw(request);
+    } catch (cause) {
+      this.options.log?.(pluginId, 'warn', `Could not draw '${request.type}': ${describe(cause)}`);
+      return undefined;
     }
   }
 
@@ -374,6 +405,11 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
         const release = this.options.route(id, path, handle);
         entry.routes.push(release);
         return release;
+      },
+
+      provideSurface: (type, draw) => {
+        entry.surfaces.set(type, draw);
+        return () => entry.surfaces.delete(type);
       },
 
       update: (everyMs, run) => this.beat(entry, everyMs, run),

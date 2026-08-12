@@ -1,7 +1,7 @@
 import { DeviceNotFoundError, createDeviceManager } from '@easydeck/device';
 import type { Surface } from '@easydeck/device';
 import { ActionRegistry, createActionRegistry } from '@easydeck/engine';
-import type { ProfileDefinition } from '@easydeck/engine';
+import type { ProfileDefinition, SurfaceProvider } from '@easydeck/engine';
 
 import { DeckService } from './application/deck-service.js';
 import type { ProfileRepository, SettingsRepository } from './application/ports/repositories.js';
@@ -129,6 +129,17 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
 
     registry = new DeckRegistry(actions);
 
+    /*
+     * The same knot the brightness holder ties, for the same reason: decks are
+     * built before the plugin runtime exists, and a deck needs to be able to
+     * ask a plugin for a picture. Forwarding through a closure keeps the order
+     * of construction free while handing the deck one operation rather than
+     * the whole runtime.
+     */
+    let plugins: PluginRuntime | undefined;
+    const surfaces: SurfaceProvider = async (request) =>
+      plugins ? plugins.drawSurface(request) : undefined;
+
     for (const [index, surface] of opened.entries()) {
       const device = devices[index]!;
       const id = deckIdFor(device);
@@ -140,6 +151,7 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
         name: binding?.name ?? device.model.name,
         actions,
         variables: registry.variables,
+        surfaces,
       });
 
       await registry.add(deck, await profileForDeck(profiles, binding?.profileId, profile));
@@ -153,7 +165,7 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
      * connection has somewhere to hold it, and so its variables land in the
      * store every deck reads.
      */
-    const plugins = new PluginRuntime({
+    plugins = new PluginRuntime({
       settings: new PluginSettingsStore(options.secrets),
       variables: registry.variables,
       openExternal: (url) => openTarget(url),

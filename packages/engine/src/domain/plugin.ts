@@ -1,4 +1,5 @@
 import type { ButtonDefinition } from './profile.js';
+import type { SurfaceDefinition } from './surface-spec.js';
 import type { VariableDeclaration, VariableValue } from './variables.js';
 
 /**
@@ -225,6 +226,14 @@ export interface PluginManifest {
    * after it first happens to change, which is impossible to design against.
    */
   readonly variables?: readonly VariableDeclaration[];
+  /**
+   * Pictures this plugin can draw for a key.
+   *
+   * The third way a plugin reaches a button, after actions and variables:
+   * `actions` is what a key does, `variables` is what it says in text, and
+   * these are what it shows. See `docs/live-surfaces.md`.
+   */
+  readonly surfaces?: readonly SurfaceDefinition[];
   /**
    * What the plugin needs to know before it can do anything.
    *

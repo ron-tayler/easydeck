@@ -16,7 +16,9 @@ import type {
 import { isStateRange, withinRange } from '../domain/profile.js';
 import { ProfileTree } from '../domain/profile-tree.js';
 import { sceneKeys, sceneSignature } from '../domain/scene.js';
-import type { Scene, SceneLabel, SceneRegion } from '../domain/scene.js';
+import type { Scene, SceneImage, SceneLabel, SceneRegion } from '../domain/scene.js';
+import { surfaceKey } from '../domain/surface-spec.js';
+import type { SurfaceFrame, SurfaceProvider, SurfaceRequest } from '../domain/surface-spec.js';
 import { readIconParams, resolveIconParams, svgTextOf } from '../domain/icon-params.js';
 import { drawableIcon } from '../domain/icon-source.js';
 import { renderTemplate } from '../domain/template.js';
@@ -66,6 +68,13 @@ export interface DeckControllerOptions {
   readonly variables?: VariableStore;
   /** How many locations `goBack` can retrace. */
   readonly historyLimit?: number;
+  /**
+   * Draws the pictures plugins own, when a key asks for one.
+   *
+   * Absent in a deck with no plugins behind it — a test, an example — and then
+   * a key wanting a live picture simply shows its background and label.
+   */
+  readonly surfaces?: SurfaceProvider;
 }
 
 export interface DeckControllerEvents {
@@ -153,6 +162,9 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
 
   private readonly historyLimit: number;
   private readonly clock: ClockPort;
+  private readonly surfaces: SurfaceProvider | undefined;
+  /** Pictures gathered for this pass, by the spec that asked for them. */
+  private readonly drawn = new Map<string, SurfaceFrame>();
 
   constructor(
     private readonly surface: PresenterPort,
@@ -164,6 +176,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     this.clock = options.clock ?? systemClock;
     this.variables = options.variables ?? new VariableStore();
     this.deckId = options.deckId ?? 'default';
+    this.surfaces = options.surfaces;
   }
 
   get currentLocation(): DeckLocation | undefined {
@@ -1054,6 +1067,14 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    * or not.
    */
   private async paint(): Promise<void> {
+    // Asked for before the scene is built, and all at once.
+    //
+    // Drawing is the plugin's work and therefore asynchronous, while building
+    // a scene is a synchronous walk of the page — so the pictures are gathered
+    // first and the walk reads what came back. It also means a page with four
+    // live keys asks four plugins in parallel rather than one after another.
+    await this.gatherSurfaces();
+
     const scene = this.buildScene();
     if (!scene) return;
 
@@ -1103,6 +1124,85 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     }
 
     return { regions };
+  }
+
+  /**
+   * The picture a region shows: the plugin's if it answered, otherwise its own.
+   *
+   * A live source that produced nothing is not a failure — the player is
+   * paused, OBS is closed — so the key falls back to whatever still it was
+   * given, and to nothing if it was given none. That is the whole rule between
+   * the two, and it is what lets a key carry something to show meanwhile.
+   *
+   * A parametric icon is substituted into *here*, not further down. Everything
+   * after this point identifies a picture by its id, and the id is what the
+   * tile cache compares — so an icon whose needle moved but whose id did not
+   * would be recognised as already drawn and never repainted.
+   */
+  private pictureOf(visual: ButtonVisual): { image?: SceneImage } {
+    const live = visual.surface ? this.drawn.get(surfaceKey(visual.surface)) : undefined;
+
+    if (live) {
+      return {
+        image: {
+          asset: {
+            // No id from the plugin means every frame is its own picture,
+            // which is right for a stream and what a graph wants.
+            id: live.id ?? this.assets.id(live.source),
+            source: live.source,
+          },
+        },
+      };
+    }
+
+    return visual.icon ? { image: { asset: this.assetFor(visual.icon) } } : {};
+  }
+
+  /**
+   * Asks for every live picture the current page wants.
+   *
+   * Only the current page, and only this deck's: a plugin drawing a graph for
+   * a folder nobody has open is the waste `onWatched` exists to prevent, in
+   * the one form where the answer falls out for free — nothing off screen is
+   * ever asked for.
+   *
+   * A plugin that throws is a plugin whose key shows no picture, not a deck
+   * that stops painting. The reason goes to the log through `error`, once per
+   * pass rather than once per frame.
+   */
+  private async gatherSurfaces(): Promise<void> {
+    const provider = this.surfaces;
+    const page = this.currentPage;
+    this.drawn.clear();
+    if (!provider || !page) return;
+
+    const wanted = new Map<string, SurfaceRequest>();
+
+    for (const button of page.buttons) {
+      const spec = this.resolveState(button).visual.surface;
+      if (!spec) continue;
+
+      // Keyed, so two keys showing the same graph with the same settings ask
+      // for it once. A merged button covers its whole rectangle, exactly as a
+      // stretched still does.
+      wanted.set(surfaceKey(spec), {
+        type: spec.type,
+        params: spec.params ?? {},
+        cols: button.colSpan ?? 1,
+        rows: button.rowSpan ?? 1,
+      });
+    }
+
+    await Promise.all(
+      [...wanted].map(async ([key, request]) => {
+        try {
+          const frame = await provider(request);
+          if (frame) this.drawn.set(key, frame);
+        } catch (cause) {
+          this.emit('error', cause instanceof Error ? cause : new Error(String(cause)));
+        }
+      }),
+    );
   }
 
   private keysOfRegion(key: number, cols: number, rows: number): number[] {
@@ -1159,20 +1259,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
       // name only.
       ...(visual.background === undefined ? {} : { background: visual.background }),
       ...(visual.cornerRadius === undefined ? {} : { cornerRadius: visual.cornerRadius }),
-      ...(visual.icon
-        ? {
-            /*
-             * A parametric icon is substituted into *here*, not further down.
-             *
-             * Everything after this point identifies a picture by its id, and
-             * the id is what the tile cache compares — so an icon whose needle
-             * moved but whose id did not would be recognised as already drawn
-             * and never repainted. Substituting first makes each value its own
-             * picture, which is what it is.
-             */
-            image: { asset: this.assetFor(visual.icon) },
-          }
-        : {}),
+      ...this.pictureOf(visual),
       ...(labels.length > 0 ? { labels } : {}),
       ...(alerts.length > 0 ? { alerts } : {}),
     };

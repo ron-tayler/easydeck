@@ -159,6 +159,14 @@ export type {
   RouteResponse,
   Ticker,
 } from './domain/plugin-host.js';
+export type {
+  SurfaceDefinition,
+  SurfaceFrame,
+  SurfaceProvider,
+  SurfaceRequest,
+  SurfaceSpec,
+} from './domain/surface-spec.js';
+export { surfaceKey } from './domain/surface-spec.js';
 export { PLUGIN_API_VERSION, localized } from './domain/plugin.js';
 export { DeckController } from './application/deck-controller.js';
 export type {
