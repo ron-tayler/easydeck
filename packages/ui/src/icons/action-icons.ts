@@ -51,6 +51,9 @@ export const ACTION_ICONS: Readonly<Record<string, string>> = {
   'volume-up': 'M3 9h3l4-4v14l-4-4H3zM13 12h8v2h-8zM16 9h2v8h-2z',
   'volume-down': 'M3 9h3l4-4v14l-4-4H3zM13 12h8v2h-8z',
   mute: 'M3 9h3l4-4v14l-4-4H3zm11.6.2L13.2 10.6 15.6 13l-2.4 2.4 1.4 1.4L17 14.4l2.4 2.4 1.4-1.4L18.4 13l2.4-2.4-1.4-1.4L17 11.6z',
+  // A box with a cone in it: the device the sound comes out of, as opposed to
+  // the loudness of it, which the speaker-with-waves above already means.
+  speaker: 'M6 2h12v20H6zm6 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm0 8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
 
   // Programs and the world outside
   app: 'M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z',

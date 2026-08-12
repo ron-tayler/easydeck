@@ -12,7 +12,8 @@ import { registerDeviceActions } from './infrastructure/actions/device-actions.j
 import { registerEasyDeckFolderActions } from './infrastructure/actions/folder-actions.js';
 import { registerKeyboardActions } from './infrastructure/actions/keyboard-actions.js';
 import { ButtonSecretStore } from './infrastructure/button-secrets.js';
-import { registerMediaActions } from './infrastructure/actions/media-actions.js';
+import { mediaManifest, registerMediaActions } from './infrastructure/actions/media-actions.js';
+import { registerAudioActions } from './infrastructure/actions/audio-actions.js';
 import { registerSystemActions } from './infrastructure/actions/system-actions.js';
 import { FileProfileRepository } from './infrastructure/file-profile-repository.js';
 import { FileSettingsRepository } from './infrastructure/file-settings-repository.js';
@@ -161,6 +162,11 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
     });
 
     if (builtIn) {
+      // Sound devices ride with the media plugin, and only where Windows has
+      // the interfaces they need.
+      const audio = await registerAudioActions(actions, plugins, mediaManifest);
+      if (audio.reason) warnings.push(audio.reason);
+
       await registerHardwarePlugin(actions, plugins);
       await registerObsPlugin(actions, plugins);
       await registerVtsPlugin(actions, plugins);
