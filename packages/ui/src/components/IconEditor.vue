@@ -119,8 +119,9 @@ onMounted(() => {
  * layer removed or restacked while its picture was still loading would
  * otherwise hand its proportions to whichever one had taken its place.
  */
-function add(source: string, box?: Box): void {
+function add(picture: string, box?: Box): void {
   const first = layers.value.length === 0;
+  const source = drawable(picture);
   const entry: Layer = { source, box: box ?? { ...arrival.value }, ratio: 1 };
 
   layers.value = [...layers.value, entry];
@@ -142,6 +143,21 @@ function add(source: string, box?: Box): void {
   };
   image.onerror = () => settle(1);
   image.src = source;
+}
+
+/**
+ * Something an `<img>` can actually load.
+ *
+ * A layer read back out of a composition arrives as markup, since that is what
+ * it is inside the file. Given to an `<img>` unchanged it is taken for a
+ * relative URL and fetched from the server, which answers with the page — so a
+ * composition reopened for another go showed the placements it remembered and
+ * none of the pictures in them.
+ */
+function drawable(source: string): string {
+  return source.trimStart().startsWith('<')
+    ? `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(source)))}`
+    : source;
 }
 
 /** The box a picture of this shape needs to cover a square key. */
