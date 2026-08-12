@@ -943,14 +943,18 @@ const previewIcon = computed(() => {
               />
 
               <!--
-                Picture and widget are one slot with two ways into it, so both
-                are offered while it is empty and only the chosen one remains
-                afterwards. Two permanent buttons would suggest a key can carry
-                both, which it cannot.
+                Picture and widget are one slot with two ways into it, so they
+                share one row and only the chosen one remains once either is.
+                Two stacked buttons would suggest a key can carry both, which
+                it cannot.
+
+                The picture keeps only its glyph: it is the older and more
+                obvious of the two, and the widget is the one whose name has to
+                be read to be understood — so the width goes to the widget.
               -->
+              <div class="look-slot">
               <IconPicker
                 v-if="!state.visual.surface"
-                :label="t('editor.look.picture')"
                 :icon="state.visual.icon"
                 :background="state.visual.background"
                 :user-icons="userIcons"
@@ -995,6 +999,7 @@ const previewIcon = computed(() => {
                   </button>
                 </template>
               </WidgetPicker>
+              </div>
 
               <ColorPicker
                 :label="t('editor.look.text')"
@@ -1482,6 +1487,24 @@ h3 {
   justify-content: space-between;
   gap: 6px;
 }
+
+/*
+ * The one slot two controls lead into, on one line.
+ *
+ * The picture is a glyph and takes what it needs; the widget takes the rest,
+ * because a widget is named and the name is the part worth reading. Once
+ * either is chosen the other is gone and the survivor has the row to itself,
+ * which is why the widget stretches rather than being given a fixed share.
+ */
+.look-slot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.look-slot > * { min-width: 0; }
+.look-slot > :last-child { flex: 1; }
 
 .preview {
   container-type: inline-size;

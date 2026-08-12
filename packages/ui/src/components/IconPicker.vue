@@ -178,8 +178,10 @@ function replace(): void {
     >
       <img v-if="icon" :src="shown" alt="" />
       <!-- A frame with a hill and a sun in it: the picture that stands for
-           there being no picture yet. -->
-      <svg v-else-if="label" class="glyph" viewBox="0 0 16 16" aria-hidden="true">
+           there being no picture yet. Drawn whether or not this picker carries
+           a word beside it: without one, the glyph is the entire button, and
+           hiding it left an empty rectangle to guess at. -->
+      <svg v-else class="glyph" viewBox="0 0 16 16" aria-hidden="true">
         <rect
           x="1.6"
           y="2.8"
@@ -193,7 +195,6 @@ function replace(): void {
         <circle cx="5.6" cy="6.4" r="1.1" fill="currentColor" />
         <path d="M2.4 12 6 8.6l2.4 2.2 2.4-2.6 2.8 3.8Z" fill="currentColor" />
       </svg>
-      <span v-else class="empty">{{ t('editor.iconChoose') }}</span>
 
       <span v-if="label" class="name">{{ label }}</span>
       <span v-if="animated" class="badge">GIF</span>
@@ -380,12 +381,6 @@ function replace(): void {
   object-fit: cover;
   border-radius: 4px;
   background: var(--surface-1);
-}
-
-.empty {
-  font-size: 12px;
-  padding-left: 4px;
-  white-space: nowrap;
 }
 
 .badge {

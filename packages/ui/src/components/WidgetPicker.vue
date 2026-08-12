@@ -134,7 +134,11 @@ function pick(surface: SurfaceDefinition): void {
 </template>
 
 <style scoped>
-.row { display: flex; align-items: center; gap: 4px; }
+/* The chain that lets the row above hand this its share: the wrapper, the row
+   inside it and the button all have to agree to stretch, or the width stops at
+   the first one that does not. */
+.widget { display: flex; min-width: 0; }
+.row { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; }
 
 .choose {
   display: flex; align-items: center; gap: 7px;
