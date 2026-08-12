@@ -978,7 +978,35 @@ onBeforeUnmount(() => {
 <template>
   <div class="app">
     <header>
-      <span class="brand">{{ t('app.title') }}</span>
+      <!--
+        Settings and variables sit by the title because neither belongs to the
+        folder tree they used to stand over: one is the whole program, the
+        other the whole profile.
+      -->
+      <div class="brand-bar">
+        <span class="brand">{{ t('app.title') }}</span>
+
+        <button
+          type="button"
+          class="icon"
+          :title="t('settings.open')"
+          :aria-label="t('settings.open')"
+          @click="settingsOpen = true"
+        >
+          ⚙
+        </button>
+
+        <button
+          type="button"
+          class="icon wide"
+          :title="t('variables.title')"
+          :aria-label="t('variables.title')"
+          :disabled="!deck.profile.value"
+          @click="variablesOpen = true"
+        >
+          {var}
+        </button>
+      </div>
 
       <!--
         One deck and there is nothing to choose, so the picker only appears
@@ -1050,42 +1078,23 @@ onBeforeUnmount(() => {
 
     <div class="panes">
       <aside class="left">
-        <div class="toolbar">
-          <button
-            type="button"
-            class="icon"
-            :title="t('settings.open')"
-            :aria-label="t('settings.open')"
-            @click="settingsOpen = true"
-          >
-            ⚙
-          </button>
-
-          <button
-            type="button"
-            class="icon"
-            :title="t('folders.addChild')"
-            :aria-label="t('folders.addChild')"
-            :disabled="!deck.profile.value"
-            @click="addFolderAtCurrent"
-          >
-            ＋
-          </button>
-
-          <button
-            type="button"
-            class="icon wide"
-            :title="t('variables.title')"
-            :aria-label="t('variables.title')"
-            :disabled="!deck.profile.value"
-            @click="variablesOpen = true"
-          >
-            {var}
-          </button>
-        </div>
-
         <div class="scroll">
-          <h2>{{ t('folders.title') }}</h2>
+          <div class="section-head">
+            <h2>{{ t('folders.title') }}</h2>
+
+            <!-- Beside the heading it names what it adds, so it can drop the
+                 frame and take one back only under the pointer. -->
+            <button
+              type="button"
+              class="ghost-icon"
+              :title="t('folders.addChild')"
+              :aria-label="t('folders.addChild')"
+              :disabled="!deck.profile.value"
+              @click="addFolderAtCurrent"
+            >
+              ＋
+            </button>
+          </div>
           <FolderTree
             :folders="rootFolders"
             :current-folder-id="currentFolderId"
@@ -1119,17 +1128,6 @@ onBeforeUnmount(() => {
 
           <button
             type="button"
-            class="icon rename"
-            :title="t('profiles.rename')"
-            :aria-label="t('profiles.rename')"
-            :disabled="!deck.profile.value"
-            @click="renameProfile"
-          >
-            ✎
-          </button>
-
-          <button
-            type="button"
             class="icon"
             :title="t('profiles.add')"
             :aria-label="t('profiles.add')"
@@ -1137,6 +1135,19 @@ onBeforeUnmount(() => {
             @click="ask(t('profiles.newTitle'), '', createProfile)"
           >
             ＋
+          </button>
+
+          <!-- Same button as the one beside it: both act on the selector, and
+               a bare glyph next to a framed one reads as decoration. -->
+          <button
+            type="button"
+            class="icon"
+            :title="t('profiles.rename')"
+            :aria-label="t('profiles.rename')"
+            :disabled="!deck.profile.value"
+            @click="renameProfile"
+          >
+            ✎
           </button>
         </div>
 
@@ -1362,16 +1373,31 @@ header {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 9px 16px;
+  padding: 6px 16px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-1);
   flex: none;
+}
+
+.brand-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .brand {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  /* The title is a label, not a target; the buttons beside it are. */
+  margin-right: 4px;
+}
+
+/* A shade smaller than the ones in the panes: the header is a strip, and
+   full-size tiles would set its height rather than sit inside it. */
+.brand-bar .icon {
+  width: 26px;
+  height: 26px;
 }
 
 .status {
@@ -1414,13 +1440,6 @@ header {
 .left { border-right: 1px solid var(--border); }
 .right { border-left: 1px solid var(--border); }
 
-.toolbar {
-  display: flex;
-  gap: 6px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-}
-
 .icon {
   width: 30px;
   height: 30px;
@@ -1443,6 +1462,38 @@ header {
 .left .scroll {
   overflow-y: auto;
   padding: 12px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.section-head h2 { margin: 0; }
+
+/* Ghost: no frame of its own, and one borrowed only while the pointer is on
+   it. Next to a heading a framed button would read as the louder of the two,
+   which is backwards. */
+.ghost-icon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+}
+
+.ghost-icon:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
 }
 
 h2 {
