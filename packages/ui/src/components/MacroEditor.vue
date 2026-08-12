@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type {
@@ -49,6 +49,13 @@ const props = defineProps<{
   pages: readonly { id: string; name: string }[];
   buttons: readonly { id: string; name: string; states: readonly string[] }[];
   ownStates: readonly string[];
+  /** The button being edited; see ActionParams for why a form needs it. */
+  ownButtonId?: string;
+  /** Asks what shape a field should take; see ActionParams. */
+  loadShape?: (
+    source: string,
+    params: Readonly<Record<string, unknown>>,
+  ) => Promise<ParamDefinition | undefined>;
   /** Where each plugin that holds a connection has got to. */
   pluginStatuses?: Readonly<Record<string, { status: string; message?: LocalizedText }>>;
   /** Asks a plugin for the choices behind one of its `optionsFrom` parameters. */
@@ -461,8 +468,10 @@ function onTabDrop(which: Trigger): void {
         :pages="pages"
         :buttons="buttons"
         :own-states="ownStates"
+        :own-button-id="ownButtonId"
         :plugin-statuses="pluginStatuses"
         :load-options="loadOptions"
+        :load-shape="loadShape"
         :filled-secrets="filledSecrets"
         :save-secret="saveSecret"
         :clear-secret="clearSecret"

@@ -1,10 +1,11 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type {
   ActionDescriptor,
   Condition,
   LocalizedText,
+  ParamDefinition,
   PluginManifest,
   StepPath,
   VariableDeclaration,
@@ -55,6 +56,13 @@ const props = defineProps<{
   pages: readonly { id: string; name: string }[];
   buttons: readonly { id: string; name: string; states: readonly string[] }[];
   ownStates: readonly string[];
+  /** The button being edited; see ActionParams for why a form needs it. */
+  ownButtonId?: string;
+  /** Asks what shape a field should take; see ActionParams. */
+  loadShape?: (
+    source: string,
+    params: Readonly<Record<string, unknown>>,
+  ) => Promise<ParamDefinition | undefined>;
   pluginStatuses?: Readonly<Record<string, { status: string; message?: LocalizedText }>>;
   loadOptions?: (
     pluginId: string,
@@ -320,6 +328,7 @@ function onDrop(event: DragEvent): void {
           :declarations="declarations"
           :values="values"
           :own-states="ownStates"
+          :own-button-id="ownButtonId"
           @update:model-value="setCondition(index, $event)"
         />
       </div>
@@ -370,7 +379,9 @@ function onDrop(event: DragEvent): void {
         :pages="pages"
         :buttons="buttons"
         :own-states="ownStates"
+        :own-button-id="ownButtonId"
         :load-options="loadOptions"
+        :load-shape="loadShape"
         :filled-secrets="filledSecrets"
         :save-secret="saveSecret"
         :clear-secret="clearSecret"
@@ -398,8 +409,10 @@ function onDrop(event: DragEvent): void {
             :pages="pages"
             :buttons="buttons"
             :own-states="ownStates"
+            :own-button-id="ownButtonId"
             :plugin-statuses="pluginStatuses"
             :load-options="loadOptions"
+            :load-shape="loadShape"
             :filled-secrets="filledSecrets"
             :save-secret="saveSecret"
             :clear-secret="clearSecret"

@@ -27,6 +27,15 @@ const props = defineProps<{
   /** States of the button being edited, used when no target is chosen. */
   ownStates: readonly string[];
   /**
+   * The button being edited, for the questions asked on its behalf.
+   *
+   * A button parameter left empty means "the one doing the pressing", which is
+   * this one while somebody is editing it. Without a name to put in its place,
+   * asking what widget that key has answers nothing — and the form then says
+   * the key has no widget, about a key that may well have one.
+   */
+  ownButtonId?: string;
+  /**
    * Asks a plugin for the choices behind a parameter it declared with
    * `optionsFrom` — the scenes OBS has open right now.
    *
@@ -85,13 +94,24 @@ const fields = computed<readonly ParamDefinition[]>(() =>
     .map((param) => shapes.value[param.name] ?? param),
 );
 
-/** Whether every name given has something in it. */
+/**
+ * Whether every name given has been answered.
+ *
+ * Answered, not filled: an empty string is a real answer in at least one place
+ * — a button parameter left empty means *this* button, the one doing the
+ * pressing. Treating that as unanswered kept the rest of the form hidden until
+ * the same key was picked again by name, which is the same answer written
+ * differently.
+ *
+ * So the test is presence. A parameter nobody has touched is absent; one
+ * somebody has emptied is present and empty.
+ */
 function answered(names: readonly string[] | undefined): boolean {
   if (!names || names.length === 0) return true;
 
   return names.every((name) => {
     const value = props.params[name];
-    return value !== undefined && value !== null && value !== '';
+    return value !== undefined && value !== null;
   });
 }
 
@@ -121,7 +141,7 @@ async function loadShapeFor(param: ParamDefinition): Promise<void> {
   if (!source || !props.loadShape) return;
 
   try {
-    const shape = await props.loadShape(source, props.params);
+    const shape = await props.loadShape(source, asked.value);
     // Keeping the declared field when nothing came back is what stops the form
     // flickering between a number box and a text box while a list loads.
     shapes.value = shape
@@ -142,6 +162,25 @@ function dropped(
 
 const pluginOf = (type: string | undefined): string => (type ?? '').split('.')[0] ?? '';
 
+/**
+ * The parameters as a question rather than as an answer.
+ *
+ * Only one substitution, and it is the meaning of the field rather than a
+ * convenience: an empty button means the one being pressed, and while a form
+ * is open that is the one being edited. What gets *stored* stays empty — the
+ * action must still follow the press when it runs on some other key.
+ */
+const asked = computed<Record<string, unknown>>(() => {
+  const filled: Record<string, unknown> = { ...props.params };
+
+  for (const param of declared.value) {
+    if (param.type !== 'profile-button') continue;
+    if (filled[param.name] === '' && props.ownButtonId) filled[param.name] = props.ownButtonId;
+  }
+
+  return filled;
+});
+
 async function loadOptionsFor(param: ParamDefinition): Promise<void> {
   const source = param.optionsFrom;
   const pluginId = pluginOf(props.definition?.type);
@@ -149,7 +188,7 @@ async function loadOptionsFor(param: ParamDefinition): Promise<void> {
 
   loading.value = new Set(loading.value).add(param.name);
   try {
-    const options = await props.loadOptions(pluginId, source, props.params);
+    const options = await props.loadOptions(pluginId, source, asked.value);
     dynamic.value = { ...dynamic.value, [param.name]: options };
   } catch {
     dynamic.value = { ...dynamic.value, [param.name]: [] };
@@ -169,7 +208,7 @@ async function loadOptionsFor(param: ParamDefinition): Promise<void> {
  * again. Comparing the contents means the question is only re-asked when the
  * answer could actually be different.
  */
-const dependencies = computed(() => JSON.stringify(props.params ?? {}));
+const dependencies = computed(() => JSON.stringify(asked.value));
 
 /**
  * Reloads the dynamic lists when the action changes, or when something that
