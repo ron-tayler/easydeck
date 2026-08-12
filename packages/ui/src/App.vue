@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import type {
   ButtonDefinition,
   FolderDefinition,
+  IconSpec,
   LibraryImage,
   LocalizedText,
   ProfileDefinition,
@@ -19,6 +20,7 @@ import type {
  * a module with no I/O in it.
  */
 import { MAX_PAGES_PER_FOLDER, PROFILE_FORMAT_VERSION } from '@easydeck/engine/profile';
+import { drawableIcon } from '@easydeck/engine/icons';
 
 import ContextMenu from './components/ContextMenu.vue';
 import type { MenuItem } from './components/ContextMenu.vue';
@@ -42,6 +44,7 @@ import {
   findFolder,
   replaceButton,
   fromClipboard,
+  moveFolder,
   ownerOfPage,
   pasteButton,
   removeFolder,
@@ -55,6 +58,7 @@ import {
   swapKeys,
   toClipboard,
 } from './composables/useProfileEditor.js';
+import type { FolderDrop } from './composables/useProfileEditor.js';
 
 /** The engine's own cap, not a copy of it: two numbers would drift. */
 const MAX_PAGES = MAX_PAGES_PER_FOLDER;
@@ -292,6 +296,43 @@ const allPages = computed(() => {
   };
   if (deck.profile.value) walk(deck.profile.value.root);
   return out;
+});
+
+/**
+ * Every picture already on a key of this profile, most used first.
+ *
+ * A profile settles into its own small set of pictures — one glyph on eight
+ * keys, one photograph on a folder — and finding that set again meant
+ * recognising it by eye in a library of several hundred. Costs a walk of a
+ * tree that is already in memory: the profile arrives whole, pictures
+ * included, so nothing is fetched for this.
+ *
+ * Counted by what each one *looks like* rather than by its artwork, because
+ * the same glyph in two colours is two pictures to whoever is choosing one.
+ */
+const profileIcons = computed<readonly { icon: IconSpec; drawable: string; uses: number }[]>(() => {
+  const seen = new Map<string, { icon: IconSpec; drawable: string; uses: number }>();
+
+  const walk = (folder: FolderDefinition): void => {
+    for (const page of folder.pages) {
+      for (const button of page.buttons) {
+        for (const state of button.states) {
+          const icon = state.visual.icon;
+          if (!icon) continue;
+
+          const drawable = drawableIcon(icon);
+          const known = seen.get(drawable);
+          if (known) known.uses += 1;
+          else seen.set(drawable, { icon, drawable, uses: 1 });
+        }
+      }
+    }
+    for (const child of folder.folders ?? []) walk(child);
+  };
+
+  if (deck.profile.value) walk(deck.profile.value.root);
+
+  return [...seen.values()].sort((a, b) => b.uses - a.uses);
 });
 
 /**
@@ -542,6 +583,13 @@ function onFolderMenuChoose(action: string): void {
     default:
       return;
   }
+}
+
+/** A folder dragged somewhere else in the tree: re-nested, or just reordered. */
+function onFolderMove(payload: { folderId: string; targetId: string; drop: FolderDrop }): void {
+  void editProfile((current) =>
+    moveFolder(current, payload.folderId, payload.targetId, payload.drop),
+  );
 }
 
 function onPageMenu(pageId: string, event: MouseEvent): void {
@@ -1099,8 +1147,10 @@ onBeforeUnmount(() => {
             :folders="rootFolders"
             :current-folder-id="currentFolderId"
             :open-ids="openIds"
+            :root-id="rootFolders[0]?.id"
             @open="deck.openFolder"
             @menu="onFolderMenu"
+            @move="onFolderMove"
           />
           <p v-if="rootFolders.length === 0" class="muted empty">{{ t('folders.none') }}</p>
         </div>
@@ -1242,6 +1292,7 @@ onBeforeUnmount(() => {
       :declarations="deck.state.value?.variableDeclarations ?? []"
       :user-icons="userIcons"
       :omitted-icons="omittedIcons"
+      :profile-icons="profileIcons"
       :plugin-statuses="deck.pluginStatuses.value"
       :load-options="loadActionOptions"
       :filled-secrets="filledSecrets"

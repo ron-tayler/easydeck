@@ -185,6 +185,78 @@ export function removeFolder(profile: ProfileDefinition, folderId: string): Prof
   return { ...profile, root: prune(profile.root) };
 }
 
+/** Where a dragged folder lands relative to the one it was dropped on. */
+export type FolderDrop = 'before' | 'after' | 'inside';
+
+/**
+ * Moves a folder somewhere else in the tree.
+ *
+ * Reordering and re-nesting are the same operation — a folder's place *is* its
+ * position in some parent's list — so one function does both, and the caller
+ * says which by naming a folder to land next to or inside.
+ *
+ * A folder cannot be put inside itself or anything under it: the branch would
+ * leave the tree holding its own parent, and everything on it would be lost.
+ * That, and a move of the root, give the profile back unchanged rather than a
+ * broken one.
+ */
+export function moveFolder(
+  profile: ProfileDefinition,
+  folderId: string,
+  targetId: string,
+  drop: FolderDrop,
+): ProfileDefinition {
+  if (folderId === profile.root.id || folderId === targetId) return profile;
+
+  const moved = findFolder(profile.root, folderId);
+  if (!moved || !findFolder(profile.root, targetId)) return profile;
+  if (findFolder(moved, targetId)) return profile;
+
+  // The root has no siblings to sit between, so landing on it can only mean
+  // inside it.
+  const where = targetId === profile.root.id ? 'inside' : drop;
+
+  /*
+   * Taken out first, then put back. Doing it in that order is what makes a
+   * move within one list come out right: by the time the position is worked
+   * out, the folder is no longer in the list to be counted.
+   */
+  const detached = removeFolder(profile, folderId).root;
+
+  const place = (folder: FolderDefinition): FolderDefinition => {
+    const children = (folder.folders ?? []).map(place);
+
+    if (where === 'inside') {
+      return folder.id === targetId
+        ? { ...folder, folders: [...children, moved] }
+        : withFolders(folder, children);
+    }
+
+    const at = children.findIndex((child) => child.id === targetId);
+    if (at === -1) return withFolders(folder, children);
+
+    const insertAt = where === 'before' ? at : at + 1;
+    return {
+      ...folder,
+      folders: [...children.slice(0, insertAt), moved, ...children.slice(insertAt)],
+    };
+  };
+
+  return { ...profile, root: place(detached) };
+}
+
+/** Keeps a childless folder childless, rather than leaving `folders: []` behind. */
+function withFolders(
+  folder: FolderDefinition,
+  children: readonly FolderDefinition[],
+): FolderDefinition {
+  if (children.length === 0) {
+    const { folders: _none, ...rest } = folder;
+    return rest;
+  }
+  return { ...folder, folders: children };
+}
+
 /** Adds a page to a scene, up to the cap. */
 export function addPage(
   profile: ProfileDefinition,

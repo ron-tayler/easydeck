@@ -21,6 +21,11 @@ export default {
     search: 'Search by name',
     upload: 'Upload your own',
     builtIn: 'Built-in',
+    inProfile: 'In this profile',
+    /* Written with a multiplication sign rather than a counted noun: no
+       language here has to agree with it, and no plural machinery is needed
+       for a number shown in a tooltip. */
+    usedOn: 'Already on keys ×{count}',
     loose: 'Loose files',
     nothing: 'Nothing found',
     omitted: '{count} more in the folder: too large to carry.',

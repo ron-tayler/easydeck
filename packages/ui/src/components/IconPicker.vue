@@ -7,6 +7,7 @@ import { drawableIcon, readIconPalette, svgTextOf, usesCurrentColor } from '@eas
 
 import ColorPicker from './ColorPicker.vue';
 import IconLibrary from './IconLibrary.vue';
+import type { UsedIcon } from './IconLibrary.vue';
 import { isAnimated } from '../icons/rasterize.js';
 
 /**
@@ -23,6 +24,8 @@ const props = defineProps<{
   icon?: IconSpec;
   /** The user's own folder, read by the daemon; empty until it is fetched. */
   userIcons: readonly LibraryImage[];
+  /** Pictures already on a key of this profile, offered for reuse. */
+  profileIcons: readonly UsedIcon[];
   /** Pictures the folder holds but the library had no room for. */
   omittedIcons?: number;
   /**
@@ -92,13 +95,15 @@ function setInk(slot: IconColorSlot | undefined, color: string): void {
 }
 
 /**
- * A new picture keeps nothing of the old one.
+ * Whatever was chosen replaces what was here, entire.
  *
- * Its colours were chosen against artwork that is no longer here, and its
- * parameter bindings named things the new picture may not declare at all.
+ * Nothing of the old picture is kept: its colours were chosen against artwork
+ * that is no longer here, and its parameter bindings named things the new one
+ * may not declare at all. A picture taken from elsewhere in the profile
+ * arrives with its own, which is the point of taking it from there.
  */
-function chosen(source: string): void {
-  emit('update', { source });
+function chosen(icon: IconSpec): void {
+  emit('update', icon);
   browsing.value = false;
 }
 </script>
@@ -206,6 +211,7 @@ function chosen(source: string): void {
     <IconLibrary
       v-if="browsing"
       :user-icons="userIcons"
+      :profile-icons="profileIcons"
       :omitted="omittedIcons ?? 0"
       @pick="chosen"
       @close="browsing = false"

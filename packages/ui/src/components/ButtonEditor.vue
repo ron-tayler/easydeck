@@ -28,6 +28,7 @@ import { renderTemplate } from '@easydeck/engine/template';
 
 import IconParams from './IconParams.vue';
 import IconPicker from './IconPicker.vue';
+import type { UsedIcon } from './IconLibrary.vue';
 import { TEXT_POSITIONS, textPositionIcon } from '../icons/text-position.js';
 import KeyLabel from './KeyLabel.vue';
 import MacroEditor from './MacroEditor.vue';
@@ -48,6 +49,8 @@ const props = defineProps<{
   declarations: readonly VariableDeclaration[];
   /** The user's icon folder, already read by the host. */
   userIcons: readonly LibraryImage[];
+  /** Pictures already on a key of this profile, offered for reuse. */
+  profileIcons: readonly UsedIcon[];
   /** Pictures the folder holds but the library had no room for. */
   omittedIcons?: number;
   /** Where each plugin that holds a connection has got to. */
@@ -842,6 +845,7 @@ const previewIcon = computed(() => {
                 :label="t('editor.look.picture')"
                 :icon="state.visual.icon"
                 :user-icons="userIcons"
+                :profile-icons="profileIcons"
                 :omitted-icons="omittedIcons"
                 @update="setPicture($event)"
               >

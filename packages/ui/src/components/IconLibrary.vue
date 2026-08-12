@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { LibraryImage } from '@easydeck/core';
+import type { IconSpec, LibraryImage } from '@easydeck/core';
 
 import { ICON_LIBRARY, iconSvg } from '../icons/library.js';
 import type { LibraryIcon } from '../icons/library.js';
@@ -17,7 +17,23 @@ import { fileIconSource, libraryIconSource } from '../icons/rasterize.js';
  * find anything in it, so it gets the space to be shown.
  */
 
+/** A picture already on a key of this profile, and how many keys wear it. */
+export interface UsedIcon {
+  readonly icon: IconSpec;
+  /** The picture as it is drawn — colours and parameters already in it. */
+  readonly drawable: string;
+  readonly uses: number;
+}
+
 const props = defineProps<{
+  /**
+   * Pictures already used somewhere in this profile, most used first.
+   *
+   * Whole specifications rather than bare artwork: choosing one should give
+   * back the picture that was recognised, colours and all, and not the
+   * uncoloured drawing underneath it.
+   */
+  profileIcons: readonly UsedIcon[];
   /** The user's own folder, read by the daemon. */
   userIcons: readonly LibraryImage[];
   /**
@@ -39,7 +55,15 @@ const props = defineProps<{
   browse?: boolean;
 }>();
 
-const emit = defineEmits<{ pick: [source: string]; close: [], openFolder: [] }>();
+/*
+ * A whole picture rather than a path to one.
+ *
+ * A picture chosen from a folder or from our own set is nothing but its
+ * artwork, and used to be emitted as exactly that. One chosen off a key of
+ * this profile carries what was decided about it too — its ink, its parameter
+ * bindings — and it is the picture as recognised that somebody is asking for.
+ */
+const emit = defineEmits<{ pick: [icon: IconSpec]; close: [], openFolder: [] }>();
 
 const { t } = useI18n();
 
@@ -48,13 +72,19 @@ const busy = ref(false);
 const problem = ref('');
 
 /**
- * Which folder is open, or undefined for the built-in set.
+ * Which shelf the grid is showing.
  *
- * Undefined rather than a reserved name: any name would have to be one no real
- * folder could carry, and there is no such name — "built-in" is a perfectly
- * good thing to call a folder of icons.
+ * Spelled out rather than left to a nullable folder name, which is what this
+ * was while there were only two of them. A third shelf needed a third value,
+ * and every candidate was a name a real folder could also carry — "built-in"
+ * is a perfectly good thing to call a folder of icons.
  */
-const folder = ref<string | undefined>(undefined);
+type Shelf = { kind: 'profile' } | { kind: 'builtIn' } | { kind: 'folder'; path: string };
+
+const shelf = ref<Shelf>({ kind: 'builtIn' });
+
+const sameShelf = (a: Shelf, b: Shelf): boolean =>
+  a.kind === b.kind && (a.kind !== 'folder' || a.path === (b as { path: string }).path);
 
 /**
  * Folders, in the order they were read, each with how many it holds.
@@ -84,11 +114,29 @@ const folders = computed(() => {
   }
 
   return [
-    { path: undefined, label: t('icons.builtIn'), depth: 0, count: ICON_LIBRARY.length },
+    /*
+     * This profile's own, first and only when it has any.
+     *
+     * A deck settles into a handful of pictures and then reaches for them
+     * again — the same glyph on the next key, the same photograph on the next
+     * folder. Recognising one of those by eye in a library of several hundred
+     * was the slow way round to a picture already in the profile.
+     */
+    ...(props.profileIcons.length > 0
+      ? [
+          {
+            shelf: { kind: 'profile' } as Shelf,
+            label: t('icons.inProfile'),
+            depth: 0,
+            count: props.profileIcons.length,
+          },
+        ]
+      : []),
+    { shelf: { kind: 'builtIn' } as Shelf, label: t('icons.builtIn'), depth: 0, count: ICON_LIBRARY.length },
     ...[...counted]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([path, count]) => ({
-        path,
+        shelf: { kind: 'folder', path } as Shelf,
         label: path.slice(path.lastIndexOf('/') + 1),
         depth: path.split('/').length - 1,
         count,
@@ -107,7 +155,7 @@ const query = computed(() => search.value.trim().toLowerCase());
  * is for — and someone who has clicked a folder wants that folder.
  */
 const builtIn = computed<readonly LibraryIcon[]>(() => {
-  if (query.value === '') return folder.value === undefined ? ICON_LIBRARY : [];
+  if (query.value === '') return shelf.value.kind === 'builtIn' ? ICON_LIBRARY : [];
 
   return ICON_LIBRARY.filter(
     (icon) =>
@@ -118,19 +166,32 @@ const builtIn = computed<readonly LibraryIcon[]>(() => {
 
 const mine = computed<readonly LibraryImage[]>(() => {
   if (query.value === '') {
-    if (folder.value === undefined) return [];
+    const open = shelf.value;
+    if (open.kind !== 'folder') return [];
 
     // A folder means everything under it, not just what lies directly inside:
     // clicking the name of a collection should show the collection.
     const loose = t('icons.loose');
     return props.userIcons.filter((image) => {
       const group = image.group === '' ? loose : image.group;
-      return group === folder.value || group.startsWith(`${folder.value}/`);
+      return group === open.path || group.startsWith(`${open.path}/`);
     });
   }
 
   return props.userIcons.filter((image) => image.name.toLowerCase().includes(query.value));
 });
+
+/**
+ * Browsed rather than searched, because there is nothing to search by.
+ *
+ * A picture already on a key has no name of its own — it is bytes on a button,
+ * not a file with a word attached. So this shelf is absent from search results
+ * instead of matching nothing, and it is one click away when the word does not
+ * come to mind.
+ */
+const used = computed<readonly UsedIcon[]>(() =>
+  query.value === '' && shelf.value.kind === 'profile' ? props.profileIcons : [],
+);
 
 /**
  * How many are drawn at once.
@@ -157,7 +218,7 @@ function pickBuiltIn(icon: LibraryIcon): void {
   if (props.browse) return;
 
   problem.value = '';
-  emit('pick', libraryIconSource(icon));
+  emit('pick', { source: libraryIconSource(icon) });
 }
 
 async function pickFile(event: Event): Promise<void> {
@@ -170,7 +231,7 @@ async function pickFile(event: Event): Promise<void> {
   problem.value = '';
   busy.value = true;
   try {
-    emit('pick', await fileIconSource(file));
+    emit('pick', { source: await fileIconSource(file) });
   } catch (error) {
     problem.value = error instanceof Error ? error.message : String(error);
   } finally {
@@ -210,12 +271,12 @@ async function pickFile(event: Event): Promise<void> {
         <nav class="folders">
           <button
             v-for="entry in folders"
-            :key="entry.path ?? ''"
+            :key="`${entry.shelf.kind}:${entry.label}`"
             type="button"
             class="folder"
-            :class="{ current: folder === entry.path && query === '' }"
+            :class="{ current: sameShelf(shelf, entry.shelf) && query === '' }"
             :style="{ paddingLeft: `${8 + entry.depth * 14}px` }"
-            @click="((folder = entry.path), (search = ''))"
+            @click="((shelf = entry.shelf), (search = ''))"
           >
             <span class="name">{{ entry.label }}</span>
             <span class="count muted">{{ entry.count }}</span>
@@ -223,6 +284,21 @@ async function pickFile(event: Event): Promise<void> {
         </nav>
 
         <div class="grid">
+          <!-- Drawn as the key draws it, since that is how it will be
+               recognised — and picking it gives back that, not the uncoloured
+               drawing underneath. -->
+          <button
+            v-for="entry in used"
+            :key="entry.drawable"
+            type="button"
+            class="tile"
+            :title="t('icons.usedOn', { count: entry.uses })"
+            @click="browse ? undefined : emit('pick', entry.icon)"
+          >
+            <img :src="entry.drawable" alt="" />
+            <span v-if="entry.uses > 1" class="uses">{{ entry.uses }}</span>
+          </button>
+
           <!-- The user's own first: someone who put a file there is looking
                for that file, not for one of ours. -->
           <button
@@ -232,7 +308,7 @@ async function pickFile(event: Event): Promise<void> {
             class="tile"
             :title="item.group ? `${item.group}/${item.name}` : item.name"
             :disabled="busy"
-            @click="browse ? undefined : emit('pick', item.source)"
+            @click="browse ? undefined : emit('pick', { source: item.source })"
           >
             <img :src="item.source" alt="" />
           </button>
@@ -256,7 +332,7 @@ async function pickFile(event: Event): Promise<void> {
             <span class="glyph" v-html="iconSvg(icon)" />
           </button>
 
-          <p v-if="shownMine.length + shownBuiltIn.length === 0" class="muted empty">
+          <p v-if="used.length + shownMine.length + shownBuiltIn.length === 0" class="muted empty">
             {{ t('icons.nothing') }}
           </p>
         </div>
@@ -400,9 +476,27 @@ h2 {
   border-color: var(--accent);
 }
 
+.tile {
+  position: relative;
+}
+
 .tile img {
   max-width: 100%;
   max-height: 100%;
+}
+
+/* How many keys already wear this one. Only past the first, because "1" on
+   every tile would be a column of ones saying nothing. */
+.uses {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--text-muted);
 }
 
 /* The colour the built-in art is drawn in: `currentColor` inside it reads
