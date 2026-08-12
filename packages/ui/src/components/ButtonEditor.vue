@@ -18,6 +18,7 @@ import type {
 import { isStateRange } from '@easydeck/engine/profile';
 import {
   drawableIcon,
+  iconPaletteProblem,
   iconParamsProblem,
   readIconParams,
   resolveIconParams,
@@ -382,7 +383,13 @@ const iconIsParametric = computed(() => {
   if (!source) return false;
 
   const svg = svgTextOf(source) ?? '';
-  return readIconParams(svg).length > 0 || iconParamsProblem(svg) !== undefined;
+  return (
+    readIconParams(svg).length > 0 ||
+    iconParamsProblem(svg) !== undefined ||
+    // The palette's swatches live beside the picture, but what is wrong with a
+    // palette is said in this window — so if nothing opens it, nobody is told.
+    iconPaletteProblem(svg) !== undefined
+  );
 });
 
 function setIconParams(params: Record<string, IconBinding>): void {

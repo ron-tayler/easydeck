@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { composeIcon, isComposedIcon, readIconLayers, readLayerSource } from './icon-layout.js';
-import { readIconParams } from './icon-params.js';
-import { readIconPalette } from './icon-colors.js';
+import { iconParamsProblem, readIconParams } from './icon-params.js';
+import { iconPaletteProblem, readIconPalette } from './icon-colors.js';
 import { drawableIcon } from './icon-source.js';
 
 /** A glyph that takes its colour from outside, as every library icon does. */
@@ -92,6 +92,26 @@ describe('placing one picture', () => {
     const composed = composeIcon([{ source: A_PNG, x: 0, y: 0, width: 100, height: 100 }]);
 
     assert.equal(readLayerSource(composed, 'l1'), A_PNG);
+  });
+});
+
+describe('the three things one metadata block can carry', () => {
+  it('does not call a picture broken for declaring only where it sits', () => {
+    // The block was once about parameters and nothing else, so one without
+    // them could only mean a misspelling. A picture merely placed on the key
+    // was being announced as broken, with a gear beside it opening a window to
+    // say the picture had declared nothing.
+    const placed = composeIcon([{ source: GLYPH, x: 25, y: 25, width: 50, height: 50 }]);
+
+    assert.equal(iconParamsProblem(placed), undefined);
+    assert.equal(iconPaletteProblem(placed), undefined);
+    assert.deepEqual(readIconParams(placed), []);
+  });
+
+  it('still complains about a "params" that is there and wrong', () => {
+    const svg = `<svg><metadata id="easydeck">{"params":{"angle":0}}</metadata></svg>`;
+
+    assert.match(iconParamsProblem(svg) ?? '', /not an array/);
   });
 });
 

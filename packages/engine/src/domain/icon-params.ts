@@ -184,7 +184,19 @@ export function iconParamsProblem(svg: string): string | undefined {
 
   try {
     const parsed = JSON.parse(found[1].trim()) as { params?: unknown };
-    if (!Array.isArray(parsed.params)) return 'Metadata has no "params" array';
+
+    /*
+     * Declaring none is not a fault, and used to be reported as one.
+     *
+     * This block was once about parameters and nothing else, so a block
+     * without them could only mean somebody had misspelled the word. It now
+     * carries colours and a placement as well, each independent of the others,
+     * and a picture that was merely put somewhere on the key was being
+     * announced as broken — with a gear beside it opening a window to say the
+     * picture had declared nothing.
+     */
+    if (parsed.params === undefined) return undefined;
+    if (!Array.isArray(parsed.params)) return 'Metadata has a "params" that is not an array';
 
     const nameless = parsed.params.some(
       (param) => typeof param !== 'object' || param === null || typeof (param as IconParam).name !== 'string',
