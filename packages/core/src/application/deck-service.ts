@@ -775,9 +775,17 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
        *
        * Variables are not restored here any more: they belong to the machine
        * rather than to a deck, and reloading a profile no longer disturbs them.
+       *
+       * The states forced by `set-button-state` are the same kind of thing as
+       * the location, and were being lost for the same reason: they live in
+       * memory because the profile has no field for "which state this key
+       * happens to be showing", and a reload started them over. Editing one
+       * key therefore reset every other key on the page whose state had been
+       * set by an action rather than bound to a variable.
        */
-      const previousLocation =
-        controller.profileId === was ? controller.currentLocation : undefined;
+      const sameProfile = controller.profileId === was;
+      const previousLocation = sameProfile ? controller.currentLocation : undefined;
+      const previousStates = sameProfile ? controller.forcedStates : undefined;
 
       controller.load(profile);
 
@@ -789,6 +797,8 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
           // starting point is the sensible place to be instead.
         }
       }
+
+      if (previousStates) controller.restoreForcedStates(previousStates);
 
       controller.invalidate();
     }

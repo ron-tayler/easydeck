@@ -209,6 +209,45 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     return this.tree.folder(this.location.folderId)?.pages ?? [];
   }
 
+  /**
+   * The states forced by `set-button-state`, for a reload to hand back.
+   *
+   * A copy: what a caller holds across a `load` must not be the map the load
+   * is about to clear.
+   */
+  get forcedStates(): ReadonlyMap<string, string> {
+    return new Map(this.stateOverrides);
+  }
+
+  /**
+   * Puts back the forced states an edit should not have disturbed.
+   *
+   * A button whose state was set by an action rather than bound to a variable
+   * keeps that state in memory and nowhere else — the profile has no field for
+   * "which state it happens to be showing", and should not: it is a fact about
+   * this moment, not about the document. So a reload forgets it, and editing
+   * one key on a page reset every other key on that page to its first state.
+   *
+   * Restored rather than never cleared, because whether the states still mean
+   * anything depends on what was loaded. Only the caller knows the profile is
+   * the same one — button ids are handed out per profile and `button-1` exists
+   * in most of them, so keeping them across a genuine switch would put a key
+   * into a state that belongs to somebody else's profile.
+   *
+   * What is dropped here is what no longer exists: a button that was deleted,
+   * or a state that was renamed while it was showing.
+   */
+  restoreForcedStates(states: ReadonlyMap<string, string>): void {
+    for (const [buttonId, stateId] of states) {
+      const button = this.buttonById(buttonId);
+      if (!button?.states.some((state) => state.id === stateId)) continue;
+      this.stateOverrides.set(buttonId, stateId);
+    }
+
+    this.markAllDirty();
+    this.requestPaint();
+  }
+
   /** Validates and installs a profile. Does not paint until `start`. */
   load(profile: ProfileDefinition): void {
     validateProfile(profile);
