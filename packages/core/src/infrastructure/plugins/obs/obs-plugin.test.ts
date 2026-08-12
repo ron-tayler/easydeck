@@ -27,9 +27,14 @@ const STATE = {
     inputs: [
       { inputName: 'Mic', inputKind: 'wasapi_input_capture' },
       { inputName: 'Desktop', inputKind: 'wasapi_output_capture' },
-      { inputName: 'Webcam', inputKind: 'dshow_input' },
+      // Both have sound and neither is an audio device: the pair this list
+      // used to leave out, because it went by kind.
+      { inputName: 'Заставка', inputKind: 'ffmpeg_source' },
+      { inputName: 'Чат', inputKind: 'browser_source' },
+      { inputName: 'Логотип', inputKind: 'image_source' },
     ],
   },
+  GetInputAudioTracks: { inputAudioTracks: { '1': true } },
   ToggleInputMute: {},
   GetSourceFilterList: { filters: [{ filterName: 'Noise gate' }, { filterName: 'Colour' }] },
   GetSourceFilter: { filterEnabled: true },
@@ -266,11 +271,26 @@ describe('the OBS plugin', () => {
       ['Intro', 'Game', 'Ending'],
     );
 
+    await bed.dispose();
+  });
+
+  it('offers everything OBS will let you mute, whatever kind of source it is', async () => {
+    /*
+     * The list went by input kind, so it held the audio devices and nothing
+     * else. A media source and a browser source both sit in OBS's own mixer
+     * and were missing from every mute, volume and monitoring field — and from
+     * `obs.mute(…)`, which offers the same list.
+     */
+    const bed = await bench();
+    await bed.until('a connection', () => bed.runtime.status('obs')?.status === 'ready');
+
+    bed.obs.silent.add('Логотип');
+
     const audio = await bed.runtime.optionsFor('obs', 'audio-inputs');
     assert.deepEqual(
       audio.map((option) => option.value),
-      ['Mic', 'Desktop'],
-      'a webcam is not something to mute',
+      ['Mic', 'Desktop', 'Заставка', 'Чат'],
+      'a picture is not something to mute; the media and the browser are',
     );
 
     await bed.dispose();

@@ -31,9 +31,6 @@ import { ObsConnection } from './obs-connection.js';
 
 export const OBS_PLUGIN_ID = 'obs';
 
-/** What OBS calls the inputs a "mute" action makes sense on. */
-const AUDIO_KINDS = ['wasapi_input_capture', 'wasapi_output_capture', 'coreaudio_input_capture', 'coreaudio_output_capture', 'pulse_input_capture', 'pulse_output_capture', 'audio_line'];
-
 export const obsManifest: PluginManifest = {
   id: OBS_PLUGIN_ID,
   name: { en: 'OBS', ru: 'OBS' },
@@ -683,14 +680,44 @@ export class ObsPlugin implements Plugin {
         .map((name) => ({ value: name, label: { en: name } }));
     });
 
+    /*
+     * Everything OBS will let you mute, asked of OBS rather than guessed.
+     *
+     * This used to keep a list of the input *kinds* that carry sound —
+     * `wasapi_input_capture` and its cousins — which is a list of the audio
+     * devices somebody plugs in, and quietly left out every other source that
+     * has audio: a media source, a browser source, application audio capture.
+     * They sit in OBS's own mixer and were missing from every mute, volume and
+     * monitoring field here, and from `obs.mute(…)` with them.
+     *
+     * A kind list can only ever be as current as the day it was written, and
+     * OBS gains source kinds. So each input is asked whether it has audio at
+     * all, and the ones that say no are the ones left out. That is one small
+     * request per input, paid only when somebody opens the field.
+     */
     host.provideOptions('audio-inputs', async () => {
-      const data = await this.require().request<{ inputs?: { inputName?: string; inputKind?: string }[] }>(
-        'GetInputList',
-      );
-      return (data.inputs ?? [])
-        .filter((input) => AUDIO_KINDS.includes(String(input.inputKind ?? '')))
+      const connection = this.require();
+      const data = await connection.request<{ inputs?: { inputName?: string }[] }>('GetInputList');
+
+      const names = (data.inputs ?? [])
         .map((input) => String(input.inputName ?? ''))
-        .filter((name) => name !== '')
+        .filter((name) => name !== '');
+
+      const audible = await Promise.all(
+        names.map(async (name) => {
+          try {
+            // A source with no audio is refused, which is the answer being
+            // asked for. Not logged: it is the ordinary case, not a fault.
+            await connection.request('GetInputAudioTracks', { inputName: name });
+            return name;
+          } catch {
+            return undefined;
+          }
+        }),
+      );
+
+      return audible
+        .filter((name): name is string => name !== undefined)
         .map((name) => ({ value: name, label: { en: name } }));
     });
 

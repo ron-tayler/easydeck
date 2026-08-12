@@ -17,6 +17,18 @@ import type { WebSocket } from 'ws';
  * Not a test file itself, so it compiles but never runs on its own.
  */
 
+/** The requests a real OBS turns down for a source that carries no audio. */
+const AUDIO_REQUESTS = new Set([
+  'GetInputAudioTracks',
+  'GetInputMute',
+  'SetInputMute',
+  'ToggleInputMute',
+  'GetInputVolume',
+  'SetInputVolume',
+  'GetInputAudioMonitorType',
+  'SetInputAudioMonitorType',
+]);
+
 export interface FakeObsOptions {
   /** Absent means the server does not ask for one. */
   readonly password?: string;
@@ -37,6 +49,14 @@ export class FakeObs {
    * a profile mentioned it — the request is answered, and the answer is no.
    */
   readonly unknown = new Set<string>();
+  /**
+   * Inputs with no sound in them: an image, a colour, a text.
+   *
+   * A real OBS refuses the audio requests for these rather than answering
+   * about silence, which is the only way to tell from the outside that a
+   * source is not something to mute.
+   */
+  readonly silent = new Set<string>();
   private challenge = '';
   private closed = false;
 
@@ -128,7 +148,9 @@ export class FakeObs {
       });
 
       const named = Object.values((data['requestData'] as Record<string, unknown>) ?? {}).map(String);
-      const refused = named.some((value) => this.unknown.has(value));
+      const refused =
+        named.some((value) => this.unknown.has(value)) ||
+        (AUDIO_REQUESTS.has(type) && named.some((value) => this.silent.has(value)));
       const responseData = refused ? undefined : this.options.responses?.[type];
       socket.send(
         JSON.stringify({
