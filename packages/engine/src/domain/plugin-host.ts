@@ -1,5 +1,5 @@
 import type { LocalizedText, ParamOption } from './plugin.js';
-import type { SurfaceProvider } from './surface-spec.js';
+import type { SurfaceProvider, WidgetOnScreen } from './surface-spec.js';
 import type { VariableValue } from './variables.js';
 
 /**
@@ -122,6 +122,35 @@ export interface PluginHost {
    * nothing. It is not an error and is not reported as one.
    */
   provideSurface(type: string, draw: SurfaceProvider): () => void;
+
+  /**
+   * Which widgets are on screen, whoever declared them.
+   *
+   * The same bargain `onWatched` makes for variables, and scoped the same way:
+   * a plugin hears about what is being drawn right now, not about every key of
+   * every folder. That is what keeps this from being a way to read somebody's
+   * whole configuration — and it is also all a plugin needs, since a key
+   * nobody is looking at is a key nothing useful can be done to.
+   *
+   * Not filtered to this plugin's own widgets. A plugin may reasonably want to
+   * point somebody else's graph at what it is talking about, and forbidding it
+   * would be a fiction: a plugin can already run actions and write variables.
+   */
+  onWidgets(listen: (widgets: readonly WidgetOnScreen[]) => void): () => void;
+
+  /**
+   * Changes one setting of the widget on a key, for as long as this lasts.
+   *
+   * Laid over what the profile says rather than written into it. A key press
+   * that edited the document would have the profile rewriting itself from use
+   * instead of from editing — an export would then carry whatever was last
+   * pressed, which is not what anybody authored.
+   *
+   * `undefined` takes the setting back to what the profile says. Overrides go
+   * when a different profile is loaded and survive an edit to this one, which
+   * is exactly how a button's forced state behaves.
+   */
+  setWidgetParam(buttonId: string, name: string, value: VariableValue | undefined): void;
 
   /**
    * Asks to be called back on a schedule the host keeps.

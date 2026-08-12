@@ -1,4 +1,4 @@
-import { computed, onScopeDispose, readonly, ref, shallowRef } from 'vue';
+﻿import { computed, onScopeDispose, readonly, ref, shallowRef } from 'vue';
 import type {
   DeckState,
   InstalledPluginInfo,
@@ -6,6 +6,7 @@ import type {
   KeyView,
   LibraryImage,
   LocalizedText,
+  ParamDefinition,
   PluginManifest,
   ProfileDefinition,
   ProfileSummary,
@@ -388,6 +389,20 @@ export function useDeck() {
     },
     clearButtonSecret: (reference: string) => client.call('clearButtonSecret', { reference }),
 
+    /**
+     * What shape a field should take, for a parameter declaring `shapeFrom`.
+     *
+     * Answered by the daemon rather than by a plugin: the only case so far is
+     * "which setting of that key's widget", which is a question about the
+     * profile and the loaded manifests together.
+     */
+    loadParamShape: async (source: string, params: Readonly<Record<string, unknown>>) => {
+      const result = await client.call<{ shape?: ParamDefinition }>('paramShape', {
+        source,
+        params,
+      });
+      return result.shape;
+    },
     /**
      * One frame of a widget, for the editor's preview.
      *

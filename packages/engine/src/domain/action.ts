@@ -135,6 +135,15 @@ export interface ActionContext {
    * variable instead, so both ways of changing state stay in agreement.
    */
   setButtonState(buttonId: string, stateId: string): void;
+  /**
+   * Changes one setting of the widget on a key, over what the profile says.
+   *
+   * `undefined` puts it back. Laid over rather than written in, for the same
+   * reason a forced state is: what a key shows is a fact about this moment,
+   * and a press that edited the document would have it rewriting itself from
+   * use rather than from editing.
+   */
+  setWidgetParam(buttonId: string, name: string, value: VariableValue | undefined): void;
 
   /**
    * The state a button is showing, for a condition to ask about.

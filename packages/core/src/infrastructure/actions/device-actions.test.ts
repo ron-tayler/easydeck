@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+﻿import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { Surface } from '@easydeck/device';
@@ -20,6 +20,7 @@ const context: ActionContext = {
   goHome() {},
   goBack() {},
   setButtonState() {},
+  setWidgetParam() {},
 };
 
 /** Clamps exactly as the service does, so the tests see real behaviour. */

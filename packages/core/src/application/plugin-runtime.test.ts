@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+﻿import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -199,6 +199,7 @@ describe('a picture a plugin draws', () => {
       params: {},
       cols: 1,
       rows: 1,
+      buttons: [],
     });
 
     assert.ok(frame);
@@ -221,7 +222,7 @@ describe('a picture a plugin draws', () => {
       },
     });
 
-    const frame = await bed.runtime.drawSurface({ type: 'demo.graph', params: {}, cols: 1, rows: 1 });
+    const frame = await bed.runtime.drawSurface({ type: 'demo.graph', params: {}, cols: 1, rows: 1, buttons: [] });
     assert.equal(frame?.source, already);
 
     await bed.dispose();
@@ -232,13 +233,13 @@ describe('a picture a plugin draws', () => {
     await bed.runtime.install(withSurface, {});
 
     assert.equal(
-      await bed.runtime.drawSurface({ type: 'nobody.graph', params: {}, cols: 1, rows: 1 }),
+      await bed.runtime.drawSurface({ type: 'nobody.graph', params: {}, cols: 1, rows: 1, buttons: [] }),
       undefined,
     );
     // Declared but never provided: the same answer, since a key can do nothing
     // useful with the difference.
     assert.equal(
-      await bed.runtime.drawSurface({ type: 'demo.graph', params: {}, cols: 1, rows: 1 }),
+      await bed.runtime.drawSurface({ type: 'demo.graph', params: {}, cols: 1, rows: 1, buttons: [] }),
       undefined,
     );
 
@@ -257,7 +258,7 @@ describe('a picture a plugin draws', () => {
     });
 
     assert.equal(
-      await bed.runtime.drawSurface({ type: 'demo.graph', params: {}, cols: 1, rows: 1 }),
+      await bed.runtime.drawSurface({ type: 'demo.graph', params: {}, cols: 1, rows: 1, buttons: [] }),
       undefined,
     );
     // A picture that failed to draw says nothing about whether the plugin

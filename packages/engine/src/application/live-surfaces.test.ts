@@ -8,6 +8,9 @@ import { ActionRegistry } from './action-registry.js';
 import { DeckController } from './deck-controller.js';
 import { FakePresenter } from './test-doubles.js';
 
+/** A repaint is scheduled rather than immediate; this waits for it. */
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20));
+
 const STILL = 'data:image/png;base64,AAAA';
 const DRAWN = 'data:image/svg+xml;base64,PHN2Zy8+';
 
@@ -153,6 +156,67 @@ describe('a picture a plugin draws', () => {
     await controller.start();
 
     assert.deepEqual(surfaces.asked, []);
+  });
+
+  it('is drawn with whatever was laid over its settings', async () => {
+    const { controller, surfaces } = await run([button(3, widget)]);
+
+    controller.setWidgetParam('b3', 'reading', 'gpu', 'test');
+    await settle();
+
+    assert.deepEqual(
+      surfaces.asked.at(-1)?.params,
+      { reading: 'gpu' },
+      'the profile said cpu; the override is what should have been drawn',
+    );
+  });
+
+  it('puts a setting back when the override is cleared', async () => {
+    const { controller, surfaces } = await run([button(3, widget)]);
+
+    controller.setWidgetParam('b3', 'reading', 'gpu', 'test');
+    await settle();
+    controller.setWidgetParam('b3', 'reading', undefined, 'test');
+    await settle();
+
+    // Undone by clearing rather than by writing the old value back: one key
+    // can put another right without knowing what it was.
+    assert.deepEqual(surfaces.asked.at(-1)?.params, { reading: 'cpu' });
+  });
+
+  it('stops treating two keys as one once they are pointed at different things', async () => {
+    /*
+     * The saving is real and stays: two keys wanting the same picture ask
+     * once. But it has to be counted from the *resolved* settings — read from
+     * the profile alone, a key a macro had pointed elsewhere would be handed
+     * its neighbour's graph.
+     */
+    const { controller, surfaces } = await run([button(1, widget), button(2, widget)]);
+    assert.equal(surfaces.asked.length, 1, 'identical to begin with');
+
+    controller.setWidgetParam('b2', 'reading', 'gpu', 'test');
+    await settle();
+
+    const last = surfaces.asked.slice(-2);
+    assert.deepEqual(
+      last.map((request) => request.params).sort((a, b) => String(a['reading']).localeCompare(String(b['reading']))),
+      [{ reading: 'cpu' }, { reading: 'gpu' }],
+    );
+  });
+
+  it('names the buttons a picture is being drawn for', async () => {
+    // What a plugin needs to be able to address a key at all.
+    const { surfaces } = await run([button(1, widget), button(2, widget)]);
+
+    assert.deepEqual(surfaces.asked.at(-1)?.buttons, ['b1', 'b2']);
+  });
+
+  it('tells the world which widgets are on screen', async () => {
+    const { controller } = await run([button(3, widget), button(4, {})]);
+
+    assert.deepEqual(controller.widgetsOnScreen(), [
+      { buttonId: 'b3', type: 'demo.graph', params: { reading: 'cpu' } },
+    ]);
   });
 
   it('lets a plugin that throws leave the key blank rather than stop the deck', async () => {

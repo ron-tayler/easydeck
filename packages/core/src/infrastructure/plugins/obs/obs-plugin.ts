@@ -429,10 +429,19 @@ export const obsManifest: PluginManifest = {
           /*
            * Depends on the source above: OBS keeps filters per source, and
            * the list is asked for again whenever that box changes.
+           *
+           * And now waits for it, rather than sitting there empty. A form that
+           * offers two boxes, one of which cannot answer until the other is
+           * filled, is a puzzle about which to fill first.
            */
           name: 'filter',
           type: 'select',
           optionsFrom: 'filters',
+          dependsOn: ['source'],
+          emptyNote: {
+            en: 'OBS lists no filters on that source',
+            ru: 'OBS не показывает фильтров у этого источника',
+          },
           label: { en: 'Filter', ru: 'Фильтр' },
         },
       ],
@@ -454,6 +463,11 @@ export const obsManifest: PluginManifest = {
           name: 'source',
           type: 'select',
           optionsFrom: 'sources',
+          dependsOn: ['scene'],
+          emptyNote: {
+            en: 'That scene has nothing in it',
+            ru: 'В этой сцене ничего нет',
+          },
           label: { en: 'Source', ru: 'Источник' },
         },
       ],

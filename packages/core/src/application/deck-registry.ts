@@ -3,7 +3,13 @@ import { EventEmitter } from 'node:events';
 import type { PanelCompositor } from '@easydeck/compositor';
 import type { Surface } from '@easydeck/device';
 import { DeckController, VariableStore, variablesReadBy } from '@easydeck/engine';
-import type { ActionRegistry, ProfileDefinition, VariableDeclaration } from '@easydeck/engine';
+import type {
+  ActionRegistry,
+  ProfileDefinition,
+  VariableDeclaration,
+  VariableValue,
+  WidgetOnScreen,
+} from '@easydeck/engine';
 
 /**
  * Every deck that is running, and the one thing they all share.
@@ -108,6 +114,41 @@ export class DeckRegistry extends EventEmitter<DeckRegistryEvents> {
     }
 
     return [...names];
+  }
+
+  /**
+   * Every widget on screen, across every deck.
+   *
+   * Gathered here for the same reason the read variables are: two decks may be
+   * showing different pages, and a plugin should hear about both. The same key
+   * on two decks appears once — it is one key.
+   */
+  widgetsOnScreen(): WidgetOnScreen[] {
+    const found = new Map<string, WidgetOnScreen>();
+
+    for (const deck of this.decks.values()) {
+      for (const widget of deck.controller.widgetsOnScreen()) found.set(widget.buttonId, widget);
+    }
+
+    return [...found.values()];
+  }
+
+  /**
+   * Lays a widget setting over the profile, on every deck showing that key.
+   *
+   * Every deck, unlike the macro: a plugin saying "point that graph at the
+   * memory" is talking about a key, and the key may be on a panel and a tablet
+   * at once. A deck that does not have it simply does nothing.
+   */
+  setWidgetParam(
+    buttonId: string,
+    name: string,
+    value: VariableValue | undefined,
+    by: string,
+  ): void {
+    for (const deck of this.decks.values()) {
+      deck.controller.setWidgetParam(buttonId, name, value, by);
+    }
   }
 
   declarations(): VariableDeclaration[] {

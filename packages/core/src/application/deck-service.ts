@@ -12,7 +12,9 @@ import type {
   LocalizedText,
   ParamOption,
   PluginManifest,
+  ParamDefinition,
   PluginStatus,
+  SurfaceDefinition,
   SurfaceFrame,
   SurfaceRequest,
   ProfileDefinition,
@@ -193,6 +195,9 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
       this.emit('locationChanged', { deckId, location }),
     );
     deck.controller.on('painted', (keys) => this.emit('viewChanged', { deckId, keys }));
+    // Gathered across every deck rather than passed straight through: a plugin
+    // hears one list of what is on screen, not one per panel.
+    deck.controller.on('widgets', () => this.publishWidgets());
     deck.surface?.on('keyDown', (event) => this.emit('keyDown', { deckId, key: event.key }));
     deck.surface?.on('keyUp', (event) => this.emit('keyUp', { deckId, key: event.key }));
   }
@@ -347,9 +352,87 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     source: string,
     params: Readonly<Record<string, unknown>> = {},
   ): Promise<readonly ParamOption[]> {
+    /*
+     * Two of these are the host's own, not any plugin's.
+     *
+     * The action that changes a widget's setting needs to know what settings
+     * that key's widget has — which is a question about the profile and the
+     * loaded manifests, and the host is the only thing holding both. A plugin
+     * asked instead would have to be told about somebody else's key.
+     */
+    if (source === 'widget-params') return this.widgetParams(params);
+
     const runtime = this.options.plugins;
     if (!runtime) return [];
     return runtime.optionsFor(pluginId, source, params);
+  }
+
+  /**
+   * The definition of a field whose type is only knowable at run time.
+   *
+   * Answers `shapeFrom`, and today only for the widget action: given a key and
+   * one of its widget's settings, hand back that setting's own declaration —
+   * range, options, colour picker and all. Borrowed rather than restated, so
+   * the form somebody edits a widget with and the form somebody changes it
+   * with cannot drift apart.
+   */
+  async paramShape(
+    source: string,
+    params: Readonly<Record<string, unknown>> = {},
+  ): Promise<ParamDefinition | undefined> {
+    if (source !== 'widget-param-shape') return undefined;
+
+    const wanted = typeof params['param'] === 'string' ? params['param'] : '';
+    const found = this.widgetOf(params);
+    if (!wanted || !found) return undefined;
+
+    const declared = (found.definition.params ?? []).find((param) => param.name === wanted);
+    if (!declared) return undefined;
+
+    // Renamed and always optional: this field means "put it to this", and an
+    // empty answer is how a key puts a setting back to what the profile says.
+    return {
+      ...declared,
+      name: 'value',
+      required: false,
+      label: { en: 'New value', ru: 'Новое значение' },
+    };
+  }
+
+  /** The settings the widget on a named key declares, for the action's list. */
+  private widgetParams(params: Readonly<Record<string, unknown>>): readonly ParamOption[] {
+    const found = this.widgetOf(params);
+    if (!found) return [];
+
+    return (found.definition.params ?? []).map((param) => ({
+      value: param.name,
+      label: param.label,
+    }));
+  }
+
+  /**
+   * The widget on the key an action is pointed at, and what it declares.
+   *
+   * An empty button means the key being pressed, which the configurator cannot
+   * know while the form is open — so it sends the one being edited, and an
+   * absent one simply has no answer rather than a wrong one.
+   */
+  private widgetOf(
+    params: Readonly<Record<string, unknown>>,
+  ): { readonly definition: SurfaceDefinition } | undefined {
+    const buttonId = typeof params['buttonId'] === 'string' ? params['buttonId'] : '';
+    if (!buttonId) return undefined;
+
+    const button = this.deck.controller.buttonInProfile(buttonId);
+    const spec = button?.states.map((state) => state.visual.surface).find(Boolean);
+    if (!spec) return undefined;
+
+    for (const manifest of this.options.actions.plugins()) {
+      const definition = (manifest.surfaces ?? []).find((each) => each.type === spec.type);
+      if (definition) return { definition };
+    }
+
+    return undefined;
   }
 
   /**
@@ -378,6 +461,12 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
   /** Tells the plugins which of their variables anything is reading. */
   private publishWatched(): void {
     this.options.plugins?.setWatched(this.options.decks.variablesRead());
+    this.publishWidgets();
+  }
+
+  /** And which widgets are on screen, which is the same bargain for pictures. */
+  private publishWidgets(): void {
+    this.options.plugins?.setWidgets(this.options.decks.widgetsOnScreen());
   }
 
   private requirePlugins(): PluginRuntime {

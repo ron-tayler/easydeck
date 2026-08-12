@@ -13,6 +13,7 @@ import type {
   SurfaceProvider,
   SurfaceRequest,
   Ticker,
+  WidgetOnScreen,
   VariableStore,
   VariableValue,
 } from '@easydeck/engine';
@@ -54,6 +55,19 @@ export interface PluginRuntimeOptions {
   readonly variables: VariableStore;
   /** Claims a path on the loopback server; absent until that server exists. */
   readonly route?: (pluginId: string, path: string, handle: RouteHandler) => () => void;
+  /**
+   * Lays a widget setting over what the profile says, on every deck showing it.
+   *
+   * Every deck, unlike the macro, which changes the one whose key was pressed:
+   * a plugin saying "point that graph at the memory" is talking about the key,
+   * and the key may be on a panel and a tablet at once.
+   */
+  readonly setWidgetParam?: (
+    pluginId: string,
+    buttonId: string,
+    name: string,
+    value: VariableValue | undefined,
+  ) => void;
   /** Opens a URL in the user's browser. */
   readonly openExternal?: (url: string) => void;
   readonly log?: (pluginId: string, level: 'info' | 'warn' | 'error', message: string) => void;
@@ -76,6 +90,8 @@ interface Entry {
   /** Families this plugin declared, which take an argument. */
   readonly families: Set<string>;
   readonly watchers: Array<(keys: readonly string[]) => void>;
+  /** Told what widgets are on screen, whoever declared them. */
+  readonly widgetWatchers: Array<(widgets: readonly WidgetOnScreen[]) => void>;
   /** What was last reported as being watched, for a plugin that starts late. */
   watched: readonly string[];
 }
@@ -84,6 +100,8 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
   private readonly entries = new Map<string, Entry>();
   /** Every key the loaded profiles read, across all plugins. */
   private watched: readonly string[] = [];
+  /** What is being drawn right now, for a plugin that installs late. */
+  private widgets: readonly WidgetOnScreen[] = [];
   /**
    * What a plugin's settings-window buttons actually do.
    *
@@ -131,6 +149,7 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
           .map((variable) => variable.name),
       ),
       watchers: [],
+      widgetWatchers: [],
       watched: this.watched.filter((key) => this.belongsTo(key, manifest.id)),
     };
     this.entries.set(manifest.id, entry);
@@ -244,6 +263,28 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
     } catch (cause) {
       this.options.log?.(pluginId, 'warn', `Could not draw '${request.type}': ${describe(cause)}`);
       return undefined;
+    }
+  }
+
+  /**
+   * Tells every plugin what widgets are on screen.
+   *
+   * Not filtered to each plugin's own, unlike the watched variables: a plugin
+   * may reasonably want to point somebody else's graph at what it is talking
+   * about, and it cannot do that without being able to see it. What keeps this
+   * modest is the scope — what is being drawn, not what exists.
+   */
+  setWidgets(widgets: readonly WidgetOnScreen[]): void {
+    this.widgets = widgets;
+
+    for (const entry of this.entries.values()) {
+      for (const listen of [...entry.widgetWatchers]) {
+        try {
+          listen(widgets);
+        } catch (cause) {
+          this.fail(entry, cause);
+        }
+      }
     }
   }
 
@@ -411,6 +452,24 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
       provideSurface: (type, draw) => {
         entry.surfaces.set(type, draw);
         return () => entry.surfaces.delete(type);
+      },
+
+      onWidgets: (listen) => {
+        entry.widgetWatchers.push(listen);
+        // Told at once what is already on screen: a plugin that installs after
+        // the deck started would otherwise hear nothing until the page turned.
+        if (this.widgets.length > 0) listen(this.widgets);
+        return () => {
+          const at = entry.widgetWatchers.indexOf(listen);
+          if (at !== -1) entry.widgetWatchers.splice(at, 1);
+        };
+      },
+
+      setWidgetParam: (buttonId, name, value) => {
+        if (!this.options.setWidgetParam) {
+          throw new Error(`Plugin '${id}' changed a widget, but no deck is listening`);
+        }
+        this.options.setWidgetParam(id, buttonId, name, value);
       },
 
       update: (everyMs, run) => this.beat(entry, everyMs, run),

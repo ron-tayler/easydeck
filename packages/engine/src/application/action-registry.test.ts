@@ -18,6 +18,7 @@ function contextWith(variables: Record<string, string | number | boolean>): Acti
     goHome() {},
     goBack() {},
     setButtonState() {},
+    setWidgetParam() {},
   };
 }
 

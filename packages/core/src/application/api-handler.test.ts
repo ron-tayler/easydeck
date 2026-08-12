@@ -1,9 +1,10 @@
-import assert from 'node:assert/strict';
+﻿import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { PLUGIN_API_VERSION, PROFILE_FORMAT_VERSION } from '@easydeck/engine';
 import type {
   KeyView,
+  ParamDefinition,
   PluginManifest,
   ProfileDefinition,
   SurfaceFrame,
@@ -132,6 +133,16 @@ class FakeDeck implements DeckFacade {
       broken: [],
       messages: { ru: { sim: { start: 'Старт' } } },
     };
+  }
+
+  async paramShape(
+    source: string,
+    params: Readonly<Record<string, unknown>> = {},
+  ): Promise<ParamDefinition | undefined> {
+    this.calls.push('paramShape');
+    return source === 'widget-param-shape' && params['param'] === 'period'
+      ? { name: 'value', type: 'number', label: { en: 'New value' }, min: 1, max: 900 }
+      : undefined;
   }
 
   async drawSurface(request: SurfaceRequest): Promise<SurfaceFrame | undefined> {

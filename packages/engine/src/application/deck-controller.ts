@@ -18,7 +18,14 @@ import { ProfileTree } from '../domain/profile-tree.js';
 import { sceneKeys, sceneSignature } from '../domain/scene.js';
 import type { Scene, SceneImage, SceneLabel, SceneRegion } from '../domain/scene.js';
 import { surfaceKey } from '../domain/surface-spec.js';
-import type { SurfaceFrame, SurfaceProvider, SurfaceRequest } from '../domain/surface-spec.js';
+import type {
+  SurfaceFrame,
+  SurfaceProvider,
+  SurfaceRequest,
+  SurfaceSpec,
+  WidgetOnScreen,
+  WidgetOverride,
+} from '../domain/surface-spec.js';
 import { readIconParams, resolveIconParams, svgTextOf } from '../domain/icon-params.js';
 import { drawableIcon } from '../domain/icon-source.js';
 import { renderTemplate } from '../domain/template.js';
@@ -83,6 +90,13 @@ export interface DeckControllerEvents {
   locationChanged: [location: DeckLocation];
   /** Emitted after every repaint pass, with the keys actually written. */
   painted: [keys: number[]];
+  /**
+   * The widgets on screen changed, and the plugins should hear about it.
+   *
+   * The counterpart of the watched-variable list, and scoped the same way: a
+   * plugin is told what is being drawn, not what exists.
+   */
+  widgets: [widgets: readonly WidgetOnScreen[]];
 }
 
 /** Long enough to notice, short enough not to sit there accusing. */
@@ -125,6 +139,20 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   private readonly history: DeckLocation[] = [];
   /** Explicit state overrides, for buttons not bound to a variable. */
   private readonly stateOverrides = new Map<string, string>();
+  /**
+   * Widget settings changed while the deck runs, by button and name.
+   *
+   * The same idea as `stateOverrides` and for the same reason: what a key is
+   * *showing* is a fact about this moment, and the profile is what somebody
+   * authored. A press that switched a graph from the processor to the memory
+   * would otherwise edit the document, and an export would carry whatever was
+   * last pressed.
+   *
+   * The author of each change is kept beside it. Several things may write
+   * here — a macro, this plugin, another plugin — and "why is my graph showing
+   * memory" needs an answer better than a shrug.
+   */
+  private readonly widgetOverrides = new Map<string, Map<string, WidgetOverride>>();
   /** Declared variables by name: the profile's, plus every plugin's. */
   private declarations = new Map<string, VariableDeclaration>();
   /** Short names for pictures, so no scene ever carries their bytes around. */
@@ -165,6 +193,8 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   private readonly surfaces: SurfaceProvider | undefined;
   /** Pictures gathered for this pass, by the spec that asked for them. */
   private readonly drawn = new Map<string, SurfaceFrame>();
+  /** What the plugins were last told is on screen, to avoid saying it twice. */
+  private lastWidgets = '';
 
   constructor(
     private readonly surface: PresenterPort,
@@ -207,6 +237,83 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   get currentFolderPages(): readonly PageDefinition[] {
     if (!this.tree || !this.location) return [];
     return this.tree.folder(this.location.folderId)?.pages ?? [];
+  }
+
+  /**
+   * Changes one setting of the widget on a key.
+   *
+   * `undefined` puts it back to whatever the profile says, which is how a key
+   * that switched a graph to the memory switches it back without needing to
+   * know what it was before.
+   *
+   * A button with no widget is not an error: a profile is edited while the
+   * deck runs, and a macro pointed at a key whose widget was removed should do
+   * nothing rather than take the press down with it.
+   */
+  setWidgetParam(
+    buttonId: string,
+    name: string,
+    value: VariableValue | undefined,
+    by = 'unknown',
+  ): void {
+    const forButton = this.widgetOverrides.get(buttonId) ?? new Map<string, WidgetOverride>();
+
+    if (value === undefined) forButton.delete(name);
+    else forButton.set(name, { value, by });
+
+    if (forButton.size > 0) this.widgetOverrides.set(buttonId, forButton);
+    else this.widgetOverrides.delete(buttonId);
+
+    this.markAllDirty();
+    this.requestPaint();
+  }
+
+  /**
+   * The widgets on the page this deck is showing, settings and all.
+   *
+   * The same question `tellWidgets` answers by event, asked directly — for
+   * whoever joins after the last repaint and would otherwise wait for the next
+   * one to find out what is there.
+   */
+  widgetsOnScreen(): WidgetOnScreen[] {
+    const page = this.currentPage;
+    if (!page) return [];
+
+    const found: WidgetOnScreen[] = [];
+    for (const button of page.buttons) {
+      const spec = this.widgetOf(button);
+      if (spec) found.push({ buttonId: button.id, type: spec.type, params: spec.params ?? {} });
+    }
+
+    return found;
+  }
+
+  /** What has been laid over the profile, for a reload to hand back. */
+  get widgetSettings(): ReadonlyMap<string, ReadonlyMap<string, WidgetOverride>> {
+    return new Map([...this.widgetOverrides].map(([key, values]) => [key, new Map(values)]));
+  }
+
+  /**
+   * Puts back the widget settings an edit should not have disturbed.
+   *
+   * The same rule as the forced states next door, and the same reason for
+   * leaving the decision to the caller: only it knows the profile is the same
+   * one. What is dropped is what no longer exists — a key whose widget was
+   * removed, or a setting that widget no longer declares.
+   */
+  restoreWidgetSettings(settings: ReadonlyMap<string, ReadonlyMap<string, WidgetOverride>>): void {
+    for (const [buttonId, values] of settings) {
+      const button = this.buttonById(buttonId);
+      // Every state, not the one showing: which state that is depends on the
+      // variables, and deciding from it would be circular.
+      if (!button?.states.some((state) => state.visual.surface)) continue;
+
+      const kept = new Map(values);
+      if (kept.size > 0) this.widgetOverrides.set(buttonId, kept);
+    }
+
+    this.markAllDirty();
+    this.requestPaint();
   }
 
   /**
@@ -1030,6 +1137,17 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   }
 
   /** A button anywhere in the profile, which is where a handler's may be. */
+  /**
+   * A button anywhere in the loaded profile, by id.
+   *
+   * Exposed because a configurator asking "what widget is on that key" is
+   * asking about the document rather than about the page on screen — the key
+   * being pointed at may well be on another page.
+   */
+  buttonInProfile(buttonId: string): ButtonDefinition | undefined {
+    return this.buttonById(buttonId);
+  }
+
   private buttonById(buttonId: string): ButtonDefinition | undefined {
     const search = (folder: FolderDefinition): ButtonDefinition | undefined => {
       for (const page of folder.pages) {
@@ -1081,6 +1199,10 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
       goHome: () => this.goHome(),
       goBack: () => this.goBack(),
       setButtonState: (buttonId, stateId) => this.setButtonState(buttonId, stateId),
+      // Attributed to the action rather than to a plugin: it was a key press,
+      // and that is the useful answer to "who changed this".
+      setWidgetParam: (buttonId, name, value) =>
+        this.setWidgetParam(buttonId, name, value, 'vars.set-widget-param'),
       // Without an id, the button running the script — which is what a
       // condition about "this key" means, and saves anybody their own id.
       buttonState: (buttonId) => {
@@ -1183,6 +1305,35 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   }
 
   /**
+   * The widget a button is showing, with anything laid over it applied.
+   *
+   * One place, so nothing downstream has to remember that the profile is not
+   * the last word: the picture, the identity used for caching and what a
+   * plugin is told are all worked out from the same resolved settings.
+   */
+  private widgetOf(button: ButtonDefinition): SurfaceSpec | undefined {
+    const spec = this.resolveState(button).visual.surface;
+    if (!spec) return undefined;
+
+    const over = this.widgetOverrides.get(button.id);
+    if (!over || over.size === 0) return spec;
+
+    const params = { ...(spec.params ?? {}) };
+    for (const [name, override] of over) params[name] = override.value;
+
+    return { ...spec, params };
+  }
+
+  /** Tells the plugins what is on screen, and only when it has changed. */
+  private tellWidgets(widgets: readonly WidgetOnScreen[]): void {
+    const signature = JSON.stringify(widgets);
+    if (signature === this.lastWidgets) return;
+
+    this.lastWidgets = signature;
+    this.emit('widgets', widgets);
+  }
+
+  /**
    * The picture a region shows: the plugin's if it answered, otherwise its own.
    *
    * A live source that produced nothing is not a failure — the player is
@@ -1236,21 +1387,33 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     }
 
     const wanted = new Map<string, SurfaceRequest>();
+    const onScreen: WidgetOnScreen[] = [];
 
     for (const button of page.buttons) {
-      const spec = this.resolveState(button).visual.surface;
+      const spec = this.widgetOf(button);
       if (!spec) continue;
 
-      // Keyed, so two keys showing the same graph with the same settings ask
-      // for it once. A merged button covers its whole rectangle, exactly as a
-      // stretched still does.
-      wanted.set(surfaceKey(spec), {
+      onScreen.push({ buttonId: button.id, type: spec.type, params: spec.params ?? {} });
+
+      /*
+       * Keyed on the *resolved* settings, so two keys showing the same graph
+       * ask for it once — and two keys a macro has pointed at different
+       * readings no longer count as the same, which they would if this read
+       * the profile alone.
+       */
+      const key = surfaceKey(spec);
+      const already = wanted.get(key);
+
+      wanted.set(key, {
         type: spec.type,
         params: spec.params ?? {},
         cols: button.colSpan ?? 1,
         rows: button.rowSpan ?? 1,
+        buttons: [...(already?.buttons ?? []), button.id],
       });
     }
+
+    this.tellWidgets(onScreen);
 
     /*
      * Filled aside and swapped in at the end, rather than cleared first.

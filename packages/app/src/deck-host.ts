@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+﻿import { EventEmitter } from 'node:events';
 
 import {
   ApiHandler,
@@ -12,7 +12,7 @@ import {
   startApiServer,
 } from '@easydeck/core';
 import { electronSecretVault } from './secret-vault.js';
-import type { ApiSource, AppFolder, DeckEvents, DeckService, DeckState, InstalledPluginSummary, KeyView, Library, LibraryImage, PluginManifest, ProfileDefinition, ProfileSummary, RunningApiServer, SurfaceFrame, SurfaceRequest, VariableValue } from '@easydeck/core';
+import type { ApiSource, AppFolder, DeckEvents, DeckService, DeckState, InstalledPluginSummary, KeyView, Library, LibraryImage, ParamDefinition, PluginManifest, ProfileDefinition, ProfileSummary, RunningApiServer, SurfaceFrame, SurfaceRequest, VariableValue } from '@easydeck/core';
 
 export type HostStatus =
   | { readonly state: 'starting' }
@@ -272,6 +272,19 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
    */
   async drawSurface(request: SurfaceRequest): Promise<SurfaceFrame | undefined> {
     return this.deck?.drawSurface(request);
+  }
+
+  /**
+   * Nothing rather than a failure while the deck is released, as above.
+   *
+   * A form open over a locked workstation then shows the field it was given
+   * rather than an error about the deck being away.
+   */
+  async paramShape(
+    source: string,
+    params?: Readonly<Record<string, unknown>>,
+  ): Promise<ParamDefinition | undefined> {
+    return this.deck?.paramShape(source, params);
   }
 
   pluginSettings(pluginId: string) {

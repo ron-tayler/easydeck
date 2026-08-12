@@ -165,6 +165,8 @@ export type {
   SurfaceProvider,
   SurfaceRequest,
   SurfaceSpec,
+  WidgetOnScreen,
+  WidgetOverride,
 } from './domain/surface-spec.js';
 export { surfaceKey } from './domain/surface-spec.js';
 export { PLUGIN_API_VERSION, localized } from './domain/plugin.js';

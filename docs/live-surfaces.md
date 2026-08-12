@@ -103,6 +103,83 @@ whether it is worth keeping:
 That distinction belongs in the contract rather than in a heuristic, because
 only the plugin knows which of the two it is sending.
 
+## Changing a widget while the deck runs
+
+A widget's settings are in the profile, which is what somebody authored. What
+it is *showing* is a fact about this moment — and pressing a key to switch a
+graph from the processor to the memory is about the moment.
+
+So a change is **laid over** the profile rather than written into it, exactly
+as a forced button state is. The document stays what was authored, an export
+carries that and not whatever was last pressed, and the overrides survive an
+edit to the same profile while a genuine switch clears them.
+
+Each override remembers who made it. A macro, the plugin that owns the widget
+and another plugin entirely may all write the same setting, and "why is my
+graph showing the memory" deserves a better answer than a shrug.
+
+**`vars.set-widget-param`** is the macro, sitting beside `vars.set-button-state`
+because they are the same kind of thing: both change what the deck shows
+without touching what was authored. It takes a button — this one or another —
+then one of that widget's settings, then a value. An empty value puts the
+setting back, so one key can undo another without knowing what it was.
+
+## Any plugin may do the same
+
+The macro is not a privileged path. A plugin declares widgets, and it can also
+see and change them:
+
+- **`onWidgets`** — what is on screen, whoever declared it. The same bargain
+  `onWatched` makes for variables and scoped the same way: what is being drawn
+  now, not every key of every folder. That is what keeps it from being a way to
+  read somebody's whole configuration, and it is all a plugin needs, since a key
+  nobody is looking at is a key nothing useful can be done to.
+- **`setWidgetParam`** — the same override the macro writes.
+
+Not filtered to a plugin's own widgets. A plugin may reasonably want to point
+somebody else's graph at what it is talking about, and forbidding it would be a
+fiction — a plugin can already run actions and write variables. What limits it
+is the scope: it sees what is drawn.
+
+`SurfaceRequest` therefore names the buttons a picture is being drawn for. A
+list, because two keys wanting the same picture with the same settings remain
+one drawing — that saving is deliberate — and the list is what gives a plugin
+something to address.
+
+## Forms that change shape
+
+Three additions to `ParamDefinition`, all optional, none specific to widgets:
+
+- **`dependsOn`** — the field appears once the named ones are answered. The OBS
+  filter chain stops showing three boxes, two of which cannot answer yet.
+- **`emptyNote`** — what to say when the choices come back empty. "This key has
+  no widget on it" beats a text box inviting an answer that cannot be right.
+- **`shapeFrom`** — the field's whole definition arrives at run time. This is
+  how "the new value" becomes a number for a thickness, a picker for a colour
+  and a list for a period: the widget's own declaration is *borrowed*, with its
+  range and its options intact, so there is nothing to drift.
+
+`button-state` was the first parameter type that depended on another, and was
+solved by adding a type. These are that solved once, generally; it need not be
+rewritten, but nothing new should need the same treatment.
+
+## Timers, when they come
+
+Stopwatch, countdown and pomodoro become widgets, and the instance is named by
+an ordinary parameter — no new addressing. Two keys with the same name are one
+timer, which is how a start key and a display key work; two names are two
+independent timers, which is the point.
+
+A timer comes into existence by being named. There is no list of timers in the
+plugin's settings, because that would be a second place where they exist and it
+would go stale — a name in a macro and a name in a list are one thing too many.
+The cost is that a typo makes a second timer rather than an error; the dropdown
+offers what is running, and typing is still allowed.
+
+Timers do not survive a restart of the daemon: a running stopwatch is a fact
+about this session, and one that came back saying fourteen hours is rubbish
+nobody started.
+
 ## What this does not decide
 
 **Motion has no vocabulary yet.** Looping or once, always or on an event, what

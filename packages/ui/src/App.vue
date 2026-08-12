@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type {
@@ -1430,6 +1430,7 @@ onBeforeUnmount(() => {
       :profile-icons="profileIcons"
       :plugin-statuses="deck.pluginStatuses.value"
       :load-options="loadActionOptions"
+      :load-shape="deck.loadParamShape"
       :draw-surface="deck.drawSurface"
       :filled-secrets="filledSecrets"
       :save-secret="saveButtonSecret"

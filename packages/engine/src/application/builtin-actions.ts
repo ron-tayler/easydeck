@@ -1,6 +1,7 @@
 import { numberParam, stringParam, valueParam } from '../domain/action.js';
 import { PLUGIN_API_VERSION } from '../domain/plugin.js';
 import type { PluginManifest } from '../domain/plugin.js';
+import type { VariableValue } from '../domain/variables.js';
 import type { ActionRegistry } from './action-registry.js';
 
 /**
@@ -180,6 +181,61 @@ export const variablesManifest: PluginManifest = {
         { name: 'stateId', type: 'button-state', label: { en: 'State', ru: 'Состояние' } },
       ],
     },
+
+    {
+      /*
+       * The sibling of the one above, and grouped with it on purpose: both
+       * change what the deck is showing right now without touching what was
+       * authored. A press that edited the profile would have the document
+       * rewriting itself from use, and an export carrying whatever was last
+       * pressed.
+       */
+      type: 'vars.set-widget-param',
+      icon: 'variable',
+      label: { en: "Change a widget's setting", ru: 'Изменить настройку виджета' },
+      group: { en: 'Buttons', ru: 'Кнопки' },
+      description: {
+        en: 'Points a widget at something else — another reading, another period',
+        ru: 'Переводит виджет на другое — другой показатель, другой период',
+      },
+      params: [
+        {
+          name: 'buttonId',
+          type: 'profile-button',
+          label: { en: 'Button', ru: 'Кнопка' },
+          description: {
+            en: 'Leave empty for the button being pressed',
+            ru: 'Оставьте пустым, чтобы менять нажатую кнопку',
+          },
+          required: false,
+        },
+        {
+          // Only the widget's own settings, and only once a button is known.
+          name: 'param',
+          type: 'select',
+          label: { en: 'Setting', ru: 'Настройка' },
+          dependsOn: ['buttonId'],
+          optionsFrom: 'widget-params',
+          emptyNote: {
+            en: 'This key has no widget on it',
+            ru: 'На этой клавише нет виджета',
+          },
+        },
+        {
+          /*
+           * The one field whose *type* is not knowable here: a period is a
+           * list, a colour is a picker, a thickness is a number. Its
+           * definition is borrowed from the widget rather than restated, so
+           * the two cannot drift.
+           */
+          name: 'value',
+          type: 'string',
+          label: { en: 'New value', ru: 'Новое значение' },
+          dependsOn: ['buttonId', 'param'],
+          shapeFrom: 'widget-param-shape',
+        },
+      ],
+    },
   ],
 };
 
@@ -217,6 +273,25 @@ export function registerBuiltinActions(registry: ActionRegistry): ActionRegistry
         ? params['buttonId']
         : ctx.button.id;
       ctx.setButtonState(buttonId, stringParam(params, 'stateId'));
+    },
+
+    'vars.set-widget-param': (params, ctx) => {
+      const buttonId =
+        typeof params['buttonId'] === 'string' && params['buttonId'].length > 0
+          ? params['buttonId']
+          : ctx.button.id;
+
+      /*
+       * An empty value puts the setting back to what the profile says, which
+       * is how one key undoes another without having to know what it was
+       * before.
+       */
+      const value = params['value'];
+      ctx.setWidgetParam(
+        buttonId,
+        stringParam(params, 'param'),
+        value === '' || value === undefined ? undefined : (value as VariableValue),
+      );
     },
   });
 }

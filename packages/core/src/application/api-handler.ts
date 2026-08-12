@@ -1,4 +1,4 @@
-import { drawableIcon, validateProfile } from '@easydeck/engine';
+﻿import { drawableIcon, validateProfile } from '@easydeck/engine';
 import type { KeyView, ProfileDefinition, VariableValue } from '@easydeck/engine';
 
 import type { RequestMessage, ResponseMessage } from '../domain/api-messages.js';
@@ -132,9 +132,25 @@ export class ApiHandler {
             params: request.params ?? {},
             cols: 1,
             rows: 1,
+            buttons: [],
           }),
         };
       }
+
+      /*
+       * The declaration of a field whose type is only knowable now.
+       *
+       * Answers `shapeFrom`: the form asks what shape this field should take
+       * given what has been filled in, and gets back a whole parameter
+       * definition rather than a list of choices.
+       */
+      case 'paramShape':
+        return {
+          shape: await this.deck.paramShape(
+            text(params, 'source'),
+            (params['params'] as Record<string, unknown>) ?? {},
+          ),
+        };
 
       case 'listIcons': {
         const library = await this.deck.listIcons();

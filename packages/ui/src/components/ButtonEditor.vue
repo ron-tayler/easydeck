@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type {
@@ -8,6 +8,7 @@ import type {
   IconSpec,
   LibraryImage,
   LocalizedText,
+  ParamDefinition,
   PluginManifest,
   StateRange,
   SurfaceSpec,
@@ -59,6 +60,11 @@ const props = defineProps<{
   omittedIcons?: number;
   /** Where each plugin that holds a connection has got to. */
   pluginStatuses?: Readonly<Record<string, { status: string; message?: LocalizedText }>>;
+  /** Asks what shape a field should take; see ActionParams. */
+  loadShape?: (
+    source: string,
+    params: Readonly<Record<string, unknown>>,
+  ) => Promise<ParamDefinition | undefined>;
   /** Asks a plugin for the choices behind one of its `optionsFrom` parameters. */
   loadOptions?: (
     pluginId: string,
@@ -1242,6 +1248,7 @@ const previewIcon = computed(() => {
             :own-states="ownStates"
             :plugin-statuses="pluginStatuses"
             :load-options="loadOptions"
+        :load-shape="loadShape"
             :filled-secrets="filledSecrets"
             :save-secret="saveSecret"
             :clear-secret="clearSecret"
@@ -1301,6 +1308,7 @@ const previewIcon = computed(() => {
         :buttons="buttons"
         :own-states="button.states.map((each) => each.id)"
         :load-options="loadOptions"
+        :load-shape="loadShape"
         @update="setWidgetParams"
       />
 

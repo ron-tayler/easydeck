@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type {
@@ -40,6 +40,17 @@ const props = defineProps<{
     params: Readonly<Record<string, unknown>>,
   ) => Promise<readonly { value: string; label?: LocalizedText }[]>;
   /**
+   * Asks what shape a field should take, for one declaring `shapeFrom`.
+   *
+   * The answer is a whole parameter definition rather than a list of choices:
+   * whether "the new value" is a number, a colour or a list is not knowable
+   * until the setting it applies to has been picked.
+   */
+  loadShape?: (
+    source: string,
+    params: Readonly<Record<string, unknown>>,
+  ) => Promise<ParamDefinition | undefined>;
+  /**
    * References that have a password behind them.
    *
    * Which is all a window is ever told about a password. See PasswordInput.
@@ -57,7 +68,32 @@ const { t, locale } = useI18n();
 const say = (text: LocalizedText | undefined): string =>
   text === undefined ? '' : (text[locale.value] ?? text.en);
 
-const fields = computed<readonly ParamDefinition[]>(() => props.definition?.params ?? []);
+const declared = computed<readonly ParamDefinition[]>(() => props.definition?.params ?? []);
+
+/**
+ * The fields worth showing, in order, with any borrowed shapes applied.
+ *
+ * Two rules, both from the parameter's own declaration. A field waits until
+ * what it depends on has been answered — a form for "hide this filter" that
+ * showed the scene, the source and the filter at once would be two empty boxes
+ * and a puzzle about which to fill first. And a field whose *type* is only
+ * knowable now takes the definition that came back for it.
+ */
+const fields = computed<readonly ParamDefinition[]>(() =>
+  declared.value
+    .filter((param) => answered(param.dependsOn))
+    .map((param) => shapes.value[param.name] ?? param),
+);
+
+/** Whether every name given has something in it. */
+function answered(names: readonly string[] | undefined): boolean {
+  if (!names || names.length === 0) return true;
+
+  return names.every((name) => {
+    const value = props.params[name];
+    return value !== undefined && value !== null && value !== '';
+  });
+}
 
 // --- choices only the plugin knows ---------------------------------------
 
@@ -70,6 +106,39 @@ const fields = computed<readonly ParamDefinition[]>(() => props.definition?.para
  */
 const dynamic = ref<Record<string, readonly { value: string; label?: LocalizedText }[]>>({});
 const loading = ref(new Set<string>());
+
+/**
+ * Definitions that arrived at run time, for fields declaring `shapeFrom`.
+ *
+ * The point is that they are *borrowed*: the widget's own declaration of its
+ * period, with its list of choices, or of its colour, with the picker. Nothing
+ * here restates what a setting is, so there is nothing to drift.
+ */
+const shapes = ref<Record<string, ParamDefinition>>({});
+
+async function loadShapeFor(param: ParamDefinition): Promise<void> {
+  const source = param.shapeFrom;
+  if (!source || !props.loadShape) return;
+
+  try {
+    const shape = await props.loadShape(source, props.params);
+    // Keeping the declared field when nothing came back is what stops the form
+    // flickering between a number box and a text box while a list loads.
+    shapes.value = shape
+      ? { ...shapes.value, [param.name]: { ...shape, name: param.name } }
+      : dropped(shapes.value, param.name);
+  } catch {
+    shapes.value = dropped(shapes.value, param.name);
+  }
+}
+
+function dropped(
+  from: Record<string, ParamDefinition>,
+  name: string,
+): Record<string, ParamDefinition> {
+  const { [name]: _gone, ...rest } = from;
+  return rest;
+}
 
 const pluginOf = (type: string | undefined): string => (type ?? '').split('.')[0] ?? '';
 
@@ -120,8 +189,10 @@ watch(
   () => props.definition?.type,
   () => {
     dynamic.value = {};
-    for (const param of fields.value) {
+    shapes.value = {};
+    for (const param of declared.value) {
       if (param.optionsFrom) void loadOptionsFor(param);
+      if (param.shapeFrom) void loadShapeFor(param);
     }
   },
   { immediate: true },
@@ -141,8 +212,9 @@ let reload: ReturnType<typeof setTimeout> | undefined;
 watch(dependencies, () => {
   if (reload) clearTimeout(reload);
   reload = setTimeout(() => {
-    for (const param of fields.value) {
+    for (const param of declared.value) {
       if (param.optionsFrom) void loadOptionsFor(param);
+      if (param.shapeFrom) void loadShapeFor(param);
     }
   }, RELOAD_DELAY_MS);
 });
@@ -360,6 +432,16 @@ async function dropSecret(param: ParamDefinition, reference: string): Promise<vo
         </option>
       </select>
 
+      <!-- Nothing to choose, and the parameter said what that means. A text
+           box here would invite an answer that cannot be right — there is no
+           name to type for a key that has no widget on it. -->
+      <p
+        v-else-if="param.type === 'select' && param.emptyNote && !loading.has(param.name)"
+        class="note"
+      >
+        {{ say(param.emptyNote) }}
+      </p>
+
       <input
         v-else-if="param.type === 'select'"
         type="text"
@@ -481,6 +563,17 @@ async function dropSecret(param: ParamDefinition, reference: string): Promise<vo
   font-size: 11px;
   color: var(--text-muted);
   line-height: 1.3;
+}
+
+/* Where a control would have been, saying why there is none. Framed like a
+   field rather than like prose, so the form keeps its rhythm. */
+.note {
+  margin: 0;
+  padding: 5px 9px;
+  border: 1px dashed var(--border);
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 input[type='checkbox'] {

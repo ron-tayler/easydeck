@@ -1,6 +1,7 @@
 import type {
   KeyView,
   LocalizedText,
+  ParamDefinition,
   ParamOption,
   PluginManifest,
   PluginStatus,
@@ -80,6 +81,19 @@ export interface DeckFacade {
    * call the panel makes, answered for the editor.
    */
   drawSurface(request: SurfaceRequest): Promise<SurfaceFrame | undefined>;
+
+  /**
+   * The declaration of a field whose type depends on an earlier answer.
+   *
+   * Answers `shapeFrom`. Today only the widget action needs it: which control
+   * to draw for "the new value" is not knowable until the setting has been
+   * picked, and the answer is the setting's own declaration rather than a
+   * restatement of it.
+   */
+  paramShape(
+    source: string,
+    params?: Readonly<Record<string, unknown>>,
+  ): Promise<ParamDefinition | undefined>;
 
   /**
    * What a plugin's settings window needs to draw itself.

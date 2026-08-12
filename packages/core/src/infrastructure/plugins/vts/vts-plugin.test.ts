@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+﻿import assert from 'node:assert/strict';
 import { rm } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { after, describe, it } from 'node:test';
@@ -55,6 +55,7 @@ function context(variables: VariableStore): ActionContext {
     goHome: () => undefined,
     goBack: () => undefined,
     setButtonState: () => undefined,
+  setWidgetParam: () => undefined,
   };
 }
 

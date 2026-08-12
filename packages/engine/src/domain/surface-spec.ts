@@ -1,5 +1,5 @@
-import type { ParamDefinition } from './plugin.js';
-import type { LocalizedText } from './plugin.js';
+import type { LocalizedText, ParamDefinition } from './plugin.js';
+import type { VariableValue } from './variables.js';
 
 /**
  * A picture a plugin draws, as a key refers to it.
@@ -50,6 +50,35 @@ export interface SurfaceRequest {
   /** How many keys wide and tall the picture will cover. */
   readonly cols: number;
   readonly rows: number;
+  /**
+   * The buttons this picture is being drawn for.
+   *
+   * A list rather than one, because two keys asking for the same picture with
+   * the same settings are one drawing — that saving is deliberate and stays.
+   * What the list adds is a name to call them by, so a plugin that wants to
+   * change a key's settings has something to address.
+   */
+  readonly buttons: readonly string[];
+}
+
+/**
+ * One setting laid over what the profile says, and who laid it there.
+ *
+ * The author is kept because several things may write the same setting — a
+ * macro, the plugin that owns the widget, another plugin entirely — and
+ * "why is my graph showing the memory" deserves a better answer than a shrug.
+ */
+export interface WidgetOverride {
+  readonly value: VariableValue;
+  /** A plugin id, or the action that did it. */
+  readonly by: string;
+}
+
+/** A widget on screen, as a plugin is told about it. */
+export interface WidgetOnScreen {
+  readonly buttonId: string;
+  readonly type: string;
+  readonly params: Readonly<Record<string, unknown>>;
 }
 
 /**

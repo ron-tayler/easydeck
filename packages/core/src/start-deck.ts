@@ -169,6 +169,10 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
       settings: new PluginSettingsStore(options.secrets),
       variables: registry.variables,
       openExternal: (url) => openTarget(url),
+      // Any plugin may point any widget somewhere else — see plugin-host.ts
+      // for why forbidding it would be a fiction.
+      setWidgetParam: (pluginId, buttonId, name, value) =>
+        registry?.setWidgetParam(buttonId, name, value, pluginId),
       log: (pluginId, level, message) => {
         if (level === 'error') warnings.push(`${pluginId}: ${message}`);
       },

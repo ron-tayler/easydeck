@@ -105,6 +105,44 @@ export interface ParamDefinition {
    */
   readonly optionsFrom?: string;
   /**
+   * Parameters that must be answered before this one is worth asking.
+   *
+   * A form for "hide this filter" needs a scene, then a source, then a filter,
+   * and each list only exists once the one before it is known. Shown all at
+   * once, two of the three are empty boxes that look broken; revealed in turn,
+   * the form explains its own order.
+   *
+   * Only about *showing* the field. What the choices are is still
+   * `optionsFrom`, which already receives whatever has been filled in.
+   */
+  readonly dependsOn?: readonly string[];
+  /**
+   * What to say when the choices come back empty, rather than showing nothing.
+   *
+   * "This key has no widget", "that scene has no sources". A `select` with an
+   * empty list currently falls back to a text box, which in these cases is
+   * worse than silence: it invites somebody to type an answer that cannot be
+   * right.
+   *
+   * Static, and that is enough: a field only appears once the thing it depends
+   * on has been chosen, so "empty" always means the same thing by then.
+   */
+  readonly emptyNote?: LocalizedText;
+  /**
+   * This field's *definition* is supplied at run time, not written here.
+   *
+   * For a parameter whose very type depends on an earlier answer: an action
+   * that changes some widget's setting cannot know whether that setting is a
+   * number, a colour or a list until the setting has been picked. Named like
+   * `optionsFrom` and answered the same way, except the answer is a whole
+   * `ParamDefinition` rather than a list of options.
+   *
+   * The point is that the definition is *borrowed* rather than restated — the
+   * one the widget already uses in its own form, with its range, its options
+   * and its colour picker intact. There is nothing to drift.
+   */
+  readonly shapeFrom?: string;
+  /**
    * A password, token or key: stored apart and never sent to a client.
    *
    * The configurator is told the field exists and whether it is filled, never
