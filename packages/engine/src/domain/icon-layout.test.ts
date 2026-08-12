@@ -23,6 +23,17 @@ const GAUGE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
 
 const A_PNG = 'data:image/png;base64,iVBORw0KGgo=';
 
+/**
+ * An outline icon of the kind people download by the thousand.
+ *
+ * `fill="none"` on the root is the whole of what makes it an outline: the path
+ * under it sets a stroke and no fill, so without that word it takes the
+ * default, which is black.
+ */
+const OUTLINE = `<svg width="800px" height="800px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M5 3h14v18H5z" stroke="#000000" stroke-width="2" stroke-linecap="round"/>
+</svg>`;
+
 describe('placing one picture', () => {
   it('records where it was put, and says the picture is composed', () => {
     const composed = composeIcon([{ source: GLYPH, x: 20, y: 20, width: 60, height: 60 }]);
@@ -57,6 +68,24 @@ describe('placing one picture', () => {
     assert.match(back ?? '', /viewBox="0 0 24 24"/);
     assert.match(back ?? '', /fill="currentColor"/);
     assert.match(back ?? '', /M3 3h18v18H3z/);
+  });
+
+  it('keeps what the artwork said on its own root', () => {
+    const composed = composeIcon([{ source: OUTLINE, x: 0, y: 0, width: 100, height: 100 }]);
+
+    // Without this the picture arrives as a solid black blob, because every
+    // path under it takes the fill nobody set.
+    assert.match(composed, /<svg id="l1"[^>]*fill="none"/);
+    // The placement decides these, so they cannot come from the artwork: an
+    // 800px picture placed in a hundred-unit canvas would cover the whole key
+    // eight times over.
+    assert.doesNotMatch(composed, /<svg id="l1"[^>]*width="800px"/);
+  });
+
+  it('gives the root back too, so a second go is on the same picture', () => {
+    const composed = composeIcon([{ source: OUTLINE, x: 10, y: 10, width: 80, height: 80 }]);
+
+    assert.match(readLayerSource(composed, 'l1') ?? '', /fill="none"/);
   });
 
   it('gives a raster layer back as the picture it was', () => {

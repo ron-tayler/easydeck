@@ -204,12 +204,53 @@ function prepareLayer(picture: PlacedPicture, id: string, ordinal: number): Prep
 
   return {
     markup:
-      `<svg id="${id}" ${place}${viewBox ? ` viewBox="${viewBox}"` : ''} preserveAspectRatio="xMidYMid meet">` +
+      `<svg id="${id}" ${place}${viewBox ? ` viewBox="${viewBox}"` : ''} preserveAspectRatio="xMidYMid meet"` +
+      `${carried(openTagOf(svg) ?? '')}>` +
       innerOf(prefixed) +
       `</svg>`,
     params,
     palette,
   };
+}
+
+/** What the placement decides, and what therefore cannot come from the artwork. */
+const PLACED = new Set([
+  'id',
+  'x',
+  'y',
+  'width',
+  'height',
+  'viewbox',
+  'preserveaspectratio',
+  'xmlns',
+  'xmlns:xlink',
+  'version',
+  'baseprofile',
+]);
+
+/**
+ * Everything else the artwork said on its own root, carried over.
+ *
+ * A root carries more than coordinates. `fill="none"` is how an outline icon
+ * says it is an outline — the paths under it set a stroke and no fill, and
+ * without that one word every one of them takes the default, which is black.
+ * A picture drawn as a thin outline arrived as a solid black blob the moment it
+ * was placed, because the nested element it was placed in was built from
+ * scratch with only the coordinates on it.
+ *
+ * Which is the general case: anything inheritable an author put on the root —
+ * a colour, a stroke width, a font, a class — belongs to the picture and not to
+ * where the picture was put.
+ */
+function carried(tag: string): string {
+  const kept: string[] = [];
+
+  for (const attribute of tag.matchAll(/([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*"([^"]*)"/g)) {
+    const name = attribute[1] ?? '';
+    if (!PLACED.has(name.toLowerCase())) kept.push(`${name}="${attribute[2] ?? ''}"`);
+  }
+
+  return kept.length > 0 ? ` ${kept.join(' ')}` : '';
 }
 
 /**
@@ -260,7 +301,14 @@ function unprefix(inner: string, prefix: string, open: string): string {
     .replace(new RegExp(`((?:xlink:)?href\\s*=\\s*")#${prefix}-`, 'gi'), '$1#');
 
   const viewBox = attribute(open, 'viewBox');
-  return `<svg xmlns="http://www.w3.org/2000/svg"${viewBox ? ` viewBox="${viewBox}"` : ''}>${body}</svg>`;
+
+  // The same attributes that were carried in are carried back out: a picture
+  // handed to the editor for another go has to be the picture, not a version of
+  // it that lost the word saying it is an outline.
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg"${viewBox ? ` viewBox="${viewBox}"` : ''}` +
+    `${carried(open)}>${body}</svg>`
+  );
 }
 
 /**
