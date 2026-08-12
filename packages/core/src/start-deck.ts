@@ -20,6 +20,7 @@ import { FileSettingsRepository } from './infrastructure/file-settings-repositor
 import { DeckRegistry } from './application/deck-registry.js';
 import { PluginRuntime } from './application/plugin-runtime.js';
 import { PluginSettingsStore } from './infrastructure/plugins/plugin-settings-store.js';
+import { registerClockPlugin } from './infrastructure/plugins/clock/clock-plugin.js';
 import { registerHardwarePlugin } from './infrastructure/plugins/hardware-plugin.js';
 import { registerObsPlugin } from './infrastructure/plugins/obs/obs-plugin.js';
 import { registerVtsPlugin } from './infrastructure/plugins/vts/vts-plugin.js';
@@ -167,6 +168,7 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
       const audio = await registerAudioActions(actions, plugins, mediaManifest);
       if (audio.reason) warnings.push(audio.reason);
 
+      await registerClockPlugin(actions, plugins);
       await registerHardwarePlugin(actions, plugins);
       await registerObsPlugin(actions, plugins);
       await registerVtsPlugin(actions, plugins);
