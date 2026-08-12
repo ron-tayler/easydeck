@@ -1,6 +1,8 @@
 ﻿import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { THIS_BUTTON } from '../domain/action.js';
+import type { ActionDescriptor } from '../domain/action.js';
 import { PROFILE_FORMAT_VERSION } from '../domain/profile.js';
 import type { ButtonDefinition, ProfileDefinition } from '../domain/profile.js';
 import type { SurfaceFrame, SurfaceRequest } from '../domain/surface-spec.js';
@@ -268,6 +270,68 @@ describe('a picture a plugin draws', () => {
     controller.simulatePress(3);
     await settle();
     assert.equal(controller.variables.get('saw'), 'gpu', 'what it is actually showing');
+  });
+
+  it('is what a condition naming `this_btn` sees', async () => {
+    /*
+     * A blank name has always meant the running key, but no select can offer a
+     * blank as a choice — it reads as "nobody has answered yet" — so the lists
+     * say "this button" and store the sentinel. It has to mean the same thing
+     * in a condition as it does in an action: a key toggling its own graph
+     * between two periods otherwise asks about a button that does not exist,
+     * reads nothing, takes the else branch every time and appears to do
+     * nothing at all.
+     */
+    const presenter = new FakePresenter({ rows: 3, cols: 5 });
+    const controller = new DeckController(presenter, registerBuiltinActions(new ActionRegistry()), {
+      surfaces: plugin().draw,
+    });
+
+    const flip = (from: string, to: string): ActionDescriptor => ({
+      type: 'core.if',
+      params: {
+        when: {
+          source: 'widget-param',
+          name: THIS_BUTTON,
+          param: 'reading',
+          operator: '==',
+          value: from,
+        },
+      },
+      branches: {
+        then: [
+          {
+            type: 'vars.set-widget-param',
+            params: { buttonId: THIS_BUTTON, param: 'reading', value: to },
+          },
+        ],
+        else: [
+          {
+            type: 'vars.set-widget-param',
+            params: { buttonId: THIS_BUTTON, param: 'reading', value: from },
+          },
+        ],
+      },
+    });
+
+    controller.load(
+      profileWith([
+        {
+          id: 'b3',
+          key: 3,
+          states: [{ id: 'default', visual: { ...widget }, actions: { press: [flip('cpu', 'gpu')] } }],
+        },
+      ]),
+    );
+    await controller.start();
+
+    controller.simulatePress(3);
+    await settle();
+    assert.equal(controller.widgetsOnScreen()[0]?.params['reading'], 'gpu', 'the then branch');
+
+    controller.simulatePress(3);
+    await settle();
+    assert.equal(controller.widgetsOnScreen()[0]?.params['reading'], 'cpu', 'and back again');
   });
 
   it('lets a plugin that throws leave the key blank rather than stop the deck', async () => {

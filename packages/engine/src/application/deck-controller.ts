@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 
 import type { ActionContext, ActionDescriptor, ButtonEvent } from '../domain/action.js';
-import { CORE_ON } from '../domain/action.js';
+import { CORE_ON, THIS_BUTTON } from '../domain/action.js';
 import { evaluateCondition } from '../domain/condition.js';
 import type { Condition } from '../domain/condition.js';
 import { EngineError } from '../domain/errors.js';
@@ -1039,11 +1039,30 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     return evaluateCondition(when, {
       values: this.variables.snapshot(),
       buttonState: (buttonId) => {
-        const target = buttonId ? this.buttonById(buttonId) : button;
+        const target = this.buttonAsked(buttonId, button);
         return target ? this.resolveState(target).id : undefined;
       },
-      widgetParam: (buttonId, name) => this.widgetParamOf(buttonId ? buttonId : button.id, name),
+      widgetParam: (buttonId, name) =>
+        this.widgetParamOf(this.buttonAsked(buttonId, button)?.id ?? button.id, name),
     });
+  }
+
+  /**
+   * The key a condition is asking about, with `this_btn` resolved.
+   *
+   * An empty name still means the key running the script, but a form cannot
+   * offer that as a choice — a blank select reads as "nobody has answered
+   * yet". So the lists say "this button" out loud and store `this_btn`, and it
+   * has to mean the same thing here as it does in an action, or an `if` about
+   * one's own widget quietly asks about a button that does not exist and every
+   * answer is `undefined`.
+   */
+  private buttonAsked(
+    chosen: string | undefined,
+    running: ButtonDefinition,
+  ): ButtonDefinition | undefined {
+    if (!chosen || chosen === THIS_BUTTON || chosen === running.id) return running;
+    return this.buttonById(chosen);
   }
 
   /**
@@ -1229,13 +1248,14 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
       // and that is the useful answer to "who changed this".
       setWidgetParam: (buttonId, name, value) =>
         this.setWidgetParam(buttonId, name, value, 'vars.set-widget-param'),
-      // Without an id, the button running the script — which is what a
-      // condition about "this key" means, and saves anybody their own id.
+      // Without an id — or with `this_btn` — the button running the script,
+      // which is what a condition about "this key" means.
       buttonState: (buttonId) => {
-        const target = buttonId ? this.findButton(buttonId) : button;
+        const target = this.buttonAsked(buttonId, button);
         return target ? this.resolveState(target).id : undefined;
       },
-      widgetParam: (buttonId, name) => this.widgetParamOf(buttonId ? buttonId : button.id, name),
+      widgetParam: (buttonId, name) =>
+        this.widgetParamOf(this.buttonAsked(buttonId, button)?.id ?? button.id, name),
     };
   }
 

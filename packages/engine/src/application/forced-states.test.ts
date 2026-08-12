@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { THIS_BUTTON } from '../domain/action.js';
 import { PROFILE_FORMAT_VERSION } from '../domain/profile.js';
 import type { ButtonDefinition, ProfileDefinition } from '../domain/profile.js';
 import { ActionRegistry } from './action-registry.js';
+import { registerBuiltinActions } from './builtin-actions.js';
 import { DeckController } from './deck-controller.js';
 import { FakePresenter } from './test-doubles.js';
+
+/** A press runs its script and repaints later, not in the same tick. */
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20));
 
 /**
  * A state set by an action lives in memory and nowhere else.
@@ -127,5 +132,62 @@ describe('a state forced by an action', () => {
     controller.load(profileWith([twoStates(0, 'a')]));
 
     assert.deepEqual([...kept], [['a', 'on']]);
+  });
+
+  it('is what an `if` naming `this_btn` reads', async () => {
+    /*
+     * The two ways of saying "the key I am on" must agree. Leaving the name
+     * empty always meant it, but a select cannot offer a blank as a choice —
+     * it reads as "nobody has answered yet" — so the lists say "this button"
+     * and store `this_btn`. Read literally, that is a button id belonging to
+     * nobody, and a key toggling itself takes the same branch forever.
+     */
+    const presenter = new FakePresenter({ rows: 3, cols: 5 });
+    const controller = new DeckController(presenter, registerBuiltinActions(new ActionRegistry()));
+
+    controller.load(
+      profileWith([
+        {
+          id: 'a',
+          key: 0,
+          states: ['off', 'on'].map((id) => ({
+            id,
+            visual: { label: { text: id } },
+            actions: {
+              press: [
+                {
+                  type: 'core.if',
+                  params: {
+                    when: {
+                      source: 'button-state',
+                      name: THIS_BUTTON,
+                      operator: '==',
+                      value: 'off',
+                    },
+                  },
+                  branches: {
+                    then: [
+                      { type: 'vars.set-button-state', params: { buttonId: THIS_BUTTON, stateId: 'on' } },
+                    ],
+                    else: [
+                      { type: 'vars.set-button-state', params: { buttonId: THIS_BUTTON, stateId: 'off' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          })),
+        },
+      ]),
+    );
+    await controller.start();
+
+    controller.simulatePress(0);
+    await settle();
+    assert.equal(showing(controller, 'a'), 'on');
+
+    controller.simulatePress(0);
+    await settle();
+    assert.equal(showing(controller, 'a'), 'off');
   });
 });
