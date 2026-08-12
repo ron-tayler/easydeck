@@ -11,9 +11,6 @@ import type { LibraryIcon } from './library.js';
  * the key first.
  */
 
-/** The device's own key size: anything larger is detail the panel cannot show. */
-const KEY_SIZE = 112;
-
 /**
  * The longest side a stored picture keeps.
  *
@@ -63,16 +60,18 @@ function loadImage(source: string): Promise<HTMLImageElement> {
   });
 }
 
-/** Rasterizes a library icon at key size, in the colour it will be drawn in. */
-export async function libraryIconSource(icon: LibraryIcon, color: string): Promise<string> {
-  const svg = iconSvg(icon, color);
-  const url = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
-  const image = await loadImage(url);
-
-  // Drawn at key size from vector art, so the icon is crisp rather than an
-  // upscaled 24px sprite. Library icons are square, so nothing is cropped from
-  // them when the key draws them edge to edge.
-  return drawToPng(image, KEY_SIZE, KEY_SIZE);
+/**
+ * A library icon, as the vector it already is.
+ *
+ * It used to be rasterized here, to a key-sized PNG in the colour chosen at
+ * that moment — which made the colour permanent, since a PNG has no colour left
+ * to change. The reason given was sharpness, and it was the wrong worry: the
+ * artwork is a vector, and both surfaces rasterize it at the size they are
+ * about to draw it, which is sharper than any size decided in advance. Keeping
+ * it a vector is also a fraction of the bytes in the profile.
+ */
+export function libraryIconSource(icon: LibraryIcon): string {
+  return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(iconSvg(icon))))}`;
 }
 
 function readAsDataUrl(file: File): Promise<string> {

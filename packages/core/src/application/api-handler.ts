@@ -79,9 +79,7 @@ export class ApiHandler {
            * a needle at 38% is a different picture from the same needle at
            * 39%, and a needle that returns to 38% is fetched from the cache.
            */
-          ...(icon
-            ? { icon: { ...icon, source: assets.link(drawableIcon(icon.source, icon.values)) } }
-            : {}),
+          ...(icon ? { icon: { ...icon, source: assets.link(drawableIcon(icon)) } } : {}),
         },
       };
     });

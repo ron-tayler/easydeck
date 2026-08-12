@@ -8,6 +8,12 @@ it moves.
 This is a feature for whoever writes plugins and presets, not for whoever uses
 them. Somebody dropping a preset on their deck never sees any of it.
 
+Not to be confused with [recolouring an icon](icon-colours.md), which shares
+this metadata block and nothing else. A parameter answers to a variable and has
+a range; a colour is chosen by hand and has none. If you are declaring
+something nobody will ever bind to a variable, it belongs there rather than
+here.
+
 ## The shape of it
 
 An icon declares what can be changed about it. A key says which variable feeds

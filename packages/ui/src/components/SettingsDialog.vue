@@ -496,7 +496,6 @@ const alsoWaiting = computed(() => Math.max(0, (props.pendingDevices?.length ?? 
   <IconLibrary
     v-if="browsingIcons"
     browse
-    color="#ffffff"
     :user-icons="userIcons ?? []"
     :omitted-icons="omittedIcons"
     @open-folder="emit('openFolder', 'icons')"

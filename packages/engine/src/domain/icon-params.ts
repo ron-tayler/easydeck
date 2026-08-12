@@ -72,6 +72,19 @@ export type IconBinding =
 const METADATA = /<metadata\b[^>]*\bid=["']easydeck["'][^>]*>([\s\S]*?)<\/metadata>/i;
 
 /**
+ * The text of the `<metadata id="easydeck">` block, unparsed.
+ *
+ * Shared with the colour side, which reads a different field of the same block
+ * and has to report its own problems with it in its own words. Handing over the
+ * text rather than the parsed object is what lets it: a block that will not
+ * parse is a different complaint on each side.
+ */
+export function easydeckMetadata(svg: string): string | undefined {
+  const found = METADATA.exec(svg);
+  return found?.[1]?.trim();
+}
+
+/**
  * What somebody may write for `type`, and what it means here.
  *
  * Three types, and rather more than three words for them. `string` is what
@@ -156,39 +169,6 @@ export function svgSourceOf(source: string, svg: string): string {
   if (source.startsWith('<')) return svg;
   return `data:image/svg+xml;base64,${toBase64(svg)}`;
 }
-
-/**
- * Substitutes into an icon of any shape, and leaves anything else alone.
- *
- * The one call a renderer needs: hand it what the profile stored and what the
- * key resolved, get back something to draw.
- */
-export function drawableIcon(
-  source: string,
-  values: Readonly<Record<string, string>> | undefined,
-): string {
-  const svg = svgTextOf(source);
-  if (svg === undefined) return source;
-
-  /*
-   * Expanded even when nothing was bound.
-   *
-   * An icon that uses `var()` and has not been wired up yet still has to be
-   * drawable: a browser resolves those from the icon's own `:root` and shows
-   * the picture, while librsvg drops the declaration and — for a fill —
-   * the shape with it. Without this, dropping a parametric icon on a key gave
-   * a preview in the window and a hole on the panel, which is the one
-   * disagreement worth going out of the way to avoid.
-   *
-   * `transform-origin` is here for the same reason: a picture that never uses
-   * a variable still turns about the wrong point on the panel unless it is
-   * rewritten.
-   */
-  if (!svg.includes('var(') && !svg.includes('transform-origin')) return source;
-
-  return svgSourceOf(source, applyIconParams(svg, values ?? {}));
-}
-
 
 /**
  * What is wrong with an icon's metadata, when something is.

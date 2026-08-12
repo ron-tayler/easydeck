@@ -35,10 +35,20 @@ export {
   iconParamsProblem,
   resolveIconParams,
   applyIconParams,
+  easydeckMetadata,
   svgTextOf,
   svgSourceOf,
-  drawableIcon,
 } from './domain/icon-params.js';
+export type { IconColorSlot } from './domain/icon-colors.js';
+export {
+  iconPaletteProblem,
+  readIconPalette,
+  resolveIconColors,
+  usesCurrentColor,
+  withRootColor,
+} from './domain/icon-colors.js';
+export type { DrawableIcon } from './domain/icon-source.js';
+export { drawableIcon } from './domain/icon-source.js';
 export { variablesReadBy } from './domain/profile-variables.js';
 export type { Condition, ConditionOperator, ConditionSource } from './domain/condition.js';
 export { evaluateCondition } from './domain/condition.js';

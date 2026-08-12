@@ -731,7 +731,10 @@ const previewIcon = computed(() => {
   const svg = svgTextOf(icon.source);
   if (svg === undefined) return icon.source;
 
-  return drawableIcon(icon.source, resolveIconParams(readIconParams(svg), icon.params, props.variables));
+  return drawableIcon({
+    ...icon,
+    values: resolveIconParams(readIconParams(svg), icon.params, props.variables),
+  });
 });
 </script>
 
@@ -838,7 +841,6 @@ const previewIcon = computed(() => {
               <IconPicker
                 :label="t('editor.look.picture')"
                 :icon="state.visual.icon"
-                :color="state.visual.label?.color ?? '#ffffff'"
                 :user-icons="userIcons"
                 :omitted-icons="omittedIcons"
                 @update="setPicture($event)"

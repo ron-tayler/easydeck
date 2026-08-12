@@ -17,7 +17,8 @@ import { isStateRange, withinRange } from '../domain/profile.js';
 import { ProfileTree } from '../domain/profile-tree.js';
 import { sceneKeys, sceneSignature } from '../domain/scene.js';
 import type { Scene, SceneLabel, SceneRegion } from '../domain/scene.js';
-import { drawableIcon, readIconParams, resolveIconParams, svgTextOf } from '../domain/icon-params.js';
+import { readIconParams, resolveIconParams, svgTextOf } from '../domain/icon-params.js';
+import { drawableIcon } from '../domain/icon-source.js';
 import { renderTemplate } from '../domain/template.js';
 import { validateProfile } from '../domain/validate-profile.js';
 import {
@@ -27,7 +28,7 @@ import {
   isTruthy,
 } from '../domain/variables.js';
 import type { VariableDeclaration, VariableValue } from '../domain/variables.js';
-import type { BackdropSlice, ButtonVisual } from '../domain/visual.js';
+import type { BackdropSlice, ButtonVisual, IconSpec } from '../domain/visual.js';
 import type { ActionRegistry } from './action-registry.js';
 import { AssetIds } from './asset-ids.js';
 import { runScript } from './script-runner.js';
@@ -606,11 +607,8 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    * An ordinary icon passes straight through, so nothing is hashed twice for
    * the overwhelming majority of keys.
    */
-  private assetFor(icon: { source: string; values?: Readonly<Record<string, string>> }): {
-    id: string;
-    source: string;
-  } {
-    const drawable = drawableIcon(icon.source, icon.values);
+  private assetFor(icon: IconSpec): { id: string; source: string } {
+    const drawable = drawableIcon(icon);
     return { id: this.assets.id(drawable), source: drawable };
   }
 

@@ -18,8 +18,6 @@ import { fileIconSource, libraryIconSource } from '../icons/rasterize.js';
  */
 
 const props = defineProps<{
-  /** The label colour, so a built-in icon matches the text beside it. */
-  color: string;
   /** The user's own folder, read by the daemon. */
   userIcons: readonly LibraryImage[];
   /**
@@ -101,9 +99,6 @@ const folders = computed(() => {
 
 const query = computed(() => search.value.trim().toLowerCase());
 
-/** Rendered inline so the grid needs no network and no build-time sprite. */
-const preview = (icon: LibraryIcon): string =>
-  `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(iconSvg(icon, 'currentColor'))))}`;
 
 /**
  * Searching looks everywhere; browsing looks in one folder.
@@ -151,18 +146,18 @@ const hidden = computed(
   () => mine.value.length + builtIn.value.length - shownMine.value.length - shownBuiltIn.value.length,
 );
 
-async function pickBuiltIn(icon: LibraryIcon): Promise<void> {
+/**
+ * A built-in icon is handed over as it is, with no colour decided here.
+ *
+ * There used to be a rasterizing step, which is why this was asynchronous and
+ * could fail. Both went with it: the colour is now chosen after the picture,
+ * beside it, and changed as often as anybody likes.
+ */
+function pickBuiltIn(icon: LibraryIcon): void {
   if (props.browse) return;
 
   problem.value = '';
-  busy.value = true;
-  try {
-    emit('pick', await libraryIconSource(icon, props.color));
-  } catch (error) {
-    problem.value = error instanceof Error ? error.message : String(error);
-  } finally {
-    busy.value = false;
-  }
+  emit('pick', libraryIconSource(icon));
 }
 
 async function pickFile(event: Event): Promise<void> {
@@ -248,10 +243,17 @@ async function pickFile(event: Event): Promise<void> {
             type="button"
             class="tile"
             :title="icon.id"
-            :disabled="busy"
-            @click="void pickBuiltIn(icon)"
+            @click="pickBuiltIn(icon)"
           >
-            <img :src="preview(icon)" alt="" />
+            <!--
+              Inline, and the only picture here that is: these are our own
+              paths from a compile-time list, so there is nothing to sanitise,
+              and inline is the one form in which `currentColor` can reach the
+              page's own colour. As an `<img>` each of these was a separate
+              document with nothing to inherit from, so the whole library drew
+              itself black on a dark tile.
+            -->
+            <span class="glyph" v-html="iconSvg(icon)" />
           </button>
 
           <p v-if="shownMine.length + shownBuiltIn.length === 0" class="muted empty">
@@ -401,6 +403,21 @@ h2 {
 .tile img {
   max-width: 100%;
   max-height: 100%;
+}
+
+/* The colour the built-in art is drawn in: `currentColor` inside it reads
+   this, which is the same mechanism the key uses, only there the ink is
+   written into the picture because an `<img>` cannot inherit one. */
+.tile .glyph {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  color: var(--text);
+}
+
+.tile .glyph :deep(svg) {
+  width: 100%;
+  height: 100%;
 }
 
 .empty {

@@ -70,11 +70,11 @@ const icon = computed(() => props.view?.visual.icon);
  *
  * An `<img>` rather than inline markup, deliberately: an SVG inside one is
  * rendered with no scripts and no external fetches, so icons arriving inside
- * somebody else's plugin pack never need sanitising.
+ * somebody else's plugin pack never need sanitising. It is also why the icon's
+ * ink is written into the picture rather than left to the page's own `color`:
+ * an `<img>` is a document of its own, and nothing of ours cascades into it.
  */
-const iconSource = computed(() =>
-  icon.value ? drawableIcon(icon.value.source, icon.value.values) : undefined,
-);
+const iconSource = computed(() => (icon.value ? drawableIcon(icon.value) : undefined));
 const backdrop = computed(() => props.view?.visual.backdrop);
 
 /**

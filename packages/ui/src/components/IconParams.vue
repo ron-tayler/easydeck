@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { IconBinding, IconParam, LocalizedText, VariableDeclaration } from '@easydeck/core';
-import { iconParamsProblem, readIconParams, svgTextOf } from '@easydeck/engine/icons';
+import { iconPaletteProblem, iconParamsProblem, readIconParams, svgTextOf } from '@easydeck/engine/icons';
 
 import ColorPicker from './ColorPicker.vue';
 
@@ -49,8 +49,13 @@ const params = computed<IconParam[]>(() => readIconParams(svg.value));
  *
  * Shown rather than swallowed: reading is forgiving so an icon never fails to
  * load, and the price of that is a silence somebody has to be told about.
+ *
+ * The palette is asked too, even though its swatches live elsewhere. It shares
+ * this block, and a name claimed by both sides is a complaint about the block
+ * rather than about either half of it — reported here because this is the one
+ * window an icon's own declaration is ever discussed in.
  */
-const problem = computed(() => iconParamsProblem(svg.value));
+const problem = computed(() => iconParamsProblem(svg.value) ?? iconPaletteProblem(svg.value));
 
 /** Names offered for binding, the user's own and the plugins' alike. */
 const variableNames = computed(() => {

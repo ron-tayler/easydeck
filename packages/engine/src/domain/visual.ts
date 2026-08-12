@@ -25,6 +25,22 @@ export interface IconSpec {
    */
   readonly source: string;
   /**
+   * The icon's main ink: what its `currentColor` resolves to.
+   *
+   * Absent on a picture that draws itself in fixed colours, and on every
+   * photograph. Applied by giving the artwork a `color` to inherit rather than
+   * by rewriting it — see `icon-colors.ts` for why that is the whole of it.
+   */
+  readonly color?: string;
+  /**
+   * What each colour the icon *names* was set to, where it names any.
+   *
+   * Rare, and absent from almost every icon: one ink is what a glyph needs.
+   * This is for a picture drawn in two or three of them, which says so in its
+   * `<metadata>` and reads them back with `var()`.
+   */
+  readonly colors?: Readonly<Record<string, string>>;
+  /**
    * What feeds each parameter the icon declares, where any does.
    *
    * A constant is a value somebody chose once; an object binds a variable, so

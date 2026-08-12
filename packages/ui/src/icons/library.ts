@@ -161,10 +161,19 @@ export const ICON_LIBRARY: readonly LibraryIcon[] = [
   },
 ];
 
-/** Wraps a library path into a standalone SVG document. */
-export function iconSvg(icon: LibraryIcon, color = '#ffffff'): string {
+/**
+ * Wraps a library path into a standalone SVG document.
+ *
+ * Drawn in `currentColor` rather than in a colour of its own. That is how the
+ * web has coloured icons for as long as there have been icon sets — an ink
+ * handed in from outside, the way a font takes one — and it means the picture
+ * is recoloured whenever somebody likes rather than at the instant it was
+ * picked. Nothing about it is ours: the same file works in a browser, in an
+ * editor, and in any other program that understands SVG.
+ */
+export function iconSvg(icon: LibraryIcon): string {
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">` +
-    `<path fill="${color}" d="${icon.path}"/></svg>`
+    `<path fill="currentColor" d="${icon.path}"/></svg>`
   );
 }

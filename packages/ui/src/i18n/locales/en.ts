@@ -89,6 +89,10 @@ export default {
   },
   color: {
     open: 'Choose colour',
+    icon: 'Picture colour',
+    /* The unnamed one. A picture that names its colours labels them itself; a
+       picture with one has nothing to call it but what it is. */
+    iconInk: 'Colour',
     hue: 'Hue',
     hex: 'HEX',
     r: 'R',
