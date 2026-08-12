@@ -2,10 +2,20 @@
 import type { FolderDefinition } from '@easydeck/core';
 
 import { useFolderDrag } from '../composables/useFolderDrag.js';
+import { useKeyDrag } from '../composables/useKeyDrag.js';
 import type { FolderDrop } from '../composables/useProfileEditor.js';
 
 /** Ours alone, so a key or an action being dragged can never land in the tree. */
 const FOLDER_MIME = 'application/x-easydeck-folder';
+
+/**
+ * A key from the grid, which the tree opens folders for but never accepts.
+ *
+ * Resting on a folder walks into it and the drag carries on inside — dropping
+ * a key on a folder row would have to invent an answer to "onto which of its
+ * keys", and there isn't one.
+ */
+const KEY_MIME = 'application/x-easydeck-key';
 
 const props = defineProps<{
   folders: readonly FolderDefinition[];
@@ -24,6 +34,7 @@ const emit = defineEmits<{
 }>();
 
 const drag = useFolderDrag();
+const keys = useKeyDrag();
 
 const isRoot = (folderId: string): boolean => folderId === props.rootId;
 
@@ -49,7 +60,20 @@ function onDragStart(folder: FolderDefinition, event: DragEvent): void {
 }
 
 function onDragOver(folder: FolderDefinition, event: DragEvent): void {
-  if (!(event.dataTransfer?.types ?? []).includes(FOLDER_MIME)) return;
+  const types = event.dataTransfer?.types ?? [];
+
+  /*
+   * A key resting here opens the folder, and that is all. No preventDefault,
+   * so the row never reads as somewhere the key could be let go — the same
+   * `open` a click would emit, because walking in is walking in however it
+   * was asked for.
+   */
+  if (types.includes(KEY_MIME)) {
+    keys.dwell(folder.id, () => emit('open', folder.id));
+    return;
+  }
+
+  if (!types.includes(FOLDER_MIME)) return;
   // Not preventing the default is what shows the cursor a folder cannot go
   // here — which is the answer for a folder's own descendants.
   if (!drag.accepts(folder.id)) return;
@@ -69,6 +93,19 @@ function onDrop(folder: FolderDefinition, event: DragEvent): void {
   if (folderId && folderId !== folder.id) emit('move', { folderId, targetId: folder.id, drop });
 }
 
+/**
+ * Leaving for good, rather than crossing into the row's own label.
+ *
+ * `dragleave` fires on the way to a child element too, and a clock stopped by
+ * that would never run down: the pointer is always over one span or another.
+ */
+function onDragLeave(folder: FolderDefinition, event: DragEvent): void {
+  const to = event.relatedTarget as Node | null;
+  if (to && (event.currentTarget as HTMLElement).contains(to)) return;
+
+  keys.leave(folder.id);
+}
+
 const marks = (folder: FolderDefinition) => {
   const at = drag.target.value;
   const on = at?.folderId === folder.id;
@@ -77,6 +114,7 @@ const marks = (folder: FolderDefinition) => {
     current: folder.id === props.currentFolderId,
     ancestor: props.openIds.has(folder.id),
     lifted: drag.dragging.value === folder.id,
+    waiting: keys.dwelling.value === folder.id,
     'drop-before': on && at?.drop === 'before',
     'drop-after': on && at?.drop === 'after',
     'drop-inside': on && at?.drop === 'inside',
@@ -100,6 +138,7 @@ const marks = (folder: FolderDefinition) => {
         @dragstart="onDragStart(folder, $event)"
         @dragend="drag.end()"
         @dragover="onDragOver(folder, $event)"
+        @dragleave="onDragLeave(folder, $event)"
         @drop.prevent.stop="onDrop(folder, $event)"
       >
         <span class="name">{{ folder.name }}</span>
@@ -185,6 +224,21 @@ const marks = (folder: FolderDefinition) => {
 .folder.drop-inside {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+/* A key resting here: the row says it is about to be walked into, and the
+   sweep of the bar is the half-second it takes. */
+.folder.waiting {
+  border-color: var(--accent);
+  background: linear-gradient(to right, var(--accent-soft) 50%, transparent 50%) right / 200% 100%
+    no-repeat;
+  animation: sweep 0.5s linear forwards;
+}
+
+@keyframes sweep {
+  to {
+    background-position: left;
+  }
 }
 
 .name {

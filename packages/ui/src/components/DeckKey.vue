@@ -22,6 +22,14 @@ const KEY_GAP = 10;
 const props = defineProps<{
   index: number;
   view?: KeyView;
+  /**
+   * The page this key belongs to, carried in the drag itself.
+   *
+   * Dragging can navigate — resting on a folder opens it — so by the time the
+   * key is let go, the page it came from is no longer the one on screen.
+   * Reading it at the drop would name the wrong page every time.
+   */
+  pageId?: string;
   pressed: boolean;
   selected: boolean;
   /** Whether this key owns a button, and so can have its picture stretched. */
@@ -46,7 +54,9 @@ const emit = defineEmits<{
   menu: [payload: { key: number; x: number; y: number }];
   dropAction: [payload: { key: number; actionType: string; label: string }];
   dropPreset: [payload: { key: number; pluginId: string; name: string }];
-  dropKey: [payload: { from: number; to: number }];
+  dropKey: [payload: { from: { pageId?: string; key: number }; to: number }];
+  dragStart: [payload: { pageId?: string; key: number }];
+  dragEnd: [];
   resizeStart: [payload: { key: number; axis: 'col' | 'row' | 'both' }];
 }>();
 
@@ -96,8 +106,12 @@ const corners = computed(() => {
 
 function onDragStart(event: DragEvent): void {
   if (!props.view) return;
-  event.dataTransfer?.setData('application/x-easydeck-key', String(props.index));
+
+  const from = { pageId: props.pageId, key: props.index };
+  event.dataTransfer?.setData('application/x-easydeck-key', JSON.stringify(from));
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+
+  emit('dragStart', from);
 }
 
 function onDragOver(event: DragEvent): void {
@@ -131,7 +145,13 @@ function onDrop(event: DragEvent): void {
   }
 
   const from = event.dataTransfer?.getData('application/x-easydeck-key');
-  if (from) emit('dropKey', { from: Number(from), to: props.index });
+  if (!from) return;
+
+  try {
+    emit('dropKey', { from: JSON.parse(from) as { pageId?: string; key: number }, to: props.index });
+  } catch {
+    // Something else's drag data wearing our type; nothing to move.
+  }
 }
 </script>
 
@@ -147,6 +167,7 @@ function onDrop(event: DragEvent): void {
     @dragstart="onDragStart"
     @dragover="onDragOver"
     @dragleave="over = false"
+    @dragend="emit('dragEnd')"
     @drop="onDrop"
   >
     <span class="index">{{ index + 1 }}</span>

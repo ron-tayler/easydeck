@@ -34,7 +34,13 @@ import ButtonEditor from './components/ButtonEditor.vue';
 import PromptDialog from './components/PromptDialog.vue';
 import VariablesDialog from './components/VariablesDialog.vue';
 import ConfirmDialog from './components/ConfirmDialog.vue';
-import { confirmAction, pendingConfirm, settleConfirm } from './composables/useConfirm.js';
+import {
+  chooseAction,
+  confirmAction,
+  pendingConfirm,
+  settleConfirm,
+} from './composables/useConfirm.js';
+import { useKeyDrag } from './composables/useKeyDrag.js';
 import {
   addActionToKey,
   addPresetToKey,
@@ -45,6 +51,7 @@ import {
   replaceButton,
   fromClipboard,
   moveFolder,
+  moveKeyToPage,
   ownerOfPage,
   pasteButton,
   removeFolder,
@@ -58,7 +65,7 @@ import {
   swapKeys,
   toClipboard,
 } from './composables/useProfileEditor.js';
-import type { FolderDrop } from './composables/useProfileEditor.js';
+import type { FolderDrop, LandingMode } from './composables/useProfileEditor.js';
 
 /** The engine's own cap, not a copy of it: two numbers would drift. */
 const MAX_PAGES = MAX_PAGES_PER_FOLDER;
@@ -914,21 +921,121 @@ function onDropPreset(payload: { key: number; pluginId: string; name: string }):
   })();
 }
 
-function onDropKey(payload: { from: number; to: number }): void {
+/**
+ * A key let go on another key.
+ *
+ * On the page it came from this is the old trade of places. Off it, the drag
+ * has walked somewhere else in the meantime, and the two ends are different
+ * pages — which is why the source page rides along in the drag rather than
+ * being read from the deck here.
+ */
+function onDropKey(payload: { from: { pageId?: string; key: number }; to: number }): void {
+  const here = currentPageId.value;
+  const there = payload.from.pageId ?? here;
+  if (!here || !there) return;
+
+  // Said before anything is awaited: letting go is what ends the gesture, and
+  // the release must not read as a drag called off while a dialog is open.
+  keyDrag.land();
   selectedKey.value = payload.to;
 
   const shown = deck.deck.value;
-  void edit((profile) =>
-    swapKeys(
-      profile,
-      currentPageId.value!,
-      payload.from,
-      payload.to,
-      // The grid's own shape, so a stretched button landing near an edge is
-      // trimmed to what fits rather than hanging off it.
-      shown ? { rows: shown.rows, cols: shown.cols } : undefined,
-    ),
-  );
+  // The grid's own shape, so a stretched button landing near an edge is
+  // trimmed to what fits rather than hanging off it.
+  const layout = shown ? { rows: shown.rows, cols: shown.cols } : undefined;
+
+  if (there === here) {
+    void edit((profile) => swapKeys(profile, here, payload.from.key, payload.to, layout));
+    return;
+  }
+
+  void (async () => {
+    /*
+     * Whether the key owns a button, not whether something is drawn on it: a
+     * picture stretched from a neighbour shows here but belongs there, and
+     * asking the wrong question would raise the dialog over an empty key.
+     */
+    const occupied = findButton(payload.to) !== undefined;
+    let mode: LandingMode = 'move';
+
+    if (occupied) {
+      /*
+       * Both answers are things somebody might mean, so this asks rather than
+       * picking one. Trading places destroys nothing and undoes itself by
+       * dragging back; replacing is what people expect when the key they are
+       * aiming at holds something they are done with.
+       */
+      const answer = await chooseAction(
+        'move-key',
+        t('confirm.moveKey.title'),
+        t('confirm.moveKey.message'),
+        t('confirm.moveKey.replace'),
+        t('confirm.moveKey.swap'),
+      );
+
+      if (answer === 'cancel') return;
+      mode = answer === 'alternative' ? 'swap' : 'move';
+    }
+
+    await edit((profile) =>
+      moveKeyToPage(
+        profile,
+        { pageId: there, key: payload.from.key },
+        { pageId: here, key: payload.to },
+        mode,
+        layout,
+      ),
+    );
+  })();
+}
+
+// --- carrying a key between pages and folders -----------------------------
+
+const keyDrag = useKeyDrag();
+const cancelHot = ref(false);
+
+function onKeyDragStart(payload: { pageId?: string; key: number }): void {
+  const folderId = currentFolderId.value;
+  const pageId = payload.pageId;
+  if (!folderId || !pageId) return;
+
+  keyDrag.start({ pageId, key: payload.key }, { folderId, pageId });
+}
+
+/**
+ * The pointer resting on a page number, which opens it after a moment.
+ *
+ * Deliberately not a drop target: a page number is a place to walk to, and a
+ * key let go on it would have no key to land on. Dropping happens on the grid
+ * once you are there.
+ */
+function onPageDragOver(pageId: string, event: DragEvent): void {
+  if (!(event.dataTransfer?.types ?? []).includes('application/x-easydeck-key')) return;
+  keyDrag.dwell(pageId, () => void deck.goToPage(pageId));
+}
+
+/**
+ * The gesture is over, however it ended.
+ *
+ * A drag that went nowhere — called off on the red zone, dropped into the
+ * void, abandoned with Escape — puts the deck back where it started. Without
+ * that, cancelling would leave it standing in whatever folder the pointer
+ * wandered through, which is worse than not cancelling at all.
+ */
+function onKeyDragEnd(): void {
+  cancelHot.value = false;
+
+  const back = keyDrag.end();
+  if (!back) return;
+
+  void (async () => {
+    try {
+      if (currentFolderId.value !== back.folderId) await deck.openFolder(back.folderId);
+      if (currentPageId.value !== back.pageId) await deck.goToPage(back.pageId);
+    } catch (error) {
+      deck.lastError.value = (error as Error).message;
+    }
+  })();
 }
 
 /**
@@ -1207,12 +1314,15 @@ onBeforeUnmount(() => {
           :pressed-keys="deck.pressedKeys.value"
           :selected-key="selectedKey"
           :spans="pageSpans"
+          :page-id="currentPageId"
           @resize="onResize"
           @select="onSelect"
           @menu="onMenu"
           @drop-action="onDropAction"
           @drop-preset="onDropPreset"
           @drop-key="onDropKey"
+          @drag-start="onKeyDragStart"
+          @drag-end="onKeyDragEnd"
         />
 
         <!-- Numbers only, no arrows: a scene has at most sixteen pages, so
@@ -1223,10 +1333,15 @@ onBeforeUnmount(() => {
             :key="page.id"
             type="button"
             class="page"
-            :class="{ current: page.id === deck.deck.value?.location?.pageId }"
+            :class="{
+              current: page.id === deck.deck.value?.location?.pageId,
+              waiting: keyDrag.dwelling.value === page.id,
+            }"
             :title="page.name"
             @click="deck.goToPage(page.id)"
             @contextmenu.prevent="onPageMenu(page.id, $event)"
+            @dragover="onPageDragOver(page.id, $event)"
+            @dragleave="keyDrag.leave(page.id)"
           >
             {{ index + 1 }}
           </button>
@@ -1239,6 +1354,26 @@ onBeforeUnmount(() => {
             @click="currentFolderId && editProfile((p) => addPage(p, currentFolderId!, MAX_PAGES))"
           >
             ＋
+          </button>
+
+          <!--
+            Only while something is in flight, and placed over the row rather
+            than in it: appearing between the numbers would shift the one the
+            pointer is heading for out from under it.
+          -->
+          <button
+            v-if="keyDrag.carried.value"
+            type="button"
+            class="drop-cancel"
+            :class="{ hot: cancelHot }"
+            :title="t('deck.cancelDrag')"
+            :aria-label="t('deck.cancelDrag')"
+            @dragenter="cancelHot = true"
+            @dragleave="cancelHot = false"
+            @dragover.prevent
+            @drop.prevent
+          >
+            ⨯
           </button>
         </div>
       </main>
@@ -1332,8 +1467,10 @@ onBeforeUnmount(() => {
       :title="pendingConfirm.title"
       :message="pendingConfirm.message"
       :confirm-label="pendingConfirm.confirmLabel"
-      @confirm="settleConfirm(true, $event)"
-      @cancel="settleConfirm(false)"
+      :alternative-label="pendingConfirm.alternativeLabel"
+      @confirm="settleConfirm('confirm', $event)"
+      @alternative="settleConfirm('alternative')"
+      @cancel="settleConfirm('cancel')"
     />
 
     <PromptDialog
@@ -1580,6 +1717,7 @@ main {
 .profiles .icon { flex: none; width: 30px; padding: 4px 0; }
 
 .pages {
+  position: relative;
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
@@ -1590,6 +1728,43 @@ main {
 .page { min-width: 28px; padding: 3px 8px; }
 .page.current { border-color: var(--accent); color: var(--accent); }
 .page.add { color: var(--text-muted); }
+
+/* A key resting on a page number, about to open it — the same half-second
+   sweep the folder rows use, so the two read as one gesture. */
+.page.waiting {
+  border-color: var(--accent);
+  background: linear-gradient(to right, var(--accent-soft) 50%, transparent 50%) right / 200% 100%
+    no-repeat;
+  animation: sweep 0.5s linear forwards;
+}
+
+@keyframes sweep {
+  to {
+    background-position: left;
+  }
+}
+
+/*
+  Out of the flow entirely: it comes and goes mid-drag, and the numbers must
+  not shuffle under a pointer that is already aiming at one of them.
+*/
+.drop-cancel {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 28px;
+  padding: 3px 8px;
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.drop-cancel.hot {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--surface-0);
+}
 
 .empty { font-size: 12px; margin: 6px 0 0; }
 

@@ -17,6 +17,15 @@ import { shallowRef } from 'vue';
  */
 const suppressed = new Set<string>();
 
+/**
+ * What came back from the dialog.
+ *
+ * Three answers rather than two, because some of these are questions and not
+ * warnings: a key dropped on an occupied one can be replaced *or* traded with,
+ * and both are things somebody might mean.
+ */
+export type ConfirmAnswer = 'confirm' | 'alternative' | 'cancel';
+
 export interface ConfirmRequest {
   readonly kind: string;
   readonly title: string;
@@ -30,7 +39,9 @@ export interface ConfirmRequest {
    * a dialog people stop reading.
    */
   readonly confirmLabel?: string;
-  readonly resolve: (confirmed: boolean) => void;
+  /** The second way out, when there is one that destroys nothing. */
+  readonly alternativeLabel?: string;
+  readonly resolve: (answer: ConfirmAnswer) => void;
 }
 
 export const pendingConfirm = shallowRef<ConfirmRequest | undefined>();
@@ -49,8 +60,27 @@ export function confirmAction(
       title,
       message,
       ...(confirmLabel === undefined ? {} : { confirmLabel }),
-      resolve,
+      resolve: (answer) => resolve(answer === 'confirm'),
     };
+  });
+}
+
+/**
+ * Asks which of two things to do, or neither.
+ *
+ * Never suppressed, unlike a warning: "do not ask again" answers a question
+ * that has a safe default, and this one does not — whichever way it was last
+ * answered, the next drop may well mean the other.
+ */
+export function chooseAction(
+  kind: string,
+  title: string,
+  message: string,
+  confirmLabel: string,
+  alternativeLabel: string,
+): Promise<ConfirmAnswer> {
+  return new Promise<ConfirmAnswer>((resolve) => {
+    pendingConfirm.value = { kind, title, message, confirmLabel, alternativeLabel, resolve };
   });
 }
 
@@ -61,11 +91,11 @@ export function confirmAction(
  * said no to this deletion, which is a poor moment to conclude they want the
  * next one to happen silently.
  */
-export function settleConfirm(confirmed: boolean, dontAskAgain = false): void {
+export function settleConfirm(answer: ConfirmAnswer, dontAskAgain = false): void {
   const request = pendingConfirm.value;
   pendingConfirm.value = undefined;
   if (!request) return;
 
-  if (confirmed && dontAskAgain) suppressed.add(request.kind);
-  request.resolve(confirmed);
+  if (answer === 'confirm' && dontAskAgain) suppressed.add(request.kind);
+  request.resolve(answer);
 }

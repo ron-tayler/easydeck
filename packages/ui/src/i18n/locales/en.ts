@@ -62,6 +62,7 @@ export default {
     hint: 'Click a key to run it, exactly as pressing it on the device would.',
     pages: 'Pages',
     stretch: 'Stretch the picture over neighbouring keys',
+    cancelDrag: 'Call the move off and go back to where it started',
   },
   plugins: {
     saved: 'Saved',
@@ -154,6 +155,12 @@ export default {
       replace: 'Replace',
     },
     page: { title: 'Delete this page?', message: 'Every button on this page will be removed.' },
+    moveKey: {
+      title: 'This key already has a button',
+      message: 'Replace it with the one being moved, or trade their places?',
+      replace: 'Replace',
+      swap: 'Trade places',
+    },
   },
   editor: {
     iconBadMetadata: 'The picture declares something, but it did not parse:',

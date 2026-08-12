@@ -2,9 +2,15 @@
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 
-defineProps<{ title: string; message: string; confirmLabel?: string }>();
+defineProps<{
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  /** Present when this is a question with two answers rather than a warning. */
+  alternativeLabel?: string;
+}>();
 
-const emit = defineEmits<{ confirm: [dontAskAgain: boolean]; cancel: [] }>();
+const emit = defineEmits<{ confirm: [dontAskAgain: boolean]; alternative: []; cancel: [] }>();
 
 const { t } = useI18n();
 
@@ -19,16 +25,31 @@ const dontAskAgain = ref(false);
       <h2>{{ title }}</h2>
       <p class="message">{{ message }}</p>
 
-      <label class="again">
+      <!-- Nothing to remember when there are two answers: whichever was chosen
+           last time, the next one may well mean the other. -->
+      <label v-if="!alternativeLabel" class="again">
         <input v-model="dontAskAgain" type="checkbox" />
         <span>{{ t('confirm.dontAsk') }}</span>
       </label>
 
       <footer>
         <button type="button" @click="emit('cancel')">{{ t('prompt.cancel') }}</button>
-        <!-- Focused rather than the cancel button: the dialog is opened by a
+
+        <!-- The harmless answer sits next to the cancel button and keeps the
+             focus, so the one that destroys something is never the one Enter
+             reaches for. -->
+        <button v-if="alternativeLabel" type="button" autofocus @click="emit('alternative')">
+          {{ alternativeLabel }}
+        </button>
+
+        <!-- Focused when it is the only way on: the dialog is opened by a
              deliberate delete, so Enter should finish what was started. -->
-        <button type="button" class="danger" autofocus @click="emit('confirm', dontAskAgain)">
+        <button
+          type="button"
+          class="danger"
+          :autofocus="!alternativeLabel"
+          @click="emit('confirm', dontAskAgain)"
+        >
           {{ confirmLabel ?? t('confirm.delete') }}
         </button>
       </footer>

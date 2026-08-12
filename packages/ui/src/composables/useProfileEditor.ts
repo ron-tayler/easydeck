@@ -458,6 +458,69 @@ export function swapKeys(
   }));
 }
 
+/** A key on a particular page, which is what a button's address really is. */
+export interface KeyAddress {
+  readonly pageId: string;
+  readonly key: number;
+}
+
+/** What to do when the key being dropped on already has a button. */
+export type LandingMode = 'move' | 'swap';
+
+function findPage(folder: FolderDefinition, pageId: string): PageDefinition | undefined {
+  const here = folder.pages.find((page) => page.id === pageId);
+  if (here) return here;
+
+  for (const child of folder.folders ?? []) {
+    const found = findPage(child, pageId);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/**
+ * Moves a button to a key on another page.
+ *
+ * Within one page this is `swapKeys`, and the caller should use it — a button
+ * changing key on the page it is already on is one edit, not two. Across pages
+ * it takes both: the button leaves one list and joins another, and what was on
+ * the target key either comes back the other way or does not survive.
+ *
+ * Which of those it is, is asked before this is called. Nothing here decides
+ * that a button may be destroyed.
+ */
+export function moveKeyToPage(
+  profile: ProfileDefinition,
+  from: KeyAddress,
+  to: KeyAddress,
+  mode: LandingMode,
+  layout?: { readonly rows: number; readonly cols: number },
+): ProfileDefinition {
+  if (from.pageId === to.pageId) return swapKeys(profile, from.pageId, from.key, to.key, layout);
+
+  const source = findPage(profile.root, from.pageId)?.buttons.find(
+    (button) => button.key === from.key,
+  );
+  if (!source) return profile;
+
+  const target = findPage(profile.root, to.pageId)?.buttons.find((button) => button.key === to.key);
+
+  // The button keeps its id: it is the same button, and the id is what a
+  // password stored outside the profile is filed under.
+  const arriving = trimToGrid({ ...source, key: to.key }, layout);
+  const returning = mode === 'swap' && target ? [trimToGrid({ ...target, key: from.key }, layout)] : [];
+
+  const emptied = updatePage(profile, from.pageId, (page) => ({
+    ...page,
+    buttons: [...page.buttons.filter((button) => button.key !== from.key), ...returning],
+  }));
+
+  return updatePage(emptied, to.pageId, (page) => ({
+    ...page,
+    buttons: [...page.buttons.filter((button) => button.key !== to.key), arriving],
+  }));
+}
+
 /** Cuts a button's rectangle down to what the grid can hold from its new key. */
 function trimToGrid(
   button: ButtonDefinition,

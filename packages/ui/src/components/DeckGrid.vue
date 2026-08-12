@@ -18,6 +18,8 @@ const props = defineProps<{
   selectedKey?: number;
   /** Buttons on the current page, with whatever they already span. */
   spans: readonly KeySpan[];
+  /** The page on show, so a key dragged off it still knows where it came from. */
+  pageId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -25,7 +27,9 @@ const emit = defineEmits<{
   menu: [payload: { key: number; x: number; y: number }];
   dropAction: [payload: { key: number; actionType: string; label: string }];
   dropPreset: [payload: { key: number; pluginId: string; name: string }];
-  dropKey: [payload: { from: number; to: number }];
+  dropKey: [payload: { from: { pageId?: string; key: number }; to: number }];
+  dragStart: [payload: { pageId?: string; key: number }];
+  dragEnd: [];
   resize: [payload: { key: number; colSpan: number; rowSpan: number }];
 }>();
 
@@ -162,6 +166,7 @@ const preview = computed(() => {
       :pressed="pressedKeys.has(index)"
       :selected="selectedKey === index"
       :resizable="owners.has(index)"
+      :page-id="pageId"
       :style="{
         gridColumn: (index % cols) + 1,
         gridRow: Math.floor(index / cols) + 1,
@@ -171,6 +176,8 @@ const preview = computed(() => {
       @drop-action="emit('dropAction', $event)"
       @drop-preset="emit('dropPreset', $event)"
       @drop-key="emit('dropKey', $event)"
+      @drag-start="emit('dragStart', $event)"
+      @drag-end="emit('dragEnd')"
       @resize-start="onResizeStart"
     />
 
