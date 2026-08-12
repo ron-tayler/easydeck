@@ -12,7 +12,7 @@ import type {
 } from '@easydeck/core';
 // Through the sub-path, not the package index: the index pulls in the deck
 // controller and its Node imports, which a browser cannot load.
-import { CORE_DELAY, CORE_FOR, CORE_IF } from '@easydeck/engine/actions';
+import { CORE_DELAY, CORE_FOR, CORE_IF, CORE_ON } from '@easydeck/engine/actions';
 
 import ActionParams from './ActionParams.vue';
 import ConditionInput from './ConditionInput.vue';
@@ -90,6 +90,8 @@ const NO_PARAMS: Readonly<Record<string, unknown>> = Object.freeze({});
 const BRANCHES: Readonly<Record<string, readonly string[]>> = {
   [CORE_IF]: ['then', 'else'],
   [CORE_FOR]: ['do'],
+  // A handler reads as a fork with one arm, which is what it is to look at.
+  [CORE_ON]: ['do'],
 };
 
 const isBlock = (type: string): boolean => type in BRANCHES;
@@ -107,6 +109,10 @@ function nameOf(step: ActionDescriptor): string {
   return say(definitions.value.get(step.type)?.label) || step.type;
 }
 
+/** A handler's branch is not "then": it fires, so what is under it is what it does. */
+const branchLabel = (type: string, branch: string): string =>
+  type === CORE_ON && branch === 'do' ? t('editor.blocks.onDo') : t(`editor.blocks.${branch}`);
+
 /** What a collapsed block says about itself, so a closed one still reads. */
 function summarise(step: ActionDescriptor): string {
   if (step.type === CORE_DELAY) {
@@ -121,7 +127,7 @@ function summarise(step: ActionDescriptor): string {
     return times > 0 ? `× ${times}` : '';
   }
 
-  if (step.type === CORE_IF) {
+  if (step.type === CORE_IF || step.type === CORE_ON) {
     const when = step.params?.['when'] as Condition | undefined;
     if (!when) return '';
     const left = when.source === 'template' ? (when.text ?? '') : (when.name ?? t('editor.thisButton'));
@@ -308,7 +314,7 @@ function onDrop(event: DragEvent): void {
 
       <!-- A block's own fields: a condition for the fork, a count for the
            loop, a number of milliseconds for the wait. -->
-      <div v-if="isOpen(index) && step.type === CORE_IF" class="fields">
+      <div v-if="isOpen(index) && (step.type === CORE_IF || step.type === CORE_ON)" class="fields">
         <ConditionInput
           :model-value="(step.params?.['when'] as Condition | undefined)"
           :declarations="declarations"
@@ -375,7 +381,7 @@ function onDrop(event: DragEvent): void {
            shows its head, because that head is where a first step is aimed. -->
       <template v-if="isBlock(step.type)">
         <div v-for="branch in BRANCHES[step.type]" :key="branch" class="branch">
-          <span class="branch-name">{{ t(`editor.blocks.${branch}`) }}</span>
+          <span class="branch-name">{{ branchLabel(step.type, branch) }}</span>
 
           <ScriptSteps
             v-if="(step.branches?.[branch]?.length ?? 0) > 0"

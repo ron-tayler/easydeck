@@ -1,4 +1,4 @@
-import { BUTTON_EVENTS } from './action.js';
+import { BUTTON_SCRIPTS } from './action.js';
 import { InvalidProfileError } from './errors.js';
 import { MAX_PAGES_PER_FOLDER, isStateRange } from './profile.js';
 import type { FolderDefinition, ProfileDefinition } from './profile.js';
@@ -214,7 +214,7 @@ function validateButtons(
       }
 
       for (const event of Object.keys(state.actions ?? {})) {
-        if (!BUTTON_EVENTS.includes(event as never)) {
+        if (!BUTTON_SCRIPTS.includes(event as never)) {
           throw new InvalidProfileError(
             `Button '${button.id}' binds actions to unknown event '${event}'`,
           );

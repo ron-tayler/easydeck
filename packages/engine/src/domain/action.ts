@@ -40,7 +40,22 @@ export const CORE_IF = 'core.if';
 export const CORE_FOR = 'core.for';
 export const CORE_DELAY = 'core.delay';
 
-export const CORE_STEPS: readonly string[] = [CORE_IF, CORE_FOR, CORE_DELAY];
+/**
+ * A handler rather than a step: "when this becomes true, do that".
+ *
+ * Only ever found at the top of a button's `event` script, where each one is
+ * an independent watcher. Written as a block because that is what it reads
+ * as — a condition with something under it — but a list of them is not a
+ * sequence: none of them waits for the one above.
+ *
+ * It fires on the *edge*, when its condition goes from false to true, not for
+ * as long as it holds. A handler watching "processor over 90" should act when
+ * the processor climbs past ninety, not once a second for as long as it is
+ * busy.
+ */
+export const CORE_ON = 'core.on';
+
+export const CORE_STEPS: readonly string[] = [CORE_IF, CORE_FOR, CORE_DELAY, CORE_ON];
 
 export function isCoreStep(type: string): boolean {
   return CORE_STEPS.includes(type);
@@ -69,9 +84,20 @@ export function isCoreStep(type: string): boolean {
  * does not bind it runs `press` the instant the key is released, so nobody
  * pays for a feature they did not ask for.
  */
-export type ButtonEvent = 'press' | 'longPress' | 'doublePress';
+export type ButtonEvent = 'press' | 'longPress' | 'doublePress' | 'event';
 
+/**
+ * The gestures, which is not all the events.
+ *
+ * `event` is deliberately absent: it is not something a finger does, it is a
+ * list of handlers watching the world. Everything that dispatches a gesture
+ * walks this list, and adding it here would have a variable change look like a
+ * press.
+ */
 export const BUTTON_EVENTS: readonly ButtonEvent[] = ['press', 'longPress', 'doublePress'];
+
+/** Every key a button's `actions` may hold: the gestures, plus the watchers. */
+export const BUTTON_SCRIPTS: readonly ButtonEvent[] = [...BUTTON_EVENTS, 'event'];
 
 /**
  * What a handler is allowed to do to the deck while running.

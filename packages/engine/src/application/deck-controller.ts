@@ -1,6 +1,9 @@
 import { EventEmitter } from 'node:events';
 
 import type { ActionContext, ActionDescriptor, ButtonEvent } from '../domain/action.js';
+import { CORE_ON } from '../domain/action.js';
+import { evaluateCondition } from '../domain/condition.js';
+import type { Condition } from '../domain/condition.js';
 import { EngineError } from '../domain/errors.js';
 import type {
   ButtonDefinition,
@@ -75,6 +78,15 @@ export interface DeckControllerEvents {
 /** Long enough to notice, short enough not to sit there accusing. */
 const ALERT_MS = 3000;
 
+/**
+ * How many times handlers may set each other off before the chain is cut.
+ *
+ * A handler that writes a variable brings the engine straight back to the
+ * handlers, which is useful — one arming another — and is also how a profile
+ * stops the deck answering. Four is past anything deliberate.
+ */
+const MAX_CASCADE = 4;
+
 const DEFAULT_HISTORY_LIMIT = 32;
 
 /**
@@ -109,6 +121,18 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   private readonly assets = new AssetIds();
   /** Signature of the scene last presented, for change detection. */
   private lastScene?: string;
+
+  /**
+   * Whether each event handler's condition held last time it was looked at.
+   *
+   * Keyed by button and position, and the whole of what makes a handler fire
+   * on the edge rather than for as long as its condition is true.
+   */
+  private readonly handlerHeld = new Map<string, boolean>();
+  /** True while handlers are running, so one cannot re-enter the loop. */
+  private handling = false;
+  /** Set when something changed mid-round, which asks for another one. */
+  private changedWhileHandling = false;
 
   private readonly unsubscribe: Array<() => void> = [];
   private running = false;
@@ -236,10 +260,17 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     if (!this.profile) throw new EngineError('No profile loaded');
     this.running = true;
 
+    // Where every handler stands before anything has changed, so a condition
+    // that is already true on startup does not read as having just become so.
+    this.rememberHandlerStates();
+
     this.unsubscribe.push(
       this.surface.onGesture((key, gesture) => this.handleGesture(key, gesture)),
       // Any variable change may alter a label or a bound state.
-      this.variables.onChange(() => this.requestPaint()),
+      this.variables.onChange(() => {
+        this.requestPaint();
+        void this.runHandlers();
+      }),
     );
 
     await this.paint();
@@ -760,6 +791,161 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     }
 
     this.requestPaint();
+  }
+
+  // --- handlers that watch rather than wait for a finger --------------------
+
+  /**
+   * Every `core.on` in the profile, wherever its button happens to sit.
+   *
+   * The whole profile rather than the current page, deliberately: "when the
+   * scene changes, mute the mic" that worked only while you happened to be
+   * looking at the page holding that button would be automation you could not
+   * rely on, and the failure would look like nothing at all.
+   */
+  private eventHandlers(): { key: string; button: ButtonDefinition; step: ActionDescriptor }[] {
+    const found: { key: string; button: ButtonDefinition; step: ActionDescriptor }[] = [];
+    if (!this.profile) return found;
+
+    const walk = (folder: FolderDefinition): void => {
+      for (const page of folder.pages) {
+        for (const button of page.buttons) {
+          const script = this.scriptFor(button, 'event');
+          script.forEach((step, index) => {
+            if (step.type === CORE_ON) found.push({ key: `${button.id}#${index}`, button, step });
+          });
+        }
+      }
+      for (const child of folder.folders ?? []) walk(child);
+    };
+
+    walk(this.profile.root);
+    return found;
+  }
+
+  private conditionHolds(step: ActionDescriptor, button: ButtonDefinition): boolean {
+    const when = step.params?.['when'] as Condition | undefined;
+    if (!when) return false;
+
+    return evaluateCondition(when, {
+      values: this.variables.snapshot(),
+      buttonState: (buttonId) => {
+        const target = buttonId ? this.buttonById(buttonId) : button;
+        return target ? this.resolveState(target).id : undefined;
+      },
+    });
+  }
+
+  /** Takes a reading without acting on it, so the next change is a change. */
+  private rememberHandlerStates(): void {
+    this.handlerHeld.clear();
+    for (const handler of this.eventHandlers()) {
+      this.handlerHeld.set(handler.key, this.conditionHolds(handler.step, handler.button));
+    }
+  }
+
+  /**
+   * Runs the handlers whose condition has just become true.
+   *
+   * On the edge rather than the level: a handler watching "processor over 90"
+   * should act when it climbs past ninety, not once a second for as long as it
+   * is busy.
+   *
+   * A handler may change a variable, which brings us straight back here. That
+   * is useful — one handler arming another — and it is also how a profile
+   * locks the deck up, so the chain is counted and cut.
+   */
+  private async runHandlers(): Promise<void> {
+    if (!this.running) return;
+
+    // A handler writing a variable lands here again. Noted and dealt with by
+    // the loop below rather than by running now: re-entering would run the
+    // handlers inside a handler, in an order nobody could predict.
+    if (this.handling) {
+      this.changedWhileHandling = true;
+      return;
+    }
+
+    this.handling = true;
+    try {
+      for (let round = 1; ; round += 1) {
+        this.changedWhileHandling = false;
+        await this.handlerRound();
+
+        if (!this.changedWhileHandling) break;
+
+        /*
+         * Another round, because a handler changed something — one arming
+         * another is the point of having several. Bounded, because two
+         * handlers undoing each other is the same thing seen from the other
+         * side, and that one never stops.
+         */
+        if (round >= MAX_CASCADE) {
+          this.emit(
+            'error',
+            new EngineError(
+              `Event handlers set each other off ${MAX_CASCADE} rounds deep; stopped to keep the deck answering`,
+            ),
+          );
+          break;
+        }
+      }
+    } finally {
+      this.handling = false;
+    }
+  }
+
+  /** One pass over every handler, running those that have just become true. */
+  private async handlerRound(): Promise<void> {
+    for (const handler of this.eventHandlers()) {
+      const holds = this.conditionHolds(handler.step, handler.button);
+      const held = this.handlerHeld.get(handler.key) === true;
+      this.handlerHeld.set(handler.key, holds);
+
+      if (!holds || held) continue;
+
+      const body = handler.step.branches?.['do'] ?? [];
+      if (body.length === 0) continue;
+
+      await this.runOn(handler.button, body);
+    }
+  }
+
+  /** One handler's body, run like any other script on that button. */
+  private async runOn(button: ButtonDefinition, body: readonly ActionDescriptor[]): Promise<void> {
+    try {
+      await runScript(body, this.actionContext(button), {
+        run: (action, where) => this.actions.run(action, where),
+        values: () => this.variables.snapshot(),
+        onError: (error) => {
+          this.markFailed(button.key);
+          this.emit('error', error);
+        },
+        wait: (ms) => new Promise<void>((resolve) => this.clock.setTimeout(resolve, ms)),
+      });
+    } catch (error) {
+      this.markFailed(button.key);
+      this.emit('error', error as Error);
+    }
+
+    this.requestPaint();
+  }
+
+  /** A button anywhere in the profile, which is where a handler's may be. */
+  private buttonById(buttonId: string): ButtonDefinition | undefined {
+    const search = (folder: FolderDefinition): ButtonDefinition | undefined => {
+      for (const page of folder.pages) {
+        const found = page.buttons.find((button) => button.id === buttonId);
+        if (found) return found;
+      }
+      for (const child of folder.folders ?? []) {
+        const found = search(child);
+        if (found) return found;
+      }
+      return undefined;
+    };
+
+    return this.profile ? search(this.profile.root) : undefined;
   }
 
   /**

@@ -16,10 +16,18 @@ import type { StepPath } from '@easydeck/core';
 
 import ScriptSteps from './ScriptSteps.vue';
 
-type Trigger = 'press' | 'longPress' | 'doublePress';
+type Trigger = 'press' | 'longPress' | 'doublePress' | 'event';
 type ActionMap = NonNullable<ButtonStateDefinition['actions']>;
 
-const TRIGGERS: readonly Trigger[] = ['press', 'longPress', 'doublePress'];
+/**
+ * The gestures, and then the watchers.
+ *
+ * `event` is last because it is not one: the other three are things a finger
+ * does, and this is a list of handlers that act on their own. It reads as a
+ * sequence like the others and is not one — none of its handlers waits for the
+ * one above.
+ */
+const TRIGGERS: readonly Trigger[] = ['press', 'longPress', 'doublePress', 'event'];
 
 /** Ours alone, so a key being dragged in the grid can never land in a macro. */
 const STEP_MIME = 'application/x-easydeck-step';
@@ -29,8 +37,8 @@ const ACTION_MIME = 'application/x-easydeck-action';
 const STEP_PAYLOAD_MIME = 'application/x-easydeck-step-payload';
 
 const props = defineProps<{
-  /** Which gesture is open; owned above so a state tab can add to it. */
-  trigger?: 'press' | 'longPress' | 'doublePress';
+  /** Which tab is open; owned above so a state tab can add to it. */
+  trigger?: Trigger;
   actions: ActionMap;
   plugins: readonly PluginManifest[];
   /** Live values and their declarations, for the variable picker. */
@@ -393,6 +401,10 @@ function onTabDrop(which: Trigger): void {
         <span v-if="countOf(item) > 0" class="count">{{ countOf(item) }}</span>
       </button>
     </div>
+
+    <!-- Said once, at the top, because a list of handlers looks exactly like a
+         sequence and is not one. -->
+    <p v-if="trigger === 'event'" class="muted hint">{{ t('editor.eventHint') }}</p>
 
     <p
       v-if="list.length === 0"

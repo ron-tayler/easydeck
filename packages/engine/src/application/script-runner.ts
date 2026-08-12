@@ -1,4 +1,4 @@
-import { CORE_DELAY, CORE_FOR, CORE_IF } from '../domain/action.js';
+import { CORE_DELAY, CORE_FOR, CORE_IF, CORE_ON } from '../domain/action.js';
 import type { ActionContext, ActionDescriptor } from '../domain/action.js';
 import { evaluateCondition } from '../domain/condition.js';
 import type { Condition } from '../domain/condition.js';
@@ -100,6 +100,12 @@ async function runList(
 
       case CORE_DELAY:
         await wait(host, milliseconds(step));
+        break;
+
+      case CORE_ON:
+        // A handler that wandered into a sequence. It watches rather than
+        // does, so there is nothing to run here — and refusing would turn a
+        // step dropped in the wrong list into a broken key.
         break;
 
       default:

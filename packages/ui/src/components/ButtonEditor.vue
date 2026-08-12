@@ -206,7 +206,7 @@ const merged = computed(() => (draft.value.colSpan ?? 1) > 1 || (draft.value.row
  * to the same gesture: the question a drop answers is "which state", and the
  * gesture is whatever is already open.
  */
-const trigger = ref<'press' | 'longPress' | 'doublePress'>('press');
+const trigger = ref<'press' | 'longPress' | 'doublePress' | 'event'>('press');
 
 const ACTION_MIME = 'application/x-easydeck-action';
 /** A step carried out of the sequence below, with enough of it to rebuild. */
@@ -338,7 +338,7 @@ function moveStep(target: number, payload: string): void {
   const source = stateIndex.value;
   if (target === source) return;
 
-  const gesture = carried.trigger as 'press' | 'longPress' | 'doublePress';
+  const gesture = carried.trigger as 'press' | 'longPress' | 'doublePress' | 'event';
 
   const states = draft.value.states.map((item, position) => {
     const actions = item.actions ?? {};
