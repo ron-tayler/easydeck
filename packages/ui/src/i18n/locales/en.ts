@@ -87,6 +87,14 @@ export default {
     rename: 'Rename profile',
     newTitle: 'Profile name',
   },
+  color: {
+    open: 'Choose colour',
+    hue: 'Hue',
+    hex: 'HEX',
+    r: 'R',
+    g: 'G',
+    b: 'B',
+  },
   variables: {
     title: 'Variables',
     none: 'No variables yet',
@@ -145,6 +153,10 @@ export default {
     text: 'Label',
     background: 'Background',
     textColor: 'Text colour',
+    /* The three buttons beside the preview. Short on purpose: they stand in a
+       column the width of a narrow panel, and each already carries a mark
+       saying which of the three it is. */
+    look: { background: 'Fill', picture: 'Picture', text: 'Text' },
     fontSize: 'Text size',
     position: 'Text position',
     positions: { top: 'Top', center: 'Centre', bottom: 'Bottom' },

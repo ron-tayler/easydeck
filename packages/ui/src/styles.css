@@ -110,12 +110,17 @@ button:disabled {
 
 button:focus-visible,
 select:focus-visible,
-input:focus-visible {
+input:focus-visible,
+textarea:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
+/* A textarea is a field like any other and belongs in this list: left out of
+   it, it kept the browser's own white box with an inset border, which is the
+   one control on the page that did not look like the program. */
 select,
+textarea,
 input[type='text'],
 input[type='number'] {
   font: inherit;

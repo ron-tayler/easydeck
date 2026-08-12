@@ -498,13 +498,9 @@ input[type='color'] {
   border-radius: 6px;
 }
 
+/* Everything else about it comes from the global field rules; only the handle
+   is this field's own decision — an action's text may be a paragraph. */
 textarea {
-  font: inherit;
-  color: inherit;
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 5px 8px;
   resize: vertical;
 }
 

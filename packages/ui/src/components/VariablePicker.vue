@@ -97,8 +97,8 @@ function choose(name: string): void {
  * The field grows; whatever else shares the row does not.
  *
  * It used to be "the first child fills the space", which held only while the
- * field was the first thing in the row. A colour swatch now sits before it,
- * and the rule would have stretched the swatch across the row instead.
+ * field happened to come first. Naming what grows survives anything else being
+ * put in the row beside it.
  */
 .row > :deep(.grow),
 .row > :deep(input:not([type='color'])),

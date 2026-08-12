@@ -24,6 +24,13 @@ const props = defineProps<{
   userIcons: readonly LibraryImage[];
   /** Pictures the folder holds but the library had no room for. */
   omittedIcons?: number;
+  /**
+   * Names the button, and widens it to fit the word.
+   *
+   * Standing in a column with the two colour buttons, what it opens has to be
+   * readable when there is no picture on it yet and nothing to look at.
+   */
+  label?: string;
 }>();
 
 const emit = defineEmits<{ update: [icon: IconSpec | undefined] }>();
@@ -41,17 +48,41 @@ function chosen(source: string): void {
 </script>
 
 <template>
-  <span class="picture">
+  <span class="picture" :class="{ wide: label }">
     <button
       type="button"
       class="choose"
+      :class="{ wide: label }"
       :title="icon ? t('editor.iconChange') : t('editor.iconChoose')"
       @click="browsing = true"
     >
       <img v-if="icon" :src="icon.source" alt="" />
+      <!-- A frame with a hill and a sun in it: the picture that stands for
+           there being no picture yet. -->
+      <svg v-else-if="label" class="glyph" viewBox="0 0 16 16" aria-hidden="true">
+        <rect
+          x="1.6"
+          y="2.8"
+          width="12.8"
+          height="10.4"
+          rx="1.6"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.3"
+        />
+        <circle cx="5.6" cy="6.4" r="1.1" fill="currentColor" />
+        <path d="M2.4 12 6 8.6l2.4 2.2 2.4-2.6 2.8 3.8Z" fill="currentColor" />
+      </svg>
       <span v-else class="empty">{{ t('editor.iconChoose') }}</span>
+
+      <span v-if="label" class="name">{{ label }}</span>
       <span v-if="animated" class="badge">GIF</span>
     </button>
+
+    <!-- Whatever else this particular picture needs — the parameter gear, on
+         the few icons that declare any. Beside the button rather than before
+         it: it belongs to the picture, and reads as belonging to it. -->
+    <slot name="tools" />
 
     <button
       v-if="icon"
@@ -95,6 +126,38 @@ function chosen(source: string): void {
   background: var(--surface-2);
   color: inherit;
   cursor: pointer;
+}
+
+/* As with the colour buttons: the width comes from whatever it stands in. The
+   gear and the cross keep their size, and the button takes the rest. */
+.picture.wide {
+  min-width: 0;
+  flex-wrap: nowrap;
+  gap: 2px;
+}
+
+/* Matched to the colour buttons it stands between: same height, same word in
+   the same place, so the three read as one set rather than three controls. */
+.choose.wide {
+  flex: 1;
+  min-width: 0;
+  gap: 7px;
+  padding: 0 9px;
+  background: var(--surface-1);
+}
+
+.choose .glyph {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  color: var(--text-muted);
+}
+
+.choose .name {
+  font-size: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .choose:hover {

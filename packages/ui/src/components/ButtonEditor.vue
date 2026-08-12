@@ -394,14 +394,16 @@ function setIconParams(params: Record<string, IconBinding>): void {
 }
 
 /**
- * Sets or clears the picture, and drops the background colour with it.
+ * Sets or clears the picture, and leaves the background colour alone.
  *
- * A picture fills the key edge to edge, so a colour underneath is invisible —
- * keeping it would leave a value nobody set on purpose waiting to reappear
- * when the picture came off.
+ * Choosing a picture used to throw the colour away, on the grounds that a
+ * picture fills the key edge to edge and hides whatever is under it. That is
+ * true of a photograph and false of everything else: a library icon is a glyph
+ * on transparency, so what was actually hidden was the colour, and every such
+ * key has been a white mark on black since — the one arrangement nobody chose.
  */
 function setPicture(icon: IconSpec | undefined): void {
-  patchVisual(icon ? { icon, background: undefined } : { icon: undefined });
+  patchVisual(icon ? { icon } : { icon: undefined });
 }
 
 // --- binding --------------------------------------------------------------
@@ -635,6 +637,35 @@ function save(): void {
 /** Inserts a placeholder into the label where the caret is. */
 const labelField = ref<HTMLTextAreaElement>();
 
+/**
+ * The label field takes the height of what is in it.
+ *
+ * Measured rather than counted from the newlines: a line long enough to wrap
+ * takes two rows on screen whether or not anybody pressed Enter, and a field
+ * sized by Enter presses alone would hide it. The border is added back because
+ * `scrollHeight` is the content and its padding, while the height being set is
+ * the whole box.
+ *
+ * The floor of two rows costs nothing here: `height: auto` on a textarea falls
+ * back to its `rows`, so the measurement never comes out shorter than that.
+ */
+function fitLabel(): void {
+  const field = labelField.value;
+  if (!field) return;
+
+  field.style.height = 'auto';
+  field.style.height = `${field.scrollHeight + field.offsetHeight - field.clientHeight}px`;
+}
+
+function onLabelInput(text: string): void {
+  patchLabel({ text });
+  fitLabel();
+}
+
+// Switching state, or opening the editor at all, brings other text with it.
+watch(() => state.value.visual.label?.text, () => void nextTick(fitLabel));
+onMounted(fitLabel);
+
 function insertVariable(name: string): void {
   const token = `{{${name}}}`;
   const element = labelField.value;
@@ -768,48 +799,100 @@ const previewIcon = computed(() => {
         <section class="look">
           <h3>{{ t('editor.appearance') }}</h3>
 
-          <div
-            class="preview"
-            :style="{ background: preview.background }"
-          >
-            <img v-if="previewIcon" class="preview-icon" :src="previewIcon" alt="" />
-            <!-- The same component the grid uses, so the preview cannot
-                 drift from what the key will actually look like. -->
-            <KeyLabel
-              v-if="preview.label"
-              :label="preview.label"
-              :has-picture="Boolean(state.visual.icon)"
-            />
-          </div>
-
-          <label class="field">
-            <span>{{ t('editor.text') }}</span>
-            <!-- Colour, text and the variable list share one row, so the list
-                 opens across all three rather than under the field alone. -->
-            <VariablePicker
-              :values="variables"
-              :declarations="declarations"
-              @pick="insertVariable($event)"
+          <!--
+            The key beside the three things there are to change about it.
+            Centred, the preview left the column beside it empty and put every
+            control below the fold; against the left edge it pays for itself
+            twice, as a picture of the key and as the width the buttons need.
+          -->
+          <div class="look-top">
+            <div
+              class="preview"
+              :style="{ background: preview.background }"
             >
+              <img v-if="previewIcon" class="preview-icon" :src="previewIcon" alt="" />
+              <!-- The same component the grid uses, so the preview cannot
+                   drift from what the key will actually look like. -->
+              <KeyLabel
+                v-if="preview.label"
+                :label="preview.label"
+                :has-picture="Boolean(state.visual.icon)"
+              />
+            </div>
+
+            <!--
+              All three always here, none in place of another. The colour used
+              to disappear the moment a picture was chosen, which read as the
+              two being alternatives — they are not, and a picture with any
+              transparency in it has been sitting on plain black ever since.
+            -->
+            <div class="look-tools">
               <ColorPicker
+                :label="t('editor.look.background')"
+                :model-value="state.visual.background"
+                fallback="#111318"
+                :title="t('editor.background')"
+                @update:model-value="patchVisual({ background: $event })"
+              />
+
+              <IconPicker
+                :label="t('editor.look.picture')"
+                :icon="state.visual.icon"
+                :color="state.visual.label?.color ?? '#ffffff'"
+                :user-icons="userIcons"
+                :omitted-icons="omittedIcons"
+                @update="setPicture($event)"
+              >
+                <!-- Only where the picture asks for it: an ordinary icon
+                     declares no parameters, so the gear is absent from almost
+                     every key. -->
+                <template #tools>
+                  <button
+                    v-if="iconIsParametric"
+                    type="button"
+                    class="icon-gear"
+                    :title="t('editor.iconParams')"
+                    :aria-label="t('editor.iconParams')"
+                    @click="iconParamsOpen = true"
+                  >
+                    ⚙
+                  </button>
+                </template>
+              </IconPicker>
+
+              <ColorPicker
+                :label="t('editor.look.text')"
                 :model-value="state.visual.label?.color"
                 fallback="#ffffff"
                 :title="t('editor.textColor')"
                 @update:model-value="patchLabel({ color: $event })"
               />
+            </div>
+          </div>
+
+          <label class="field">
+            <span>{{ t('editor.text') }}</span>
+            <!-- The text and the variable list share one row, so the list
+                 opens across both rather than under the field alone. -->
+            <VariablePicker
+              :values="variables"
+              :declarations="declarations"
+              @pick="insertVariable($event)"
+            >
               <!-- A textarea, because a key's label is not one line.
                    Where the text breaks is part of how a key looks — "Сцена"
                    over "Ожидание" reads at a glance where one wrapped line
                    does not — and the engine has always honoured a newline;
-                   there was simply no way to type one. Two rows by default,
-                   draggable taller, and Enter breaks the line rather than
-                   doing anything clever. -->
+                   there was simply no way to type one. It takes the height of
+                   what is in it: a handle to drag was one more thing to get
+                   right about a field whose correct height is never in
+                   question. -->
               <textarea
                 ref="labelField"
                 class="grow label-text"
                 rows="2"
                 :value="state.visual.label?.text ?? ''"
-                @input="patchLabel({ text: ($event.target as HTMLTextAreaElement).value })"
+                @input="onLabelInput(($event.target as HTMLTextAreaElement).value)"
               ></textarea>
             </VariablePicker>
           </label>
@@ -843,43 +926,12 @@ const previewIcon = computed(() => {
             </span>
           </div>
 
-          <label class="field">
-            <span>{{ t('editor.background') }}</span>
-            <span class="row">
-              <!-- A picture covers the key edge to edge, so a colour behind it
-                   is a setting with nothing to show for it. -->
-              <ColorPicker
-                v-if="!state.visual.icon"
-                :model-value="state.visual.background"
-                fallback="#111318"
-                :title="t('editor.background')"
-                @update:model-value="patchVisual({ background: $event })"
-              />
-
-              <!-- Only where the picture asks for it: an ordinary icon declares
-                   no parameters, so the gear is absent from almost every key. -->
-              <button
-                v-if="iconIsParametric"
-                type="button"
-                class="icon-gear"
-                :title="t('editor.iconParams')"
-                :aria-label="t('editor.iconParams')"
-                @click="iconParamsOpen = true"
-              >
-                ⚙
-              </button>
-
-              <IconPicker
-                :icon="state.visual.icon"
-                :color="state.visual.label?.color ?? '#ffffff'"
-                :user-icons="userIcons"
-                :omitted-icons="omittedIcons"
-                @update="setPicture($event)"
-              />
-            </span>
-          </label>
-
           <p v-if="merged" class="muted desc">{{ t('editor.spanHint') }}</p>
+
+          <!-- Above the line the key is being drawn; below it, the key is being
+               wired to a variable. Two jobs in one column, and the only thing
+               that said so was the order they happened to be in. -->
+          <hr class="divider" />
 
           <label class="field">
             <span>{{ t('editor.stateFrom') }}</span>
@@ -1228,6 +1280,23 @@ h3 {
   gap: 9px;
 }
 
+.look-top {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+/* Three buttons over the preview's height, spread to meet its edges: the row
+   of controls and the picture of the key end together. */
+.look-tools {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+}
+
 .preview {
   container-type: inline-size;
   width: 112px;
@@ -1237,12 +1306,11 @@ h3 {
      that is not square is worse than no preview at all. */
   flex: none;
   aspect-ratio: 1;
-  align-self: center;
+  align-self: flex-start;
   border: 1px solid var(--border);
   border-radius: 12px;
   display: flex;
   overflow: hidden;
-  margin-bottom: 4px;
 }
 
 .preview { position: relative; }
@@ -1318,13 +1386,22 @@ h3 {
   color: var(--accent);
 }
 
+/* Sized from its contents, so there is no handle to drag and nothing to
+   scroll: `fitLabel` sets the height, and a scrollbar would only appear in the
+   moment between typing and measuring. The rest — the frame, the fill, the
+   padding — comes from the global field rules, so it matches the boxes above
+   and below it. */
 .label-text {
-  /* Vertical only: the row's other two controls fix the width, and a textarea
-     dragged sideways would push them out of the panel. */
-  resize: vertical;
-  min-height: 2.4em;
-  font: inherit;
-  line-height: 1.3;
+  resize: none;
+  overflow-y: hidden;
+  line-height: 1.35;
+}
+
+.divider {
+  width: 100%;
+  margin: 5px 0 2px;
+  border: none;
+  border-top: 1px solid var(--border);
 }
 
 .field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
@@ -1351,20 +1428,6 @@ h3 {
 .row > :deep(.picture) {
   flex: 1;
   min-width: 0;
-}
-
-/*
- * Written to outweigh the `input[type='color']` rule below.
- *
- * An attribute selector beats a bare class, so `width: 100%` from there won
- * and the swatch stretched across the row, covering the field beside it.
- */
-input[type='color'].swatch {
-  flex: none;
-  width: 30px;
-  height: 30px;
-  padding: 2px;
-  cursor: pointer;
 }
 
 .size {
@@ -1405,16 +1468,6 @@ input[type='color'].swatch {
 .position :deep(svg) {
   width: 100%;
   height: 100%;
-}
-
-input[type='color'] {
-  width: 100%;
-  flex: none;
-  height: 28px;
-  padding: 2px;
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 7px;
 }
 
 footer {
