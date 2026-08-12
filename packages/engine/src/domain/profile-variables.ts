@@ -6,11 +6,12 @@ import { referencedVariables } from './template.js';
 /**
  * Every variable a profile reads, wherever it reads it.
  *
- * Three places, and all of them matter: a label substitutes `{{obs.scene}}`, a
- * button binds its state to a variable by name, and a handler waits for one to
- * become something. Anything else — an action's parameters, which are
- * templates too, and the conditions inside a script that has already started —
- * is a *write* or a one-off read at press time, and does not need watching.
+ * Four places, and all of them matter: a label substitutes `{{obs.scene}}`, a
+ * button binds its state to a variable by name, a picture binds a parameter to
+ * one so its needle moves, and a handler waits for one to become something.
+ * Anything else — an action's parameters, which are templates too, and the
+ * conditions inside a script that has already started — is a *write* or a
+ * one-off read at press time, and does not need watching.
  *
  * Exists so a plugin can be told what is worth reporting on. A plugin whose
  * variables take an argument has as many of them as the user has objects in
@@ -29,6 +30,14 @@ export function variablesReadBy(profile: ProfileDefinition): string[] {
         for (const state of button.states) {
           const text = state.visual.label?.text;
           if (text) for (const name of referencedVariables(text)) names.add(name);
+
+          // A picture that answers to a variable reads it just as surely as a
+          // label does — the needle moves on every repaint, from the same
+          // snapshot. Left out, a gauge bound to a plugin's value would be a
+          // gauge that never moves.
+          for (const binding of Object.values(state.visual.icon?.params ?? {})) {
+            if (typeof binding === 'object' && binding.variable) names.add(binding.variable);
+          }
         }
 
         for (const when of handlerConditions(button)) fromCondition(when, names);

@@ -27,6 +27,37 @@ describe('what a profile reads', () => {
     assert.deepEqual(read.sort(), ['hw.cpu', 'obs.scene']);
   });
 
+  /*
+   * The same blind spot as the handler one below, in the other direction: a
+   * parametric picture reads its variable on every repaint, from the same
+   * snapshot a label does. A gauge whose needle is driven by a plugin, on a
+   * page where nothing writes the number out, would otherwise never move.
+   */
+  it('takes what a picture binds a parameter to', () => {
+    const read = variablesReadBy(
+      profile([
+        {
+          id: 'b',
+          key: 0,
+          states: [
+            {
+              id: 'default',
+              visual: {
+                icon: {
+                  source: 'gauge.svg',
+                  params: { angle: { variable: 'obs.volume', from: 0, to: 100 }, width: 4 },
+                },
+              },
+            },
+          ],
+        },
+      ]),
+    );
+
+    // The constant beside it is somebody's fixed choice and reads nothing.
+    assert.deepEqual(read, ['obs.volume']);
+  });
+
   it('takes the one a button binds its states to', () => {
     const read = variablesReadBy(
       profile([{ id: 'b', key: 0, stateFrom: 'obs.recording', states: [{ id: 'on', visual: {} }] }]),
