@@ -266,6 +266,10 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
 
     this.markAllDirty();
     this.requestPaint();
+    // A handler may be waiting on exactly this: a condition can ask what a
+    // widget is set to, and without this the answer would change while nothing
+    // noticed. Variables get the same treatment from their own store.
+    void this.runHandlers();
   }
 
   /**
@@ -1038,7 +1042,29 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
         const target = buttonId ? this.buttonById(buttonId) : button;
         return target ? this.resolveState(target).id : undefined;
       },
+      widgetParam: (buttonId, name) => this.widgetParamOf(buttonId ? buttonId : button.id, name),
     });
+  }
+
+  /**
+   * One setting of a key's widget, as it stands right now.
+   *
+   * Read through `widgetOf`, so anything a macro or a plugin laid over the
+   * profile is what a condition sees. Asking about the authored value would
+   * make "is that graph showing the memory" answer about a graph nobody is
+   * looking at.
+   */
+  private widgetParamOf(buttonId: string, name: string): VariableValue | undefined {
+    const button = this.buttonById(buttonId);
+    const spec = button ? this.widgetOf(button) : undefined;
+    const value = spec?.params?.[name];
+
+    // Only the kinds a comparison can do anything with; a widget may declare
+    // whatever it likes, and an object compared with a number is nonsense
+    // dressed up as an answer.
+    return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+      ? value
+      : undefined;
   }
 
   /** Takes a reading without acting on it, so the next change is a change. */
@@ -1209,6 +1235,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
         const target = buttonId ? this.findButton(buttonId) : button;
         return target ? this.resolveState(target).id : undefined;
       },
+      widgetParam: (buttonId, name) => this.widgetParamOf(buttonId ? buttonId : button.id, name),
     };
   }
 

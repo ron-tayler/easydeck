@@ -1,4 +1,4 @@
-export default {
+﻿export default {
   app: {
     title: 'EasyDeck',
   },
@@ -266,8 +266,10 @@ export default {
       source: {
         variable: 'Переменная',
         'button-state': 'Состояние кнопки',
+        'widget-param': 'Настройка виджета',
         template: 'Шаблон',
       },
+      widgetParam: 'настройка',
       operator: {
         '==': 'равно',
         '!=': 'не равно',

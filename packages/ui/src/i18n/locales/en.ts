@@ -1,4 +1,4 @@
-export default {
+﻿export default {
   app: {
     title: 'EasyDeck',
   },
@@ -267,8 +267,10 @@ export default {
       source: {
         variable: 'Variable',
         'button-state': 'Button state',
+        'widget-param': 'Widget setting',
         template: 'Template',
       },
+      widgetParam: 'setting',
       operator: {
         '==': 'is',
         '!=': 'is not',

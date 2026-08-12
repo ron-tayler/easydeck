@@ -9,6 +9,8 @@ import type {
   VariableValue,
 } from '@easydeck/core';
 
+import { THIS_BUTTON } from '@easydeck/engine/actions';
+
 import ColorPicker from './ColorPicker.vue';
 import HotkeyInput from './HotkeyInput.vue';
 import PasswordInput from './PasswordInput.vue';
@@ -29,10 +31,10 @@ const props = defineProps<{
   /**
    * The button being edited, for the questions asked on its behalf.
    *
-   * A button parameter left empty means "the one doing the pressing", which is
-   * this one while somebody is editing it. Without a name to put in its place,
-   * asking what widget that key has answers nothing — and the form then says
-   * the key has no widget, about a key that may well have one.
+   * `this_btn` means the key doing the pressing, which while a form is open is
+   * the key being edited. Without a name to put in its place, asking what
+   * widget that key has answers nothing — and the form then says the key has
+   * no widget, about a key that may well have one.
    */
   ownButtonId?: string;
   /**
@@ -97,21 +99,16 @@ const fields = computed<readonly ParamDefinition[]>(() =>
 /**
  * Whether every name given has been answered.
  *
- * Answered, not filled: an empty string is a real answer in at least one place
- * — a button parameter left empty means *this* button, the one doing the
- * pressing. Treating that as unanswered kept the rest of the form hidden until
- * the same key was picked again by name, which is the same answer written
- * differently.
- *
- * So the test is presence. A parameter nobody has touched is absent; one
- * somebody has emptied is present and empty.
+ * Empty means unanswered, as it does in every list here. A button field that
+ * genuinely means "this one" says so with a value of its own, so there is no
+ * deliberate empty left to mistake for a blank.
  */
 function answered(names: readonly string[] | undefined): boolean {
   if (!names || names.length === 0) return true;
 
   return names.every((name) => {
     const value = props.params[name];
-    return value !== undefined && value !== null;
+    return value !== undefined && value !== null && value !== '';
   });
 }
 
@@ -165,17 +162,17 @@ const pluginOf = (type: string | undefined): string => (type ?? '').split('.')[0
 /**
  * The parameters as a question rather than as an answer.
  *
- * Only one substitution, and it is the meaning of the field rather than a
- * convenience: an empty button means the one being pressed, and while a form
- * is open that is the one being edited. What gets *stored* stays empty — the
- * action must still follow the press when it runs on some other key.
+ * One substitution, and it is the meaning of the value rather than a
+ * convenience: `this_btn` is the key doing the pressing, and while a form is
+ * open that is the key being edited. What gets *stored* stays `this_btn` —
+ * the action must still follow the press when it runs somewhere else.
  */
 const asked = computed<Record<string, unknown>>(() => {
   const filled: Record<string, unknown> = { ...props.params };
 
   for (const param of declared.value) {
     if (param.type !== 'profile-button') continue;
-    if (filled[param.name] === '' && props.ownButtonId) filled[param.name] = props.ownButtonId;
+    if (filled[param.name] === THIS_BUTTON && props.ownButtonId) filled[param.name] = props.ownButtonId;
   }
 
   return filled;
@@ -333,7 +330,7 @@ function insert(param: ParamDefinition, variable: string): void {
  */
 const stateChoices = computed<readonly string[]>(() => {
   const target = props.params['buttonId'];
-  if (typeof target !== 'string' || target.length === 0) return props.ownStates;
+  if (typeof target !== 'string' || target === '' || target === THIS_BUTTON) return props.ownStates;
 
   return props.buttons.find((button) => button.id === target)?.states ?? props.ownStates;
 });
@@ -524,9 +521,11 @@ async function dropSecret(param: ParamDefinition, reference: string): Promise<vo
         :value="valueOf(param)"
         @change="set(param, ($event.target as HTMLSelectElement).value)"
       >
-        <!-- Empty is meaningful here, not a missing answer: it means the
-             button doing the pressing. -->
-        <option value="">{{ t('editor.thisButton') }}</option>
+        <!-- Empty is a missing answer here, as in every other list. "This
+             button" is a choice with a name of its own, so the form can tell
+             "nobody has chosen" from "this one, deliberately". -->
+        <option value="" disabled>{{ t('editor.choose') }}</option>
+        <option :value="THIS_BUTTON">{{ t('editor.thisButton') }}</option>
         <option v-for="button in buttons" :key="button.id" :value="button.id">
           {{ button.name }}
         </option>

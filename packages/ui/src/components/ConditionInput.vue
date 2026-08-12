@@ -1,6 +1,7 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { THIS_BUTTON } from '@easydeck/engine/actions';
 import type { Condition, ConditionOperator, ConditionSource, VariableDeclaration } from '@easydeck/core';
 
 /**
@@ -20,6 +21,8 @@ const props = defineProps<{
   /** Variables offered by name, the user's own and the plugins' alike. */
   declarations: readonly VariableDeclaration[];
   values: Readonly<Record<string, string | number | boolean>>;
+  /** Buttons of the current page, for a condition about one of them. */
+  buttons: readonly { id: string; name: string }[];
   /** States of the button being edited, for a condition about itself. */
   ownStates: readonly string[];
 }>();
@@ -28,7 +31,12 @@ const emit = defineEmits<{ 'update:modelValue': [condition: Condition] }>();
 
 const { t } = useI18n();
 
-const SOURCES: readonly ConditionSource[] = ['variable', 'button-state', 'template'];
+const SOURCES: readonly ConditionSource[] = [
+  'variable',
+  'button-state',
+  'widget-param',
+  'template',
+];
 
 /** Comparisons that mean something for numbers, offered only where they do. */
 const ORDERED: readonly ConditionOperator[] = ['>', '>=', '<', '<='];
@@ -67,6 +75,7 @@ function setSource(source: ConditionSource): void {
   emit('update:modelValue', {
     source,
     operator: source === 'button-state' ? '==' : condition.value.operator,
+    ...(source === 'widget-param' ? { name: THIS_BUTTON } : {}),
     ...(source === 'template' ? { text: '' } : {}),
   });
 }
@@ -101,14 +110,30 @@ function setSource(source: ConditionSource): void {
       @input="patch({ text: ($event.target as HTMLInputElement).value })"
     />
 
-    <!-- Empty means the button running the script, which is what somebody
-         means nine times in ten. -->
-    <input
+    <!-- Which key, the same way an action names one: a choice of its own for
+         "this button" rather than a blank standing in for it. -->
+    <select
       v-else
-      type="text"
       :value="condition.name ?? ''"
-      :placeholder="t('editor.thisButton')"
-      @input="patch({ name: ($event.target as HTMLInputElement).value })"
+      @change="patch({ name: ($event.target as HTMLSelectElement).value })"
+    >
+      <option value="" disabled>{{ t('editor.choose') }}</option>
+      <option :value="THIS_BUTTON">{{ t('editor.thisButton') }}</option>
+      <option v-for="button in buttons" :key="button.id" :value="button.id">
+        {{ button.name }}
+      </option>
+    </select>
+
+    <!-- And which of that widget's settings. Typed rather than chosen: this
+         component has no way to ask the daemon, and a name typed here is
+         checked against nothing at run time either — an unknown setting simply
+         answers nothing, which `empty` can test for. -->
+    <input
+      v-if="condition.source === 'widget-param'"
+      type="text"
+      :value="condition.param ?? ''"
+      :placeholder="t('editor.condition.widgetParam')"
+      @input="patch({ param: ($event.target as HTMLInputElement).value })"
     />
 
     <select

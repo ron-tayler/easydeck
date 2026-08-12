@@ -136,6 +136,7 @@ async function runIf(
       : evaluateCondition(condition, {
           values: { ...host.values(), ...(context.locals ?? {}) },
           buttonState: (buttonId) => context.buttonState?.(buttonId),
+          widgetParam: (buttonId, name) => context.widgetParam?.(buttonId, name),
         });
 
   const branch = holds ? step.branches?.['then'] : step.branches?.['else'];

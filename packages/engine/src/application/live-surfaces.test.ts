@@ -5,6 +5,7 @@ import { PROFILE_FORMAT_VERSION } from '../domain/profile.js';
 import type { ButtonDefinition, ProfileDefinition } from '../domain/profile.js';
 import type { SurfaceFrame, SurfaceRequest } from '../domain/surface-spec.js';
 import { ActionRegistry } from './action-registry.js';
+import { registerBuiltinActions } from './builtin-actions.js';
 import { DeckController } from './deck-controller.js';
 import { FakePresenter } from './test-doubles.js';
 
@@ -217,6 +218,56 @@ describe('a picture a plugin draws', () => {
     assert.deepEqual(controller.widgetsOnScreen(), [
       { buttonId: 'b3', type: 'demo.graph', params: { reading: 'cpu' } },
     ]);
+  });
+
+  it('is what a condition sees, overrides and all', async () => {
+    /*
+     * Through a real press and a real `if`, because the point is the whole
+     * path: a key wanting to know what a graph is *showing* must not be told
+     * what it was authored to show.
+     */
+    const presenter = new FakePresenter({ rows: 3, cols: 5 });
+    const controller = new DeckController(presenter, registerBuiltinActions(new ActionRegistry()), {
+      surfaces: plugin().draw,
+    });
+
+    controller.load(
+      profileWith([
+        {
+          ...button(3, widget),
+          states: [
+            {
+              id: 'default',
+              visual: { ...widget },
+              actions: {
+                press: [
+                  {
+                    type: 'core.if',
+                    params: {
+                      when: { source: 'widget-param', param: 'reading', operator: '==', value: 'gpu' },
+                    },
+                    branches: {
+                      then: [{ type: 'vars.set-variable', params: { name: 'saw', value: 'gpu' } }],
+                      else: [{ type: 'vars.set-variable', params: { name: 'saw', value: 'cpu' } }],
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ]),
+    );
+    await controller.start();
+
+    controller.simulatePress(3);
+    await settle();
+    assert.equal(controller.variables.get('saw'), 'cpu', 'what the profile says');
+
+    controller.setWidgetParam('b3', 'reading', 'gpu', 'test');
+    controller.simulatePress(3);
+    await settle();
+    assert.equal(controller.variables.get('saw'), 'gpu', 'what it is actually showing');
   });
 
   it('lets a plugin that throws leave the key blank rather than stop the deck', async () => {

@@ -1,4 +1,4 @@
-import { numberParam, stringParam, valueParam } from '../domain/action.js';
+﻿import { numberParam, stringParam, targetButton, valueParam } from '../domain/action.js';
 import { PLUGIN_API_VERSION } from '../domain/plugin.js';
 import type { PluginManifest } from '../domain/plugin.js';
 import type { VariableValue } from '../domain/variables.js';
@@ -172,11 +172,6 @@ export const variablesManifest: PluginManifest = {
           name: 'buttonId',
           type: 'profile-button',
           label: { en: 'Button', ru: 'Кнопка' },
-          description: {
-            en: 'Leave empty for the button being pressed',
-            ru: 'Оставьте пустым, чтобы менять нажатую кнопку',
-          },
-          required: false,
         },
         { name: 'stateId', type: 'button-state', label: { en: 'State', ru: 'Состояние' } },
       ],
@@ -203,11 +198,6 @@ export const variablesManifest: PluginManifest = {
           name: 'buttonId',
           type: 'profile-button',
           label: { en: 'Button', ru: 'Кнопка' },
-          description: {
-            en: 'Leave empty for the button being pressed',
-            ru: 'Оставьте пустым, чтобы менять нажатую кнопку',
-          },
-          required: false,
         },
         {
           // Only the widget's own settings, and only once a button is known.
@@ -267,19 +257,11 @@ export function registerBuiltinActions(registry: ActionRegistry): ActionRegistry
     },
 
     'vars.set-button-state': (params, ctx) => {
-      // Defaulting to the pressed button makes the common self-toggle case a
-      // one-parameter action.
-      const buttonId = typeof params['buttonId'] === 'string' && params['buttonId'].length > 0
-        ? params['buttonId']
-        : ctx.button.id;
-      ctx.setButtonState(buttonId, stringParam(params, 'stateId'));
+      ctx.setButtonState(targetButton(params, 'buttonId', ctx), stringParam(params, 'stateId'));
     },
 
     'vars.set-widget-param': (params, ctx) => {
-      const buttonId =
-        typeof params['buttonId'] === 'string' && params['buttonId'].length > 0
-          ? params['buttonId']
-          : ctx.button.id;
+      const buttonId = targetButton(params, 'buttonId', ctx);
 
       /*
        * An empty value puts the setting back to what the profile says, which

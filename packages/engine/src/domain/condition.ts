@@ -17,7 +17,7 @@ import type { VariableValue } from './variables.js';
  * same way a label is, and then compared like anything else.
  */
 
-export type ConditionSource = 'variable' | 'template' | 'button-state';
+export type ConditionSource = 'variable' | 'template' | 'button-state' | 'widget-param';
 
 export type ConditionOperator =
   | '=='
@@ -35,13 +35,20 @@ export type ConditionOperator =
 export interface Condition {
   readonly source: ConditionSource;
   /**
-   * For `variable`, which one. For `button-state`, which button — empty means
-   * the button running the script, which is what somebody means nine times in
-   * ten and saves them finding their own id.
+   * For `variable`, which one. For `button-state` and `widget-param`, which
+   * button — empty means the button running the script, which is what somebody
+   * means nine times in ten and saves them finding their own id.
    */
   readonly name?: string;
   /** For `template`: the text to render before comparing. */
   readonly text?: string;
+  /**
+   * For `widget-param`: which of that widget's settings.
+   *
+   * A second name is needed because the first one is already the button, and
+   * a widget's setting is only identified by the two together.
+   */
+  readonly param?: string;
   readonly operator: ConditionOperator;
   /** Absent for `empty` and `not-empty`, which have nothing to compare with. */
   readonly value?: VariableValue;
@@ -52,6 +59,14 @@ export interface ConditionContext {
   readonly values: Readonly<Record<string, VariableValue>>;
   /** The state a button is showing; the running button when no id is given. */
   readonly buttonState: (buttonId?: string) => string | undefined;
+  /**
+   * A widget's setting as it stands, anything laid over it included.
+   *
+   * The resolved value rather than what the profile says, which is the whole
+   * point: a key asking "is that graph showing the memory" wants to know what
+   * it is showing, not what it was authored to show.
+   */
+  readonly widgetParam?: (buttonId: string | undefined, name: string) => VariableValue | undefined;
 }
 
 export function evaluateCondition(condition: Condition, context: ConditionContext): boolean {
@@ -77,6 +92,13 @@ function leftSide(condition: Condition, context: ConditionContext): VariableValu
 
     case 'button-state':
       return context.buttonState(condition.name);
+
+    case 'widget-param':
+      // Nothing rather than a guess where there is no widget to ask, which
+      // makes `empty` the way to test whether a key has one at all.
+      return condition.param === undefined
+        ? undefined
+        : context.widgetParam?.(condition.name, condition.param);
 
     default:
       return undefined;

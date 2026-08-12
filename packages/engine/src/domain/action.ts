@@ -145,6 +145,7 @@ export interface ActionContext {
    */
   setWidgetParam(buttonId: string, name: string, value: VariableValue | undefined): void;
 
+
   /**
    * The state a button is showing, for a condition to ask about.
    *
@@ -152,6 +153,13 @@ export interface ActionContext {
    * means nine times in ten, and saves them looking up their own id.
    */
   buttonState?(buttonId?: string): string | undefined;
+  /**
+   * One setting of a key's widget, for a condition to ask about.
+   *
+   * As it stands, not as the profile says: anything a macro or a plugin laid
+   * over it is what a key asking "is that graph showing the memory" wants.
+   */
+  widgetParam?(buttonId: string | undefined, name: string): VariableValue | undefined;
 
   /**
    * Values that exist only inside the step being run.
@@ -168,6 +176,30 @@ export type ActionHandler = (
   params: Readonly<Record<string, unknown>>,
   context: ActionContext,
 ) => void | Promise<void>;
+
+/**
+ * The button doing the pressing, named rather than implied.
+ *
+ * A field left empty used to mean this, which made "nobody has chosen yet" and
+ * "this one, deliberately" the same answer — so a form could not tell whether
+ * to wait, and a select could not offer the ordinary "choose…" placeholder
+ * every other list has. Spelling it out costs a constant and settles both.
+ */
+export const THIS_BUTTON = 'this_btn';
+
+/** The button an action was pointed at, with `this_btn` resolved. */
+export function targetButton(
+  params: Readonly<Record<string, unknown>>,
+  name: string,
+  context: ActionContext,
+): string {
+  const chosen = params[name];
+  if (typeof chosen !== 'string' || chosen === '') {
+    throw new TypeError(`Parameter '${name}' must name a button`);
+  }
+
+  return chosen === THIS_BUTTON ? context.button.id : chosen;
+}
 
 /** Reads a parameter that must be a non-empty string. */
 export function stringParam(

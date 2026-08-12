@@ -327,8 +327,8 @@ function onDrop(event: DragEvent): void {
           :model-value="(step.params?.['when'] as Condition | undefined)"
           :declarations="declarations"
           :values="values"
+          :buttons="buttons"
           :own-states="ownStates"
-          :own-button-id="ownButtonId"
           @update:model-value="setCondition(index, $event)"
         />
       </div>
