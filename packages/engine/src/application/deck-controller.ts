@@ -247,6 +247,21 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
         this.variables.set(declaration.name, initialVariableValue(declaration));
       }
     }
+
+    /*
+     * The handlers start again from where the world is now.
+     *
+     * A running deck reloads its profile whenever the editor saves, and the
+     * readings taken before that belong to handlers that may no longer exist:
+     * they are keyed by button and position, so an edited condition inherits
+     * the old one's answer. That shows up as a handler that does not fire the
+     * first time it should — the worst kind of bug to be handed, since the fix
+     * is to press the key and it works.
+     *
+     * Taking a fresh reading also means a condition that is already true after
+     * an edit does not fire, which is the same promise start() makes.
+     */
+    if (this.running) this.rememberHandlerStates();
   }
 
   /** Every declared variable, for a configurator to offer and edit. */

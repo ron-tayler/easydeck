@@ -208,6 +208,37 @@ describe('handlers that watch instead of waiting for a finger', () => {
     await bed.dispose();
   });
 
+  it('starts again from the world as it is when the profile is reloaded', async () => {
+    /*
+     * A running deck reloads its profile every time the editor saves. The
+     * readings taken before that are keyed by button and position, so an
+     * edited condition would inherit the previous one's answer — and a handler
+     * that fails to fire the first time is the worst kind of bug to be handed,
+     * since pressing the key makes it work.
+     */
+    const bed = await bench(
+      profileWith([{ type: CORE_ON, params: when('cpu', '>=', 90), branches: { do: [bump()] } }]),
+    );
+
+    bed.variables.set('cpu', 95);
+    await bed.settle();
+    assert.equal(bed.variables.get('ran'), 1);
+
+    // Saved from the editor with a lower threshold, while the value stands.
+    bed.deck.load(profileWith([{ type: CORE_ON, params: when('cpu', '>=', 50), branches: { do: [bump()] } }]));
+    await bed.settle();
+    assert.equal(bed.variables.get('ran'), 1, 'already true after an edit is not newly true');
+
+    bed.variables.set('cpu', 10);
+    await bed.settle();
+    bed.variables.set('cpu', 60);
+    await bed.settle();
+
+    assert.equal(bed.variables.get('ran'), 2, 'and the new threshold is the one that counts');
+
+    await bed.dispose();
+  });
+
   it('says nothing and does nothing for a handler nobody filled in', async () => {
     const bed = await bench(profileWith([{ type: CORE_ON, branches: { do: [bump()] } }]));
 
