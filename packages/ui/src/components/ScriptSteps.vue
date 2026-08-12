@@ -547,6 +547,19 @@ li.drop-after {
   padding: 0 8px 8px;
 }
 
+/*
+ * The room around an expanded step's fields.
+ *
+ * The row itself has no padding — the head sets its own, so that a nested list
+ * can sit flush against the left edge — which left ActionParams drawing its
+ * fields hard against the border. It belongs to another component, hence the
+ * reach through: the space around it is this list's to give, not that
+ * component's to assume.
+ */
+:deep(.params) {
+  padding: 0 8px 8px;
+}
+
 .fields.row {
   display: flex;
   flex-wrap: wrap;
