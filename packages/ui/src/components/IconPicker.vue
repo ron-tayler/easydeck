@@ -6,6 +6,7 @@ import type { IconColorSlot } from '@easydeck/engine/icons';
 import { drawableIcon, readIconPalette, svgTextOf, usesCurrentColor } from '@easydeck/engine/icons';
 
 import ColorPicker from './ColorPicker.vue';
+import IconEditor from './IconEditor.vue';
 import IconLibrary from './IconLibrary.vue';
 import type { UsedIcon } from './IconLibrary.vue';
 import { isAnimated } from '../icons/rasterize.js';
@@ -26,6 +27,8 @@ const props = defineProps<{
   userIcons: readonly LibraryImage[];
   /** Pictures already on a key of this profile, offered for reuse. */
   profileIcons: readonly UsedIcon[];
+  /** What the key shows behind the picture, so a placement is judged on it. */
+  background?: string;
   /** Pictures the folder holds but the library had no room for. */
   omittedIcons?: number;
   /**
@@ -49,6 +52,8 @@ const DEFAULT_INK = '#ffffff';
 
 const browsing = ref(false);
 const mixing = ref(false);
+/** The picture whose placement is being decided, if any. */
+const placing = ref<IconSpec>();
 
 const animated = computed(() => Boolean(props.icon && isAnimated(props.icon.source)));
 
@@ -101,10 +106,32 @@ function setInk(slot: IconColorSlot | undefined, color: string): void {
  * that is no longer here, and its parameter bindings named things the new one
  * may not declare at all. A picture taken from elsewhere in the profile
  * arrives with its own, which is the point of taking it from there.
+ *
+ * An animation goes straight on. Placing one would mean wrapping it, and a
+ * wrapped GIF is no longer a GIF to whoever decides how to draw it — it would
+ * arrive on the key as its own first frame, standing still.
  */
 function chosen(icon: IconSpec): void {
-  emit('update', icon);
   browsing.value = false;
+
+  if (isAnimated(icon.source)) {
+    emit('update', icon);
+    return;
+  }
+
+  placing.value = icon;
+}
+
+/** The placement is applied to the picture; everything else about it stays. */
+function placed(source: string): void {
+  const icon = placing.value;
+  placing.value = undefined;
+  if (icon) emit('update', { ...icon, source });
+}
+
+/** Reopening the editor on the picture already here, to move it again. */
+function replace(): void {
+  if (props.icon && !animated.value) placing.value = props.icon;
 }
 </script>
 
@@ -172,6 +199,20 @@ function chosen(icon: IconSpec): void {
       <span v-if="animated" class="badge">GIF</span>
     </button>
 
+    <!-- Where it sits on the key, decided when it was chosen and changeable
+         afterwards. Absent on an animation, which cannot be placed without
+         being wrapped, and cannot be wrapped without ceasing to animate. -->
+    <button
+      v-if="icon && !animated"
+      type="button"
+      class="place"
+      :title="t('iconEditor.title')"
+      :aria-label="t('iconEditor.title')"
+      @click="replace"
+    >
+      ⤢
+    </button>
+
     <!-- Whatever else this particular picture needs — the parameter gear, on
          the few icons that declare any. Beside the button rather than before
          it: it belongs to the picture, and reads as belonging to it. -->
@@ -207,6 +248,14 @@ function chosen(icon: IconSpec): void {
         <span>{{ slot ? say(slot.label) || slot.name : t('color.iconInk') }}</span>
       </label>
     </div>
+
+    <IconEditor
+      v-if="placing"
+      :source="placing.source"
+      :background="background"
+      @apply="placed"
+      @cancel="placing = undefined"
+    />
 
     <IconLibrary
       v-if="browsing"
@@ -355,6 +404,21 @@ function chosen(icon: IconSpec): void {
 
 .clear:hover {
   color: var(--danger);
+}
+
+/* Quiet, like the gear beside it: both are about a picture already chosen. */
+.place {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.place:hover {
+  color: var(--accent);
 }
 
 </style>

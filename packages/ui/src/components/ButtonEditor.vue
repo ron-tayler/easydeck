@@ -844,6 +844,7 @@ const previewIcon = computed(() => {
               <IconPicker
                 :label="t('editor.look.picture')"
                 :icon="state.visual.icon"
+                :background="state.visual.background"
                 :user-icons="userIcons"
                 :profile-icons="profileIcons"
                 :omitted-icons="omittedIcons"

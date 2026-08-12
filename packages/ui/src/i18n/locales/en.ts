@@ -92,6 +92,14 @@ export default {
     rename: 'Rename profile',
     newTitle: 'Profile name',
   },
+  iconEditor: {
+    title: 'Place the picture',
+    hint: 'Drag to move, scroll or use the slider to resize. The key is what you see.',
+    size: 'Size',
+    centre: 'Centre',
+    fill: 'Fill the key',
+    apply: 'Place',
+  },
   color: {
     open: 'Choose colour',
     icon: 'Picture colour',

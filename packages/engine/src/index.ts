@@ -49,6 +49,14 @@ export {
 } from './domain/icon-colors.js';
 export type { DrawableIcon } from './domain/icon-source.js';
 export { drawableIcon } from './domain/icon-source.js';
+export type { IconLayer, PlacedPicture } from './domain/icon-layout.js';
+export {
+  ICON_CANVAS,
+  composeIcon,
+  isComposedIcon,
+  readIconLayers,
+  readLayerSource,
+} from './domain/icon-layout.js';
 export { variablesReadBy } from './domain/profile-variables.js';
 export type { Condition, ConditionOperator, ConditionSource } from './domain/condition.js';
 export { evaluateCondition } from './domain/condition.js';

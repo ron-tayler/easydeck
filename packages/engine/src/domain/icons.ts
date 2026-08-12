@@ -29,3 +29,12 @@ export {
 
 export type { DrawableIcon } from './icon-source.js';
 export { drawableIcon } from './icon-source.js';
+
+export type { IconLayer, PlacedPicture } from './icon-layout.js';
+export {
+  ICON_CANVAS,
+  composeIcon,
+  isComposedIcon,
+  readIconLayers,
+  readLayerSource,
+} from './icon-layout.js';

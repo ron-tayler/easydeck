@@ -601,15 +601,31 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   }
 
   /**
-   * The picture as the panel will draw it, with an id that follows its
-   * contents.
+   * The picture as the panel will draw it, and a name for it.
    *
-   * An ordinary icon passes straight through, so nothing is hashed twice for
-   * the overwhelming majority of keys.
+   * An ordinary icon passes straight through and is named by its own contents,
+   * which is what the immutable cache downstream wants.
+   *
+   * A picture that had something substituted into it is named by *what decided
+   * it* — the artwork it came from, and the values written into it — rather
+   * than by hashing what it came to. The name still changes with every value,
+   * and has to: a needle at 38% is a different picture from the same needle at
+   * 39%, and the tile cache is keyed on this. What changes is the price of
+   * saying so. Hashing the result meant a full pass over the whole picture on
+   * every tick of every variable, and a map holding a copy of the picture for
+   * each value it had ever taken — affordable while a parametric icon was a few
+   * hundred bytes of markup, and not once one can carry a photograph inside it.
    */
   private assetFor(icon: IconSpec): { id: string; source: string } {
     const drawable = drawableIcon(icon);
-    return { id: this.assets.id(drawable), source: drawable };
+    if (drawable === icon.source) return { id: this.assets.id(drawable), source: drawable };
+
+    // The artwork is hashed once, ever: profiles hand back the same string on
+    // every pass, so this is a lookup rather than a hash after the first time.
+    const artwork = this.assets.id(icon.source);
+    const decided = JSON.stringify([icon.color ?? null, icon.colors ?? null, icon.values ?? null]);
+
+    return { id: this.assets.id(`${artwork}|${decided}`), source: drawable };
   }
 
   private resolveVisual(button: ButtonDefinition): ButtonVisual {
