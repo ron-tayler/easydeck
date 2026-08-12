@@ -40,6 +40,7 @@ import MacroEditor from './MacroEditor.vue';
 import ColorPicker from './ColorPicker.vue';
 import PluginList from './PluginList.vue';
 import VariablePicker from './VariablePicker.vue';
+import VariableSelect from './VariableSelect.vue';
 
 const props = defineProps<{
   button: ButtonDefinition;
@@ -1086,13 +1087,18 @@ const previewIcon = computed(() => {
 
           <label class="field">
             <span>{{ t('editor.stateFrom') }}</span>
-            <select :value="boundFamily" @change="setFamily(($event.target as HTMLSelectElement).value)">
-              <option value="">{{ t('editor.stateFromHint') }}</option>
-              <option v-for="variable in declarations" :key="variable.name" :value="variable.name">
-                {{ variable.name }}<template v-if="variable.argument">(…)</template> —
-                {{ t(`variables.types.${variable.type}`) }}
-              </option>
-            </select>
+            <!-- Declared families only: which microphone is the next field's
+                 question, so offering every one of them here would be offering
+                 the same answer several times over. -->
+            <VariableSelect
+              :model-value="boundFamily"
+              :values="variables"
+              :declarations="declarations"
+              mode="declared"
+              :placeholder="t('editor.stateFromHint')"
+              :clear-label="t('editor.stateFromHint')"
+              @update:model-value="setFamily($event)"
+            />
           </label>
 
           <!--

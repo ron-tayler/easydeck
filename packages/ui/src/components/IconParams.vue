@@ -5,6 +5,7 @@ import type { IconBinding, IconParam, LocalizedText, VariableDeclaration } from 
 import { iconPaletteProblem, iconParamsProblem, readIconParams, svgTextOf } from '@easydeck/engine/icons';
 
 import ColorPicker from './ColorPicker.vue';
+import VariableSelect from './VariableSelect.vue';
 
 /**
  * Wiring up an icon that answers to a variable.
@@ -236,13 +237,13 @@ function type(key: string, raw: string, commit: (value: string) => void): void {
             "
           />
 
-          <select
+          <VariableSelect
             v-else
-            :value="variableOf(param)"
-            @change="setVariable(param, ($event.target as HTMLSelectElement).value)"
-          >
-            <option v-for="name in variableNames" :key="name" :value="name">{{ name }}</option>
-          </select>
+            :model-value="variableOf(param)"
+            :values="values"
+            :declarations="declarations"
+            @update:model-value="setVariable(param, $event)"
+          />
         </div>
 
         <!-- A number is mapped: this much of the variable is that much of the

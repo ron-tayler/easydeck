@@ -15,6 +15,7 @@ import ColorPicker from './ColorPicker.vue';
 import HotkeyInput from './HotkeyInput.vue';
 import PasswordInput from './PasswordInput.vue';
 import VariablePicker from './VariablePicker.vue';
+import VariableSelect from './VariableSelect.vue';
 
 const props = defineProps<{
   definition?: ActionDefinition;
@@ -488,12 +489,13 @@ async function dropSecret(param: ParamDefinition, reference: string): Promise<vo
 
       <!-- The host fills these in: only it knows this profile's variables,
            folders and pages. -->
-      <input
+      <VariableSelect
         v-else-if="param.type === 'variable'"
-        type="text"
-        list="easydeck-variables"
-        :value="valueOf(param)"
-        @input="set(param, ($event.target as HTMLInputElement).value)"
+        :model-value="valueOf(param)"
+        :values="values"
+        :declarations="declarations"
+        :placeholder="say(param.placeholder)"
+        @update:model-value="set(param, $event)"
       />
 
       <select
@@ -563,10 +565,6 @@ async function dropSecret(param: ParamDefinition, reference: string): Promise<vo
     <p v-if="takesText" class="muted templates">
       {{ t('editor.templatesWork') }} <code>{{ example }}</code>
     </p>
-
-    <datalist id="easydeck-variables">
-      <option v-for="name in variableNames" :key="name" :value="name" />
-    </datalist>
   </div>
 
   <p v-else class="muted none">{{ t('editor.noParams') }}</p>

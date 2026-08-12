@@ -12,6 +12,7 @@ import type {
 } from '@easydeck/core';
 
 import ColorPicker from './ColorPicker.vue';
+import VariableSelect from './VariableSelect.vue';
 
 /**
  * What an `if` asks about, as three controls.
@@ -86,14 +87,6 @@ const operators = computed<readonly ConditionOperator[]>(() =>
 
 /** `empty` and `not-empty` have nothing to compare with, so no value field. */
 const needsValue = computed(() => !ALONE.includes(condition.value.operator));
-
-const variableNames = computed(() => {
-  const names = new Set([
-    ...props.declarations.map((variable) => variable.name),
-    ...Object.keys(props.values),
-  ]);
-  return [...names].sort();
-});
 
 /**
  * The settings the chosen key's widget offers, fetched as it is chosen.
@@ -201,16 +194,16 @@ function setSource(source: ConditionSource): void {
       </option>
     </select>
 
-    <!-- Which variable, offered by name; typing one that no plugin has
-         published yet is allowed, because a key may be set up before the
+    <!-- Which variable, offered by owner; typing one that no plugin has
+         published yet is still allowed, because a key may be set up before the
          program behind it is running. -->
-    <input
+    <VariableSelect
       v-if="condition.source === 'variable'"
-      type="text"
-      list="easydeck-variables"
-      :value="condition.name ?? ''"
+      :model-value="condition.name ?? ''"
+      :values="values"
+      :declarations="declarations"
       :placeholder="t('editor.condition.variable')"
-      @input="patch({ name: ($event.target as HTMLInputElement).value })"
+      @update:model-value="patch({ name: $event })"
     />
 
     <input
@@ -314,11 +307,6 @@ function setSource(source: ConditionSource): void {
       @input="patch({ value: ($event.target as HTMLInputElement).value })"
     />
 
-    <!-- The window keeps one list of variable names; this adds the plugins'
-         to it rather than growing a second one beside it. -->
-    <datalist id="easydeck-variables">
-      <option v-for="name in variableNames" :key="name" :value="name" />
-    </datalist>
   </div>
 </template>
 

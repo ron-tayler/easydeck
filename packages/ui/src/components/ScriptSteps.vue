@@ -17,6 +17,7 @@ import { CORE_DELAY, CORE_FOR, CORE_IF, CORE_ON } from '@easydeck/engine/actions
 
 import ActionParams from './ActionParams.vue';
 import ConditionInput from './ConditionInput.vue';
+import VariableSelect from './VariableSelect.vue';
 
 /**
  * One list of steps, and every list inside it.
@@ -367,12 +368,13 @@ function onDrop(event: DragEvent): void {
         </label>
         <label>
           <span>{{ t('editor.blocks.fromVariable') }}</span>
-          <input
-            type="text"
-            list="easydeck-variables"
-            :value="String(step.params?.['variable'] ?? '')"
+          <VariableSelect
+            :model-value="String(step.params?.['variable'] ?? '')"
+            :values="values"
+            :declarations="declarations"
             :placeholder="t('editor.blocks.noVariable')"
-            @input="setLoop(index, { variable: ($event.target as HTMLInputElement).value })"
+            :clear-label="t('editor.blocks.noVariable')"
+            @update:model-value="setLoop(index, { variable: $event })"
           />
         </label>
         <p class="muted small">{{ loopHint }}</p>

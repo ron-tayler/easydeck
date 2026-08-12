@@ -30,6 +30,7 @@ import PluginList from './components/PluginList.vue';
 import PluginSettings from './components/PluginSettings.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
 import { useDeck } from './composables/useDeck.js';
+import { providePluginTitles } from './composables/useVariableGroups.js';
 import ButtonEditor from './components/ButtonEditor.vue';
 import PromptDialog from './components/PromptDialog.vue';
 import VariablesDialog from './components/VariablesDialog.vue';
@@ -70,8 +71,29 @@ import type { FolderDrop, LandingMode } from './composables/useProfileEditor.js'
 /** The engine's own cap, not a copy of it: two numbers would drift. */
 const MAX_PAGES = MAX_PAGES_PER_FOLDER;
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const deck = useDeck();
+
+/*
+ * Plugin names, put where anything below can read them.
+ *
+ * Every variable list groups by owner, and a group headed `hardware` rather
+ * than "Железо" is a heading in an id's clothing. The lists are five levels
+ * down from here and have no other business with plugins, so the alternative
+ * was threading the manifest list through five sets of props to be read once
+ * at the bottom.
+ */
+providePluginTitles(
+  computed(() =>
+    Object.fromEntries(
+      deck.plugins.value.map((plugin) => [
+        plugin.id,
+        plugin.name[locale.value] ?? plugin.name.en ?? plugin.id,
+      ]),
+    ),
+  ),
+);
+
 const settingsOpen = ref(false);
 const variablesOpen = ref(false);
 const selectedKey = ref<number | undefined>();

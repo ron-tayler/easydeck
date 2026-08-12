@@ -3,7 +3,13 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { VariableDeclaration, VariableType, VariableValue } from '@easydeck/core';
 
-import { VARIABLE_NAME } from '../composables/useProfileEditor.js';
+import {
+  PROFILE_GROUP,
+  groupVariables,
+  usePluginTitle,
+  type VariableRow,
+} from '../composables/useVariableGroups.js';
+import NewVariableDialog from './NewVariableDialog.vue';
 
 const props = defineProps<{
   /** Live values, which are what the deck is actually showing. */
@@ -21,43 +27,32 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-
-const TYPES: readonly VariableType[] = ['string', 'number', 'boolean', 'enum'];
-
-const byName = computed(() => {
-  const map = new Map<string, VariableDeclaration>();
-  for (const declaration of props.declarations) map.set(declaration.name, declaration);
-  return map;
-});
+const pluginTitle = usePluginTitle();
 
 /**
- * Everything the deck knows about, declared or not.
+ * Everything the deck knows about, sorted into who it belongs to.
  *
  * A variable can exist without a declaration — an action is free to write a
- * name nobody declared — and hiding those would make the dialog lie about what
- * the deck is holding.
+ * name nobody declared — and hiding those would make the window lie about what
+ * the deck is holding. They sit with the profile's own, because that is who
+ * made them, and their author column says plainly that nobody declared them.
  */
-const rows = computed(() => {
-  const names = new Set([...Object.keys(props.variables), ...byName.value.keys()]);
+const groups = computed(() =>
+  groupVariables({
+    values: props.variables,
+    declarations: props.declarations,
+    profileTitle: t('variables.profileGroup'),
+    pluginTitle,
+  }),
+);
 
-  return [...names]
-    .map((name) => {
-      const declaration = byName.value.get(name);
-      return {
-        name,
-        declaration,
-        type: declaration?.type ?? 'string',
-        pluginId: declaration?.pluginId,
-        value: props.variables[name] ?? '',
-      };
-    })
-    .sort((a, b) => {
-      // The user's own first: plugin variables are reference material, and
-      // there may be many of them once plugins arrive.
-      if (Boolean(a.pluginId) !== Boolean(b.pluginId)) return a.pluginId ? 1 : -1;
-      return a.name.localeCompare(b.name);
-    });
-});
+const taken = computed(() => groups.value.flatMap((group) => group.rows.map((row) => row.name)));
+
+/** Who to credit: a plugin by name, the profile, or nobody at all. */
+function author(row: VariableRow): string {
+  if (row.pluginId) return pluginTitle(row.pluginId);
+  return row.declared ? t('variables.profileGroup') : t('variables.undeclared');
+}
 
 // --- editing a value ------------------------------------------------------
 
@@ -75,41 +70,11 @@ function commitText(name: string, type: VariableType): void {
 
 // --- adding a variable ----------------------------------------------------
 
-const draft = ref<{ name: string; type: VariableType; options: string }>({
-  name: '',
-  type: 'string',
-  options: '',
-});
+const adding = ref(false);
 
-const trimmed = computed(() => draft.value.name.trim());
-const nameTaken = computed(() => byName.value.has(trimmed.value) || trimmed.value in props.variables);
-const nameValid = computed(() => VARIABLE_NAME.test(trimmed.value));
-/** An enum with nothing to pick from is a variable nobody could ever set. */
-const optionList = computed(() =>
-  draft.value.options
-    .split(',')
-    .map((option) => option.trim())
-    .filter((option) => option.length > 0),
-);
-const canAdd = computed(
-  () =>
-    nameValid.value &&
-    !nameTaken.value &&
-    (draft.value.type !== 'enum' || optionList.value.length > 0),
-);
-
-function add(): void {
-  if (!canAdd.value) return;
-
-  emit('declare', {
-    name: trimmed.value,
-    type: draft.value.type,
-    ...(draft.value.type === 'enum'
-      ? { options: optionList.value.map((value) => ({ value })), initial: optionList.value[0] }
-      : {}),
-  });
-
-  draft.value = { name: '', type: 'string', options: '' };
+function create(declaration: VariableDeclaration): void {
+  emit('declare', declaration);
+  adding.value = false;
 }
 </script>
 
@@ -126,25 +91,63 @@ function add(): void {
       <p class="muted hint">{{ t('variables.hint') }}</p>
 
       <div class="scroll">
-        <table v-if="rows.length > 0">
-          <tbody>
-            <tr v-for="row in rows" :key="row.name">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ t('variables.name') }}</th>
+              <th>{{ t('variables.type') }}</th>
+              <th>{{ t('variables.author') }}</th>
+              <th>{{ t('variables.value') }}</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody v-for="group in groups" :key="group.id">
+            <!-- One heading per owner, and the button that adds to the only
+                 group anybody can add to sits in its own heading rather than
+                 at the bottom of a window it has nothing to do with. -->
+            <tr class="group">
+              <th colspan="4">{{ group.title }}</th>
+              <th class="add-cell">
+                <button
+                  v-if="group.id === PROFILE_GROUP"
+                  type="button"
+                  class="add"
+                  :title="t('variables.add')"
+                  @click="adding = true"
+                >
+                  +
+                </button>
+              </th>
+            </tr>
+
+            <tr v-if="group.rows.length === 0">
+              <td colspan="5" class="muted empty">{{ t('variables.none') }}</td>
+            </tr>
+
+            <tr v-for="row in group.rows" :key="row.name">
               <td class="name">
-                <code>{{ row.name }}</code>
-                <span v-if="row.pluginId" class="owner" :title="t('variables.ownedHint')">
-                  {{ row.pluginId }}
-                </span>
+                <code>{{ row.name }}<template v-if="row.family">(…)</template></code>
               </td>
 
               <td class="type muted">{{ t(`variables.types.${row.type}`) }}</td>
 
+              <td class="author muted">{{ author(row) }}</td>
+
               <td>
+                <!-- A family is a declaration, not a variable: `obs.mute` is
+                     the shape of a name and the values live in the keys under
+                     it. A control here would set something nothing reads. -->
+                <span v-if="row.family" class="muted family">
+                  {{ t('variables.family') }}
+                </span>
+
                 <!-- The control follows the declared type: a boolean deserves
                      a checkbox, and an enum should not be free text. -->
                 <input
-                  v-if="row.type === 'boolean'"
+                  v-else-if="row.type === 'boolean'"
                   type="checkbox"
-                  :checked="row.value !== false && row.value !== '' && row.value !== 'false'"
+                  :checked="row.value !== '' && row.value !== 'false'"
                   @change="
                     emit('set', {
                       name: row.name,
@@ -155,7 +158,7 @@ function add(): void {
 
                 <select
                   v-else-if="row.type === 'enum'"
-                  :value="String(row.value)"
+                  :value="row.value"
                   @change="
                     emit('set', { name: row.name, value: ($event.target as HTMLSelectElement).value })
                   "
@@ -172,7 +175,7 @@ function add(): void {
                 <input
                   v-else
                   :type="row.type === 'number' ? 'number' : 'text'"
-                  :value="drafts[row.name] ?? String(row.value)"
+                  :value="drafts[row.name] ?? row.value"
                   @input="drafts[row.name] = ($event.target as HTMLInputElement).value"
                   @blur="commitText(row.name, row.type)"
                   @keydown.enter="($event.target as HTMLInputElement).blur()"
@@ -196,31 +199,15 @@ function add(): void {
             </tr>
           </tbody>
         </table>
-
-        <p v-else class="muted empty">{{ t('variables.none') }}</p>
       </div>
-
-      <form class="add" @submit.prevent="add">
-        <input v-model="draft.name" type="text" :placeholder="t('variables.name')" />
-        <select v-model="draft.type">
-          <option v-for="type in TYPES" :key="type" :value="type">
-            {{ t(`variables.types.${type}`) }}
-          </option>
-        </select>
-        <button type="submit" :disabled="!canAdd">{{ t('variables.add') }}</button>
-
-        <input
-          v-if="draft.type === 'enum'"
-          v-model="draft.options"
-          class="options"
-          type="text"
-          :placeholder="t('variables.optionsHint')"
-        />
-      </form>
-
-      <p v-if="trimmed.length > 0 && !nameValid" class="warn">{{ t('variables.badName') }}</p>
-      <p v-else-if="nameTaken" class="warn">{{ t('variables.exists') }}</p>
     </div>
+
+    <NewVariableDialog
+      v-if="adding"
+      :taken="taken"
+      @create="create"
+      @close="adding = false"
+    />
   </div>
 </template>
 
@@ -237,7 +224,7 @@ function add(): void {
 .dialog {
   display: flex;
   flex-direction: column;
-  width: min(620px, 92vw);
+  width: min(680px, 92vw);
   max-height: min(560px, 88vh);
   padding: 16px 18px 18px;
   background: var(--surface-0);
@@ -267,26 +254,49 @@ h2 { margin: 0; font-size: 15px; }
 
 table { width: 100%; border-collapse: collapse; }
 
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0 6px 5px 0;
+  background: var(--surface-0);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: normal;
+  text-align: left;
+}
+
 td {
   padding: 4px 6px 4px 0;
   vertical-align: middle;
 }
 
-.name { width: 34%; }
-.type { width: 15%; font-size: 11px; }
+.group th {
+  padding: 10px 6px 4px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+}
+
+.add-cell { text-align: right; }
+
+.add {
+  padding: 0 7px;
+  background: none;
+  color: var(--accent);
+  font-size: 14px;
+  line-height: 18px;
+}
+
+.name { width: 32%; }
+.type { width: 13%; font-size: 11px; }
+.author { width: 18%; font-size: 11px; }
 .actions { width: 28px; text-align: right; }
 
 code { font-family: ui-monospace, monospace; font-size: 12px; }
-
-.owner {
-  display: inline-block;
-  margin-left: 5px;
-  padding: 0 5px;
-  border-radius: 7px;
-  background: var(--surface-2);
-  color: var(--text-muted);
-  font-size: 10px;
-}
 
 .locked { font-size: 11px; opacity: 0.5; }
 
@@ -305,17 +315,5 @@ input[type='checkbox'] { width: 16px; height: 16px; }
 
 .remove:hover { color: var(--danger); }
 
-.add {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content max-content;
-  gap: 8px;
-  padding-top: 12px;
-  margin-top: 10px;
-  border-top: 1px solid var(--border);
-}
-
-.options { grid-column: 1 / -1; }
-
-.warn { margin: 8px 0 0; font-size: 12px; color: var(--danger); }
-.empty { font-size: 13px; margin: 8px 0; }
+.empty { font-size: 12px; padding: 6px 0; }
 </style>

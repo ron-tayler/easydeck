@@ -1,18 +1,20 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { VariableDeclaration, VariableValue } from '@easydeck/core';
+
+import VariableMenu from './VariableMenu.vue';
 
 /**
  * A variable list attached to whatever field it wraps.
  *
  * Wraps the control rather than sitting beside it so the trigger can be
- * aligned to the field it belongs to, and the list can open *underneath* that
- * field. An absolutely positioned popover would have been prettier and would
- * have been clipped: every field this is used in lives inside a dialog column
- * that scrolls.
+ * aligned to the field it belongs to. What it shows is the same menu every
+ * other variable field opens — this one puts a name into the text being
+ * written rather than making it the whole answer, and that is the only
+ * difference between them.
  */
-const props = defineProps<{
+defineProps<{
   values: Readonly<Record<string, VariableValue>>;
   declarations: readonly VariableDeclaration[];
 }>();
@@ -21,27 +23,16 @@ const emit = defineEmits<{ pick: [name: string] }>();
 
 const { t } = useI18n();
 
-const open = ref(false);
+const at = ref<{ x: number; y: number }>();
 
-const rows = computed(() => {
-  const declared = new Map(props.declarations.map((item) => [item.name, item]));
-  const names = new Set([...Object.keys(props.values), ...declared.keys()]);
+function toggle(event: MouseEvent): void {
+  if (at.value) {
+    at.value = undefined;
+    return;
+  }
 
-  return [...names]
-    .map((name) => ({
-      name,
-      value: String(props.values[name] ?? ''),
-      pluginId: declared.get(name)?.pluginId,
-    }))
-    .sort((a, b) => {
-      if (Boolean(a.pluginId) !== Boolean(b.pluginId)) return a.pluginId ? 1 : -1;
-      return a.name.localeCompare(b.name);
-    });
-});
-
-function choose(name: string): void {
-  emit('pick', name);
-  open.value = false;
+  const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  at.value = { x: box.right - 260, y: box.bottom + 4 };
 }
 </script>
 
@@ -52,31 +43,24 @@ function choose(name: string): void {
       <button
         type="button"
         class="toggle"
-        :class="{ open }"
+        :class="{ open: Boolean(at) }"
         :title="t('editor.pickVariable')"
-        :aria-expanded="open"
-        @click="open = !open"
+        :aria-expanded="Boolean(at)"
+        @click="toggle"
       >
         {var}
       </button>
     </div>
 
-    <div v-if="open" class="list">
-      <button
-        v-for="row in rows"
-        :key="row.name"
-        type="button"
-        class="item"
-        @click="choose(row.name)"
-      >
-        <code>{{ row.name }}</code>
-        <!-- The value is the point: it is how you tell `viewers` from
-             `viewersTotal` without leaving the field you are filling in. -->
-        <span class="value">{{ row.value }}</span>
-      </button>
-
-      <p v-if="rows.length === 0" class="muted none">{{ t('variables.none') }}</p>
-    </div>
+    <VariableMenu
+      v-if="at"
+      :x="at.x"
+      :y="at.y"
+      :values="values"
+      :declarations="declarations"
+      @pick="emit('pick', $event)"
+      @close="at = undefined"
+    />
   </div>
 </template>
 
@@ -121,51 +105,4 @@ function choose(name: string): void {
   border-color: var(--accent);
 }
 
-.list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  max-height: 148px;
-  overflow-y: auto;
-  padding: 3px;
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-}
-
-.item {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  width: 100%;
-  padding: 3px 6px;
-  background: none;
-  border: none;
-  border-radius: 5px;
-  text-align: left;
-}
-
-.item:hover {
-  background: var(--accent-soft);
-}
-
-code {
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
-  font-size: 11px;
-}
-
-.value {
-  font-size: 11px;
-  color: var(--text-muted);
-  max-width: 45%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.none {
-  font-size: 11px;
-  margin: 3px 6px;
-}
 </style>
