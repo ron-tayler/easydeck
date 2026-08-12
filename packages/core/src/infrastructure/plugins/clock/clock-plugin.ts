@@ -9,6 +9,7 @@ import type {
 } from '@easydeck/engine';
 
 import type { PluginRuntime } from '../../../application/plugin-runtime.js';
+import { SYSTEM_SOUNDS, playSystemSound } from '../../actions/win32-sound.js';
 import {
   FRESH,
   IDLE,
@@ -53,6 +54,29 @@ const PER_MINUTE = ['clock.time', 'clock.date', 'clock.weekday'] as const;
 
 const DEFAULT_COUNTDOWN = 5 * 60;
 
+type SoundSetting = 'countdownSound' | 'pomodoroSound';
+
+/**
+ * What each moment sounds like until somebody says otherwise.
+ *
+ * Kept here as well as in the manifest because the two are read by different
+ * things: the manifest's `default` is what the settings window shows in an
+ * untouched field, and nothing writes it down until Save is pressed.
+ */
+const DEFAULT_SOUNDS: Record<SoundSetting, string> = {
+  countdownSound: 'Notification.Reminder',
+  pomodoroSound: 'Notification.Default',
+};
+
+/** The sounds a finished timer may make, with "none" first because it is one. */
+const SOUND_OPTIONS = [
+  { value: '', label: { en: 'No sound', ru: 'Без звука' } },
+  ...SYSTEM_SOUNDS.map((sound) => ({
+    value: sound.alias,
+    label: { en: sound.en, ru: sound.ru },
+  })),
+];
+
 const DOING = [
   { value: 'toggle', label: { en: 'Start or pause', ru: 'Пустить или остановить' } },
   { value: 'start', label: { en: 'Start', ru: 'Пустить' } },
@@ -89,6 +113,28 @@ export const clockManifest: PluginManifest = {
         en: "Leave empty to follow the system. A tag like 'ru-RU' or 'en-GB' otherwise",
         ru: 'Оставьте пустым, чтобы взять системный. Иначе — метка вида «ru-RU» или «en-GB»',
       },
+    },
+    {
+      /*
+       * Two settings rather than one, because they are different moments. A
+       * countdown finishes when somebody asked it to and wants telling; a
+       * pomodoro changes phase every twenty-five minutes all day, and what is
+       * right for the first is wearing as the second.
+       */
+      name: 'countdownSound',
+      type: 'select',
+      label: { en: 'Sound when the countdown finishes', ru: 'Звук по окончании отсчёта' },
+      default: DEFAULT_SOUNDS.countdownSound,
+      required: false,
+      options: SOUND_OPTIONS,
+    },
+    {
+      name: 'pomodoroSound',
+      type: 'select',
+      label: { en: 'Sound when a pomodoro phase ends', ru: 'Звук при смене фазы помодоро' },
+      default: DEFAULT_SOUNDS.pomodoroSound,
+      required: false,
+      options: SOUND_OPTIONS,
     },
     {
       name: 'work',
@@ -400,8 +446,14 @@ export class ClockPlugin implements Plugin {
   private countdownTotal = DEFAULT_COUNTDOWN;
   private pomodoro: Pomodoro = FRESH;
 
-  /** Injectable so the tests are not at the mercy of the wall clock. */
-  constructor(private readonly now: () => number = Date.now) {}
+  /**
+   * Both of these are injectable so a test is at the mercy of neither the wall
+   * clock nor the speakers.
+   */
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly play: (alias: string) => void = (alias) => void playSystemSound(alias),
+  ) {}
 
   start(host: PluginHost): void {
     this.host = host;
@@ -509,9 +561,27 @@ export class ClockPlugin implements Plugin {
     // a handler can wait for besides the number reaching zero.
     if (this.countdown.running && remaining(this.countdown, this.countdownTotal, now) === 0) {
       this.countdown = { running: false, banked: this.countdownTotal };
+      this.announce('countdownSound');
     }
 
+    /*
+     * Only the rollover the clock did by itself is announced.
+     *
+     * Every action advances the pomodoro before calling this, so by the time
+     * we get here a skip or a start has already happened and leaves nothing to
+     * notice — which is the point. Somebody who pressed "skip" watched
+     * themselves do it and does not need telling.
+     *
+     * A plugin that has been quiet through two phases rolls through both and
+     * makes one sound, not two.
+     */
+    const was = this.pomodoro;
     this.pomodoro = advance(this.pomodoro, this.plan(), now);
+    const moved = this.pomodoro.phase !== was.phase || this.pomodoro.round !== was.round;
+    // The round matters as much as the phase: rolling through a whole work and
+    // a whole break lands back in `work`, and comparing the name alone would
+    // decide nothing had happened.
+    if (this.pomodoro.running && moved) this.announce('pomodoroSound');
 
     const clock = new Date(now);
     this.set('clock.time', this.timeText(clock, false));
@@ -535,6 +605,35 @@ export class ClockPlugin implements Plugin {
     this.set('clock.pomodoro-running', this.pomodoro.running);
 
     this.ticker?.every(this.cadence());
+  }
+
+  /**
+   * Makes whichever noise the user chose for this moment, if any.
+   *
+   * Deliberately not `setVariable` and a handler: a sound is an output nobody
+   * can see on a key, so `onWatched` says nothing about whether anybody wants
+   * it. See `cadence` for what that costs.
+   */
+  private announce(setting: SoundSetting): void {
+    const chosen = this.soundFor(setting);
+    if (chosen) this.play(chosen);
+  }
+
+  /**
+   * Which sound this moment gets, falling back the way every plugin here does.
+   *
+   * A `default` in the manifest is what the settings window puts in the field;
+   * it is not written anywhere until somebody presses Save, so a plugin that
+   * read only what was stored would be silent until the user opened its
+   * settings and closed them again.
+   *
+   * An empty string is a different thing from an absent one, and this is the
+   * line that keeps them apart: absent means nobody has chosen, empty means
+   * somebody chose silence.
+   */
+  private soundFor(setting: SoundSetting): string {
+    const chosen = this.host?.settings()[setting];
+    return typeof chosen === 'string' ? chosen : DEFAULT_SOUNDS[setting];
   }
 
   /**
@@ -562,7 +661,29 @@ export class ClockPlugin implements Plugin {
     ];
     if (ticking.some((name) => this.watched.has(name))) return 1000;
 
+    /*
+     * The one thing that beats without anybody watching.
+     *
+     * A sound is not a variable, so nothing reports that somebody is waiting
+     * for it — and a timer that only makes its noise the next time a key
+     * happens to look at it is a timer nobody would trust. So a running timer
+     * with a sound set keeps the second, whether or not a key shows it.
+     *
+     * Narrow on purpose: it costs a beat only while a timer is actually
+     * running and only for somebody who asked for the sound, which is exactly
+     * when they want it.
+     */
+    if (this.awaited()) return 1000;
+
     return PER_MINUTE.some((name) => this.watched.has(name)) ? 60_000 : 0;
+  }
+
+  /** Whether a running timer owes somebody a noise. */
+  private awaited(): boolean {
+    return (
+      (this.countdown.running && this.soundFor('countdownSound') !== '') ||
+      (this.pomodoro.running && this.soundFor('pomodoroSound') !== '')
+    );
   }
 
   private plan(): Plan {
@@ -616,8 +737,9 @@ export async function registerClockPlugin(
   registry: ActionRegistry,
   runtime: PluginRuntime,
   now: () => number = Date.now,
+  play?: (alias: string) => void,
 ): Promise<ClockPlugin> {
-  const plugin = new ClockPlugin(now);
+  const plugin = play ? new ClockPlugin(now, play) : new ClockPlugin(now);
 
   /** An action saved before this verb existed, or with the field left blank. */
   const verb = (params: Readonly<Record<string, unknown>>, fallback: string): string =>

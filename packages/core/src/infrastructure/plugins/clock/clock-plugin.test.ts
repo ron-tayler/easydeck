@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import { VariableStore, createActionRegistry } from '@easydeck/engine';
@@ -15,21 +18,30 @@ import { CLOCK_PLUGIN_ID, registerClockPlugin } from './clock-plugin.js';
  */
 async function bench(startingAt = Date.parse('2026-08-12T09:41:07Z')) {
   let now = startingAt;
+  const played: string[] = [];
+
+  // A real pair of folders, thrown away afterwards: the settings tests write,
+  // and writing into the user's own configuration to check a beep would be a
+  // poor trade.
+  const dir = await mkdtemp(join(tmpdir(), 'easydeck-clock-'));
 
   const variables = new VariableStore();
   const runtime = new PluginRuntime({
-    // Paths that do not exist: the clock reads settings and writes none, so a
-    // stray write would land somewhere harmless rather than in the user's own
-    // configuration.
-    settings: new PluginSettingsStore(undefined, '/nonexistent/open', '/nonexistent/sealed'),
+    settings: new PluginSettingsStore(undefined, join(dir, 'open'), join(dir, 'sealed')),
     variables,
   });
 
   const registry = createActionRegistry();
-  const plugin = await registerClockPlugin(registry, runtime, () => now);
+  const plugin = await registerClockPlugin(registry, runtime, () => now, (alias) => {
+    played.push(alias);
+  });
 
   return {
     registry,
+    played,
+    /** Fills in the plugin's settings the way the settings window would. */
+    configure: (values: Record<string, string | number | boolean>) =>
+      runtime.configure(CLOCK_PLUGIN_ID, values),
     /** Moves the clock on without waiting for it. */
     travel: (seconds: number) => {
       now += seconds * 1000;
@@ -40,6 +52,7 @@ async function bench(startingAt = Date.parse('2026-08-12T09:41:07Z')) {
     run: (type: string, params: Record<string, unknown> = {}) =>
       registry.run({ type, params }, context()),
     value: (name: string) => variables.snapshot()[name],
+    dispose: () => rm(dir, { recursive: true, force: true }),
   };
 }
 
@@ -214,6 +227,87 @@ describe('the pomodoro', () => {
     assert.equal(clock.value('clock.pomodoro-phase'), 'work');
     assert.equal(clock.value('clock.pomodoro-round'), 1);
     assert.equal(clock.value('clock.pomodoro-running'), false);
+  });
+});
+
+describe('the noise a finished timer makes', () => {
+  it('sounds when the countdown arrives, and once', async () => {
+    const clock = await bench();
+
+    await clock.run('clock.countdown', { do: 'restart', minutes: 0, seconds: 10 });
+    assert.deepEqual(clock.played, [], 'nothing yet');
+
+    clock.travel(10);
+    clock.tick();
+    assert.deepEqual(clock.played, ['Notification.Reminder']);
+
+    // Every beat afterwards finds a countdown that is already finished.
+    clock.travel(60);
+    clock.tick();
+    clock.tick();
+    assert.equal(clock.played.length, 1);
+
+    await clock.dispose();
+  });
+
+  it('sounds when a pomodoro phase runs out by itself', async () => {
+    const clock = await bench();
+
+    await clock.run('clock.pomodoro', { do: 'start' });
+    clock.travel(25 * 60);
+    clock.tick();
+
+    assert.deepEqual(clock.played, ['Notification.Default']);
+    await clock.dispose();
+  });
+
+  it('says nothing when the phase was changed by hand', async () => {
+    // Somebody who pressed "skip" watched themselves do it. Same for starting
+    // and clearing, which also move the phase.
+    const clock = await bench();
+
+    await clock.run('clock.pomodoro', { do: 'start' });
+    await clock.run('clock.pomodoro', { do: 'skip' });
+    await clock.run('clock.pomodoro', { do: 'reset' });
+
+    assert.deepEqual(clock.played, []);
+    await clock.dispose();
+  });
+
+  it('makes one noise for two phases missed while it was quiet', async () => {
+    const clock = await bench();
+
+    await clock.run('clock.pomodoro', { do: 'start' });
+    // Work and the break both gone by; it comes back inside the second work.
+    clock.travel(25 * 60 + 5 * 60 + 60);
+    clock.tick();
+
+    assert.deepEqual(clock.played, ['Notification.Default']);
+    await clock.dispose();
+  });
+
+  it('is silent for somebody who chose silence', async () => {
+    const clock = await bench();
+    await clock.configure({ countdownSound: '', pomodoroSound: '' });
+
+    await clock.run('clock.countdown', { do: 'restart', minutes: 0, seconds: 5 });
+    clock.travel(5);
+    clock.tick();
+
+    assert.deepEqual(clock.played, []);
+    await clock.dispose();
+  });
+
+  it('plays what was chosen instead of what it shipped with', async () => {
+    const clock = await bench();
+    await clock.configure({ countdownSound: 'Notification.Looping.Alarm' });
+
+    await clock.run('clock.countdown', { do: 'restart', minutes: 0, seconds: 5 });
+    clock.travel(5);
+    clock.tick();
+
+    assert.deepEqual(clock.played, ['Notification.Looping.Alarm']);
+    await clock.dispose();
   });
 });
 
