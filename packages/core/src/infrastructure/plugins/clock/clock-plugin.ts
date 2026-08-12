@@ -1,4 +1,4 @@
-﻿import { PLUGIN_API_VERSION, numberParam } from '@easydeck/engine';
+﻿import { PLUGIN_API_VERSION, numberParam, stringParam, variableKey } from '@easydeck/engine';
 import type {
   ActionRegistry,
   Plugin,
@@ -54,6 +54,9 @@ const PER_MINUTE = ['clock.time', 'clock.date', 'clock.weekday'] as const;
 
 const DEFAULT_COUNTDOWN = 5 * 60;
 
+/** The three keys every named timer publishes under. */
+const TIMER_FAMILIES = ['clock.timer', 'clock.timer-seconds', 'clock.timer-running'] as const;
+
 type SoundSetting = 'countdownSound' | 'pomodoroSound';
 
 /**
@@ -83,6 +86,18 @@ const DOING = [
   { value: 'stop', label: { en: 'Pause', ru: 'Остановить' } },
   { value: 'restart', label: { en: 'Start again from zero', ru: 'Начать заново с нуля' } },
   { value: 'reset', label: { en: 'Clear', ru: 'Сбросить' } },
+];
+
+/**
+ * The same five, plus the one only a named timer can be asked.
+ *
+ * There are as many timers as somebody has named, so unlike the three fixed
+ * ones there has to be a way to be rid of a timer — not least of a typo, which
+ * is what a name typed by hand makes instead of an error.
+ */
+const TIMER_DOING = [
+  ...DOING,
+  { value: 'forget', label: { en: 'Delete the timer', ru: 'Удалить таймер' } },
 ];
 
 export const clockManifest: PluginManifest = {
@@ -238,6 +253,41 @@ export const clockManifest: PluginManifest = {
       label: { en: 'Pomodoro running', ru: 'Помодоро идёт' },
       initial: false,
     },
+
+    /*
+     * As many timers as somebody has names for.
+     *
+     * A family, so one declaration covers all of them and the key carries
+     * which — `clock.timer(Кофе)` — and so a page showing one timer costs a
+     * beat for that one rather than for every timer in the profile.
+     *
+     * A timer comes into existence by being named in the macro that starts it,
+     * and there is no list of them in the settings: a name in a macro and a
+     * name in a list is one place too many for the same thing, and the second
+     * one goes stale. What the fields offer is what is running now.
+     */
+    {
+      name: 'clock.timer',
+      type: 'string',
+      label: { en: 'Timer', ru: 'Таймер' },
+      argument: { label: { en: 'Name', ru: 'Название' }, optionsFrom: 'timers' },
+    },
+    {
+      name: 'clock.timer-seconds',
+      type: 'number',
+      label: { en: 'Timer, seconds', ru: 'Таймер, секунд' },
+      description: {
+        en: 'Counts down to zero when started with a length, up from zero without one',
+        ru: 'Считает до нуля, если задана длительность, и от нуля вверх, если нет',
+      },
+      argument: { label: { en: 'Name', ru: 'Название' }, optionsFrom: 'timers' },
+    },
+    {
+      name: 'clock.timer-running',
+      type: 'boolean',
+      label: { en: 'Timer running', ru: 'Таймер идёт' },
+      argument: { label: { en: 'Name', ru: 'Название' }, optionsFrom: 'timers' },
+    },
   ],
 
   actions: [
@@ -292,6 +342,78 @@ export const clockManifest: PluginManifest = {
             ...DOING,
             { value: 'skip', label: { en: 'Skip to the next phase', ru: 'Перейти к следующей фазе' } },
           ],
+        },
+      ],
+    },
+
+    /*
+     * Starting one is where the name is typed, and everywhere else it is
+     * chosen.
+     *
+     * Deliberately two actions rather than a verb on one. A timer exists
+     * because a key started it, so the field that brings it into being is the
+     * one place a name can be new — and a box you type into is how anybody
+     * works out that naming it is what makes it. Every other question is about
+     * a timer that already exists, and there a list is both easier and the
+     * only way to be sure of hitting the same name twice.
+     */
+    {
+      type: 'clock.start-timer',
+      icon: 'clock',
+      label: { en: 'Start a timer', ru: 'Пустить таймер' },
+      description: {
+        en: 'Naming it is what creates it; two keys with one name are one timer',
+        ru: 'Таймер создаётся именем; две клавиши с одним именем — один таймер',
+      },
+      params: [
+        {
+          name: 'name',
+          type: 'string',
+          label: { en: 'Name', ru: 'Название' },
+          placeholder: { en: 'Coffee', ru: 'Кофе' },
+        },
+        {
+          name: 'minutes',
+          type: 'number',
+          label: { en: 'Minutes', ru: 'Минут' },
+          default: 0,
+          min: 0,
+          max: 600,
+          description: {
+            en: 'Leave both at zero and it counts up instead, as a stopwatch',
+            ru: 'Оставьте оба нулём — и он будет считать вверх, как секундомер',
+          },
+        },
+        { name: 'seconds', type: 'number', label: { en: 'Seconds', ru: 'Секунд' }, default: 0, min: 0, max: 59 },
+      ],
+    },
+    {
+      type: 'clock.timer',
+      icon: 'clock',
+      label: { en: 'Timer', ru: 'Таймер' },
+      description: {
+        en: 'Pauses, restarts or deletes a timer that is already there',
+        ru: 'Останавливает, перезапускает или удаляет уже существующий таймер',
+      },
+      params: [
+        {
+          name: 'name',
+          type: 'select',
+          optionsFrom: 'timers',
+          label: { en: 'Name', ru: 'Название' },
+          // Nothing to list is not a fault here, it is the ordinary first
+          // half-minute: say what to do about it rather than offer a box.
+          emptyNote: {
+            en: 'No timer is running. One is created by the "Start a timer" action',
+            ru: 'Ни один таймер не запущен. Создать его можно макросом «Пустить таймер»',
+          },
+        },
+        {
+          name: 'do',
+          type: 'select',
+          label: { en: 'What to do', ru: 'Что сделать' },
+          default: 'toggle',
+          options: TIMER_DOING,
         },
       ],
     },
@@ -436,6 +558,18 @@ export const clockManifest: PluginManifest = {
   ],
 };
 
+/**
+ * One of the timers somebody named, and how long it was given.
+ *
+ * `total` of zero counts up rather than down, which is the difference between
+ * a stopwatch and a countdown and the only difference — everything else about
+ * them is the same span with the same five verbs.
+ */
+interface Timer {
+  readonly span: Span;
+  readonly total: number;
+}
+
 export class ClockPlugin implements Plugin {
   private host?: PluginHost;
   private ticker?: Ticker;
@@ -445,6 +579,15 @@ export class ClockPlugin implements Plugin {
   private countdown: Span = IDLE;
   private countdownTotal = DEFAULT_COUNTDOWN;
   private pomodoro: Pomodoro = FRESH;
+
+  /**
+   * The named timers, by name, for as long as the daemon is up.
+   *
+   * Not written down anywhere. A running stopwatch is a fact about this
+   * session, and one restored across a restart saying fourteen hours is
+   * rubbish nobody started.
+   */
+  private readonly timers = new Map<string, Timer>();
 
   /**
    * Both of these are injectable so a test is at the mercy of neither the wall
@@ -457,6 +600,13 @@ export class ClockPlugin implements Plugin {
 
   start(host: PluginHost): void {
     this.host = host;
+
+    // What exists right now, which is the only list of timers there is.
+    host.provideOptions('timers', async () =>
+      [...this.timers.keys()]
+        .sort((a, b) => a.localeCompare(b))
+        .map((name) => ({ value: name, label: { en: name } })),
+    );
 
     host.onWatched((keys) => {
       this.watched = new Set(keys);
@@ -498,6 +648,47 @@ export class ClockPlugin implements Plugin {
     }
 
     this.countdown = this.applied(this.countdown, what, now);
+    this.tick();
+  }
+
+  /**
+   * Creates a timer, or starts an existing one over.
+   *
+   * Starting rather than resuming, deliberately: a key that says "start the
+   * coffee timer, five minutes" means five minutes every time it is pressed.
+   * Resuming a paused one is what the other action's "start" is for.
+   */
+  startTimer(name: string, seconds: number): void {
+    const key = name.trim();
+    // Thrown rather than ignored: an unnamed timer is a key that will never do
+    // anything, and the warning on it is the only way anybody would find out.
+    if (key === '') throw new TypeError('A timer needs a name');
+
+    this.timers.set(key, { span: restart(this.now()), total: Math.max(0, Math.round(seconds)) });
+    this.tick();
+  }
+
+  /**
+   * Governs a timer that already exists, and does nothing where none does.
+   *
+   * Quietly nothing, on purpose. Timers do not outlive the daemon but the
+   * profile does, so every "pause the coffee timer" key spends the time before
+   * its timer is started pointing at nothing — the ordinary state of affairs
+   * rather than a mistake worth marking a key for.
+   */
+  timerAction(name: string, what: string): void {
+    const key = name.trim();
+    const timer = this.timers.get(key);
+    if (!timer) return;
+
+    if (what === 'forget') {
+      this.timers.delete(key);
+      this.clearTimer(key);
+      this.tick();
+      return;
+    }
+
+    this.timers.set(key, { ...timer, span: this.applied(timer.span, what, this.now()) });
     this.tick();
   }
 
@@ -604,7 +795,31 @@ export class ClockPlugin implements Plugin {
     this.set('clock.pomodoro-round', this.pomodoro.round);
     this.set('clock.pomodoro-running', this.pomodoro.running);
 
+    this.tickTimers(now);
+
     this.ticker?.every(this.cadence());
+  }
+
+  /** Every named timer, brought up to date and published. */
+  private tickTimers(now: number): void {
+    for (const [name, timer] of this.timers) {
+      let span = timer.span;
+
+      // A countdown that has arrived stops being one that is running, exactly
+      // as the fixed countdown does — the flag turning over is the edge a
+      // handler waits for, besides the number reaching zero.
+      if (timer.total > 0 && span.running && remaining(span, timer.total, now) === 0) {
+        span = { running: false, banked: timer.total };
+        this.timers.set(name, { ...timer, span });
+        this.announce('countdownSound');
+      }
+
+      const seconds = timer.total > 0 ? remaining(span, timer.total, now) : elapsed(span, now);
+
+      this.setFamily('clock.timer', name, formatSpan(seconds));
+      this.setFamily('clock.timer-seconds', name, seconds);
+      this.setFamily('clock.timer-running', name, span.running);
+    }
   }
 
   /**
@@ -647,6 +862,18 @@ export class ClockPlugin implements Plugin {
     if (this.watched.has(name)) this.host?.setVariable(name, value);
   }
 
+  /** The same thrift for a family, whose keys arrive whole from `onWatched`. */
+  private setFamily(family: string, argument: string, value: VariableValue): void {
+    if (this.watched.has(variableKey(family, argument))) {
+      this.host?.setFamily(family, argument, value);
+    }
+  }
+
+  /** Takes a deleted timer's keys off the board rather than freezing them. */
+  private clearTimer(name: string): void {
+    for (const family of TIMER_FAMILIES) this.host?.setFamily(family, name, undefined);
+  }
+
   /** A second, a minute, or nothing, according to what is being read. */
   private cadence(): number {
     if (this.watched.has('clock.seconds')) return 1000;
@@ -660,6 +887,18 @@ export class ClockPlugin implements Plugin {
       ...(this.pomodoro.running ? ['clock.pomodoro'] : []),
     ];
     if (ticking.some((name) => this.watched.has(name))) return 1000;
+
+    // The same rule for the named ones: a second is worth it only where a
+    // timer is running *and* a key shows what it says.
+    for (const [name, timer] of this.timers) {
+      if (!timer.span.running) continue;
+      if (
+        this.watched.has(variableKey('clock.timer', name)) ||
+        this.watched.has(variableKey('clock.timer-seconds', name))
+      ) {
+        return 1000;
+      }
+    }
 
     /*
      * The one thing that beats without anybody watching.
@@ -680,9 +919,14 @@ export class ClockPlugin implements Plugin {
 
   /** Whether a running timer owes somebody a noise. */
   private awaited(): boolean {
+    if (this.pomodoro.running && this.soundFor('pomodoroSound') !== '') return true;
+    if (this.soundFor('countdownSound') === '') return false;
+
+    // A named timer counting up has no end to announce, so it is only the ones
+    // given a length that keep the beat alive for a sound nobody is watching.
     return (
-      (this.countdown.running && this.soundFor('countdownSound') !== '') ||
-      (this.pomodoro.running && this.soundFor('pomodoroSound') !== '')
+      this.countdown.running ||
+      [...this.timers.values()].some((timer) => timer.total > 0 && timer.span.running)
     );
   }
 
@@ -755,6 +999,14 @@ export async function registerClockPlugin(
     },
 
     'clock.pomodoro': (params) => plugin.pomodoroAction(verb(params, 'toggle')),
+
+    'clock.start-timer': (params) => {
+      const minutes = numberParam(params, 'minutes', 0);
+      const seconds = numberParam(params, 'seconds', 0);
+      plugin.startTimer(stringParam(params, 'name'), minutes * 60 + seconds);
+    },
+
+    'clock.timer': (params) => plugin.timerAction(stringParam(params, 'name'), verb(params, 'toggle')),
   });
 
   await runtime.install(clockManifest, plugin);

@@ -163,22 +163,33 @@ Three additions to `ParamDefinition`, all optional, none specific to widgets:
 solved by adding a type. These are that solved once, generally; it need not be
 rewritten, but nothing new should need the same treatment.
 
-## Timers, when they come
+## Timers, as they came
 
-Stopwatch, countdown and pomodoro become widgets, and the instance is named by
-an ordinary parameter — no new addressing. Two keys with the same name are one
-timer, which is how a start key and a display key work; two names are two
-independent timers, which is the point.
+Named timers landed as a **family of variables**, not as a widget:
+`clock.timer(Кофе)` with its `-seconds` and `-running` beside it. A widget
+would have meant a plugin drawing the numerals, which is a picture where a
+string will do — the label already substitutes a variable, and a timer that is
+a variable can be compared in an `if`, bound to a state and put in a label
+without any of this document's machinery.
+
+Two keys with the same name are one timer, which is how a start key and a
+display key work; two names are two independent timers, which is the point.
 
 A timer comes into existence by being named. There is no list of timers in the
 plugin's settings, because that would be a second place where they exist and it
 would go stale — a name in a macro and a name in a list are one thing too many.
-The cost is that a typo makes a second timer rather than an error; the dropdown
-offers what is running, and typing is still allowed.
+
+Which is why the name is **typed** in the action that starts one and **chosen**
+everywhere else. The typing is not a fallback: it is where somebody works out
+that naming a timer is what makes it. Every other question is about a timer
+that already exists, and there a list is both easier and the only way to be
+sure of writing the same name twice. The cost stands — a typo makes a second
+timer rather than an error — so the governing action can delete one.
 
 Timers do not survive a restart of the daemon: a running stopwatch is a fact
 about this session, and one that came back saying fourteen hours is rubbish
-nobody started.
+nobody started. The keys that govern one therefore spend the time before it is
+started pointing at nothing, and do nothing, quietly.
 
 ## What this does not decide
 
