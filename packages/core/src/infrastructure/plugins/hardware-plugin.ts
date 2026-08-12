@@ -14,6 +14,7 @@ import type {
 } from '@easydeck/engine';
 
 import type { PluginRuntime } from '../../application/plugin-runtime.js';
+import { gpuAvailable, readGpu, readGpuTemperature } from '../actions/win32-gpu.js';
 
 /**
  * What the machine is doing, on a key.
@@ -43,6 +44,15 @@ const FAST_INTERVAL_MS = 2_000;
 /** Disks change slowly and cost a filesystem call each; once a minute is plenty. */
 const DISK_INTERVAL_MS = 60_000;
 
+/**
+ * How often the card's temperature is asked for.
+ *
+ * Slower than the load, because this one starts a program to find out and
+ * because a heatsink does not change its mind in two seconds. Fast enough that
+ * a key still tells you a game got the fans going.
+ */
+const HEAT_INTERVAL_MS = 10_000;
+
 const GIB = 1024 ** 3;
 
 export const HARDWARE_PLUGIN_ID = 'hardware';
@@ -59,6 +69,20 @@ interface Disk {
 export interface HardwareOptions {
   readonly fastIntervalMs?: number;
   readonly diskIntervalMs?: number;
+  readonly heatIntervalMs?: number;
+}
+
+/**
+ * What the graphics card can be asked, on this machine.
+ *
+ * Two questions with different answers: Windows' own counters carry load and
+ * memory for every card there is, while the temperature belongs to the card
+ * and only its driver knows it. So a machine may have one, both or neither,
+ * and the manifest is built from what actually answered.
+ */
+export interface GpuSupport {
+  readonly counters: boolean;
+  readonly temperature: boolean;
 }
 
 /**
@@ -71,7 +95,10 @@ export interface HardwareOptions {
  * start, which is the right trade for a deck: a key bound to a drive that
  * comes and goes is not a key anybody wants.
  */
-export function hardwareManifest(disks: readonly Disk[]): PluginManifest {
+export function hardwareManifest(
+  disks: readonly Disk[],
+  gpu: GpuSupport = { counters: false, temperature: false },
+): PluginManifest {
   const variables: VariableDeclaration[] = [
     {
       name: 'hw.cpu',
@@ -104,6 +131,48 @@ export function hardwareManifest(disks: readonly Disk[]): PluginManifest {
       initial: 0,
     },
   ];
+
+  if (gpu.counters) {
+    variables.push(
+      {
+        name: 'hw.gpu',
+        type: 'number',
+        label: { en: 'Graphics card, %', ru: 'Видеокарта, %' },
+        description: {
+          en: 'Its busiest engine, which is the figure the task manager shows',
+          ru: 'Самый занятый движок — то же число, что в диспетчере задач',
+        },
+        initial: 0,
+      },
+      {
+        name: 'hw.gpu-memory',
+        type: 'number',
+        label: { en: 'Video memory used, %', ru: 'Видеопамять занята, %' },
+        initial: 0,
+      },
+      {
+        name: 'hw.gpu-memory-used',
+        type: 'number',
+        label: { en: 'Video memory used, GB', ru: 'Видеопамять занята, ГБ' },
+        initial: 0,
+      },
+      {
+        name: 'hw.gpu-memory-total',
+        type: 'number',
+        label: { en: 'Video memory total, GB', ru: 'Видеопамять всего, ГБ' },
+        initial: 0,
+      },
+    );
+  }
+
+  if (gpu.temperature) {
+    variables.push({
+      name: 'hw.gpu-temperature',
+      type: 'number',
+      label: { en: 'Graphics card, °C', ru: 'Видеокарта, °C' },
+      initial: 0,
+    });
+  }
 
   for (const disk of disks) {
     variables.push({
@@ -173,6 +242,78 @@ export function hardwareManifest(disks: readonly Disk[]): PluginManifest {
           }]
         }
       },
+      ...(gpu.counters
+        ? [
+            {
+              name: 'gpu',
+              label: { en: 'Graphics card', ru: 'Видеокарта' },
+              description: {
+                en: 'Load, coloured as it climbs',
+                ru: 'Нагрузка, с цветом по мере роста',
+              },
+              button: {
+                states: [
+                  {
+                    id: 'default',
+                    visual: {
+                      label: {
+                        text: 'GPU\n{{hw.gpu}}%',
+                        color: '#ffffff',
+                        position: 'center' as const,
+                        fontSize: 20,
+                      },
+                      icon: { source: 'plugin:hardware/gpu.svg' },
+                    },
+                  },
+                ],
+              },
+            },
+            {
+              name: 'gpu-memory',
+              label: { en: 'Video memory', ru: 'Видеопамять' },
+              description: {
+                en: 'How much of the card’s memory is in use',
+                ru: 'Сколько видеопамяти занято',
+              },
+              button: {
+                states: [
+                  {
+                    id: 'default',
+                    visual: {
+                      label: {
+                        text: 'VRAM\n{{hw.gpu-memory-used}} GB',
+                        color: '#ffffff',
+                        position: 'center' as const,
+                        fontSize: 15,
+                      },
+                      icon: { source: 'plugin:hardware/gpu.svg' },
+                    },
+                  },
+                ],
+              },
+            },
+          ]
+        : []),
+      ...(gpu.temperature
+        ? [
+            {
+              name: 'gpu-temperature',
+              label: { en: 'Graphics card heat', ru: 'Нагрев видеокарты' },
+              description: {
+                en: 'Comfortable, working, and worth looking at',
+                ru: 'Спокойно, под нагрузкой и стоит посмотреть',
+              },
+              button: gauge(
+                'gpu-temperature',
+                { en: 'Graphics card heat', ru: 'Нагрев видеокарты' },
+                'hw.gpu-temperature',
+                'GPU\n{{hw.gpu-temperature}}°',
+                { en: '', ru: '' },
+                [65, 80],
+              ).button,
+            },
+          ]
+        : []),
       ...disks.map((disk)=>({
         name: `disk-${disk.key}`,
         label: { en: `Disk ${disk.label}`, ru: `Диск ${disk.label}` },
@@ -214,23 +355,34 @@ function gauge(
   variable: string,
   text: string,
   description: { en: string; ru: string },
+  /*
+   * Where comfortable ends and where worth-looking-at begins.
+   *
+   * Percentages and degrees do not share a scale — eighty-five percent of a
+   * processor is busy, eighty-five degrees on a card is warm but ordinary —
+   * so the two thresholds come from the caller rather than being the same
+   * numbers for everything with a band on it.
+   */
+  bands: readonly [number, number] = [60, 85],
 ): ButtonPreset {
+  const [busy, hot] = bands;
+
   const button: PresetButton = {
     stateFrom: variable,
     states: [
       {
         id: 'calm',
-        when: { max: 59 },
+        when: { max: busy - 1 },
         visual: { background: '#22303c', label: { text, fontSize: 13 } },
       },
       {
         id: 'busy',
-        when: { min: 60, max: 84 },
+        when: { min: busy, max: hot - 1 },
         visual: { background: '#6b5416', label: { text, fontSize: 13 } },
       },
       {
         id: 'hot',
-        when: { min: 85 },
+        when: { min: hot },
         visual: { background: '#7a2c2c', label: { text, fontSize: 13 } },
       },
     ],
@@ -242,21 +394,34 @@ function gauge(
 export class HardwarePlugin implements Plugin {
   private fast?: Ticker;
   private slow?: Ticker;
+  private heat?: Ticker;
   /** The processor counters as they were last time, to subtract from. */
   private previous = sampleCpu();
 
   constructor(
     private readonly disks: readonly Disk[],
+    private readonly gpu: GpuSupport = { counters: false, temperature: false },
     private readonly options: HardwareOptions = {},
   ) {}
 
   start(host: PluginHost): void {
     host.setVariable('hw.memory-total', round(totalmem() / GIB, 1));
 
-    // Two rhythms, registered separately: the host keeps both, and stopping
-    // this plugin is what stops them rather than a promise that it will.
+    /*
+     * Three rhythms, registered separately, because the three cost different
+     * amounts and change at different speeds. The host keeps all of them, and
+     * stopping this plugin is what stops them rather than a promise that it
+     * will.
+     */
     this.fast = host.update(this.options.fastIntervalMs ?? FAST_INTERVAL_MS, () => this.readFast(host));
     this.slow = host.update(this.options.diskIntervalMs ?? DISK_INTERVAL_MS, () => this.readDisks(host));
+
+    if (this.gpu.temperature) {
+      // Its own beat: this one starts a program, which the other two do not,
+      // and a card's heat does not move fast enough to be worth two seconds.
+      this.heat = host.update(this.options.heatIntervalMs ?? HEAT_INTERVAL_MS, () => this.readHeat(host));
+      void this.readHeat(host);
+    }
 
     void this.readDisks(host);
     host.setStatus('ready');
@@ -265,8 +430,10 @@ export class HardwarePlugin implements Plugin {
   stop(): void {
     this.fast?.stop();
     this.slow?.stop();
+    this.heat?.stop();
     this.fast = undefined;
     this.slow = undefined;
+    this.heat = undefined;
   }
 
   /**
@@ -277,7 +444,7 @@ export class HardwarePlugin implements Plugin {
    * an idle machine from repainting a key every two seconds over the third
    * decimal place of nothing happening.
    */
-  private readFast(host: PluginHost): void {
+  private async readFast(host: PluginHost): Promise<void> {
     const now = sampleCpu();
     const busy = now.total - this.previous.total;
     const idle = now.idle - this.previous.idle;
@@ -290,6 +457,39 @@ export class HardwarePlugin implements Plugin {
     host.setVariable('hw.memory', Math.round(((total - free) / total) * 100));
     host.setVariable('hw.memory-used', round((total - free) / GIB, 1));
     host.setVariable('hw.memory-free', round(free / GIB, 1));
+
+    if (this.gpu.counters) await this.readGraphics(host);
+  }
+
+  /**
+   * The card, on the same beat as the processor and for the same reason: it is
+   * a live reading, and a key showing one is showing what is happening now.
+   *
+   * A reading with nothing in it leaves the variables as they were. The
+   * counters occasionally answer with no instances at all — a driver
+   * restarting, a card going to sleep — and blanking a key for one bad sample
+   * would look like the card had gone.
+   */
+  private async readGraphics(host: PluginHost): Promise<void> {
+    const reading = await readGpu();
+
+    if (reading.load !== undefined) host.setVariable('hw.gpu', reading.load);
+    if (reading.memoryUsed !== undefined) host.setVariable('hw.gpu-memory-used', reading.memoryUsed);
+    if (reading.memoryTotal !== undefined) {
+      host.setVariable('hw.gpu-memory-total', reading.memoryTotal);
+    }
+
+    if (reading.memoryUsed !== undefined && reading.memoryTotal) {
+      host.setVariable(
+        'hw.gpu-memory',
+        Math.round((reading.memoryUsed / reading.memoryTotal) * 100),
+      );
+    }
+  }
+
+  private async readHeat(host: PluginHost): Promise<void> {
+    const degrees = await readGpuTemperature();
+    if (degrees !== undefined) host.setVariable('hw.gpu-temperature', degrees);
   }
 
   private async readDisks(host: PluginHost): Promise<void> {
@@ -346,13 +546,27 @@ export async function registerHardwarePlugin(
   options: HardwareOptions = {},
 ): Promise<void> {
   const disks = await findDisks();
-  const manifest = hardwareManifest(disks);
+  const gpu = await findGpu();
+  const manifest = hardwareManifest(disks, gpu);
 
   // Registered with the action registry as well, despite having no actions:
   // that is where variable declarations come from, and without it the
   // configurator would have no idea `hw.cpu` exists until it first changed.
   registry.installPlugin(manifest, {});
-  await runtime.install(manifest, new HardwarePlugin(disks, options));
+  await runtime.install(manifest, new HardwarePlugin(disks, gpu, options));
+}
+
+/**
+ * What this machine's card will answer, asked once at startup.
+ *
+ * Both questions are put now rather than at the first reading, for the same
+ * reason the disks are: a manifest offering `hw.gpu-temperature` on a machine
+ * that cannot produce one offers a variable that stays empty for ever, and an
+ * empty key says nothing about why.
+ */
+export async function findGpu(): Promise<GpuSupport> {
+  const [counters, degrees] = await Promise.all([gpuAvailable(), readGpuTemperature()]);
+  return { counters, temperature: degrees !== undefined };
 }
 
 function sampleCpu(): { idle: number; total: number } {
