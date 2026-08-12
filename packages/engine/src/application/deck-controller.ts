@@ -801,7 +801,19 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
      */
     const iconParams = visual.icon ? readIconParams(svgTextOf(visual.icon.source) ?? '') : [];
     const parametric = iconParams.length > 0 || visual.icon?.params !== undefined;
-    if (!visual.label && !parametric) return visual;
+
+    /*
+     * The widget as it stands, which is not always what the profile says.
+     *
+     * Worked out here rather than read off the visual, because everything
+     * below identifies a frame by its settings: a key a macro has pointed
+     * somewhere else asks for one picture and would look for another.
+     */
+    const spec = this.widgetOf(button);
+
+    // A key showing nothing but a widget has neither label nor icon, and used
+    // to leave through here before its frame was ever substituted.
+    if (!visual.label && !parametric && !spec) return visual;
 
     const snapshot: Record<string, VariableValue> = this.variables.snapshot();
 
@@ -838,13 +850,16 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
      * Doing it only in the scene is what the first attempt did, and the panel
      * showed the graph while the configurator showed an empty key.
      */
-    const live = visual.surface ? this.drawn.get(surfaceKey(visual.surface)) : undefined;
+    const live = spec ? this.drawn.get(surfaceKey(spec)) : undefined;
     // Only the source: what identifies the picture to the tile cache is the
     // frame's own id, and the scene reads that from the frame in `pictureOf`.
     const picture = live ? { source: live.source } : icon;
 
     return {
       ...visual,
+      // The resolved widget travels on, so whoever looks the frame up again
+      // downstream asks the same question and gets the same answer.
+      ...(spec ? { surface: spec } : {}),
       ...(label ? { label } : {}),
       ...(picture ? { icon: picture } : {}),
     };

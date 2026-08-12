@@ -272,6 +272,43 @@ describe('a picture a plugin draws', () => {
     assert.equal(controller.variables.get('saw'), 'gpu', 'what it is actually showing');
   });
 
+  it('is still on the key after a macro changes one of its settings', async () => {
+    /*
+     * The frame is filed under the settings it was drawn for, and the lookup
+     * used to read the profile's. So the moment anything was laid over them
+     * the two names disagreed, the lookup found nothing, and the graph
+     * vanished outright — from the panel and from the window alike — while the
+     * plugin went on being asked for it and going on answering.
+     */
+    const { presenter, controller } = await run([button(3, widget)]);
+
+    controller.setWidgetParam('b3', 'reading', 'gpu', 'test');
+    await settle();
+
+    assert.equal(presenter.scene?.regions[0]?.image?.asset.source, DRAWN, 'the panel');
+    assert.equal(
+      controller.view().find((view) => view.key === 3)?.visual.icon?.source,
+      DRAWN,
+      'and the window',
+    );
+  });
+
+  it('reaches a key that shows nothing else', async () => {
+    // No label and no still to fall back on, which is the plainest way to put
+    // a graph on a key — and the one path out of resolving a face that used to
+    // return before a frame was ever substituted.
+    const { presenter, controller } = await run([
+      { id: 'b3', key: 3, states: [{ id: 'default', visual: { ...widget } }] },
+    ]);
+
+    assert.equal(presenter.scene?.regions[0]?.image?.asset.source, DRAWN, 'the panel');
+    assert.equal(
+      controller.view().find((view) => view.key === 3)?.visual.icon?.source,
+      DRAWN,
+      'and the window, which has no scene to read and only this to go on',
+    );
+  });
+
   it('is what a condition naming `this_btn` sees', async () => {
     /*
      * A blank name has always meant the running key, but no select can offer a
