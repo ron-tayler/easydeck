@@ -151,6 +151,17 @@ export class DeckRegistry extends EventEmitter<DeckRegistryEvents> {
     }
   }
 
+  /**
+   * Paints every deck again, because a plugin's picture has changed.
+   *
+   * Every deck for the same reason as above, and blunt for the reason given in
+   * `plugin-host.ts`: a picture that comes back the same keeps its identity,
+   * so nothing downstream repeats any work over it.
+   */
+  redraw(): void {
+    for (const deck of this.decks.values()) deck.controller.invalidate();
+  }
+
   declarations(): VariableDeclaration[] {
     const merged = new Map<string, VariableDeclaration>();
 

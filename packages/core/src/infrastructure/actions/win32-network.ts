@@ -87,9 +87,9 @@ export async function readNetwork(): Promise<Map<string, NetworkReading>> {
  * has the number to multiply.
  */
 export function formatRate(bytesPerSecond: number, locale?: string): string {
-  const units = ['Б/с', 'КБ/с', 'МБ/с', 'ГБ/с'];
+  const units = ['б/с', 'к/с', 'м/с', 'г/с'];
 
-  let value = Math.max(0, bytesPerSecond);
+  let value = Math.max(0, bytesPerSecond) * 8;
   let unit = 0;
   while (value >= 1000 && unit < units.length - 1) {
     value /= 1024;

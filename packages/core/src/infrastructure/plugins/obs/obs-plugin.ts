@@ -3,10 +3,14 @@ import type {
   ActionHandler,
   ActionRegistry,
   ButtonPreset,
+  ParamOption,
   Plugin,
   PluginHost,
   PluginManifest,
   PresetButton,
+  SurfaceFrame,
+  SurfaceRequest,
+  Ticker,
   VariableValue,
 } from '@easydeck/engine';
 
@@ -31,6 +35,34 @@ import { ObsConnection } from './obs-connection.js';
 
 export const OBS_PLUGIN_ID = 'obs';
 
+/**
+ * "Whatever is on air" and "whatever is queued next", as answers in their own
+ * right.
+ *
+ * A key showing the live scene must not name one, or it stops being about the
+ * live scene the moment somebody switches. Written with a character no OBS
+ * scene name can start with, so neither can ever collide with a real name.
+ */
+const PROGRAM = '@program';
+const PREVIEW = '@preview';
+
+/**
+ * What a thumbnail is asked for at, and what it costs.
+ *
+ * Measured against OBS 31 on the developer's machine: a 128-pixel JPEG at this
+ * quality came back in about a millisecond and weighed five kilobytes, and ten
+ * in a row took fourteen milliseconds altogether. A scene that is *not* on air
+ * cost the same as one that is — the fear that OBS would have to render it
+ * specially turned out to be unfounded.
+ *
+ * PNG was measured too, at thirty-eight kilobytes for the same picture. The
+ * panel re-encodes whatever it is given anyway, so the larger one buys nothing
+ * on the way in.
+ */
+const SHOT_FORMAT = 'jpg';
+const SHOT_SIZE = 144;
+const SHOT_QUALITY = 70;
+
 export const obsManifest: PluginManifest = {
   id: OBS_PLUGIN_ID,
   name: { en: 'OBS', ru: 'OBS' },
@@ -41,6 +73,60 @@ export const obsManifest: PluginManifest = {
   version: '1.0.0',
   apiVersion: PLUGIN_API_VERSION,
   builtIn: true,
+
+  /*
+   * What OBS can put on a key that a variable cannot.
+   *
+   * Everything this plugin publishes as a variable is a word or a number, and
+   * words and numbers already go on a key through its label. A widget is worth
+   * having only where the answer is a *picture*, and OBS has exactly one thing
+   * of that kind worth the trouble: what a scene actually looks like.
+   */
+  surfaces: [
+    {
+      type: 'obs.thumbnail',
+      label: { en: 'Scene thumbnail', ru: 'Миниатюра сцены' },
+      description: {
+        en: 'What a scene or a source looks like right now, on the key that switches to it',
+        ru: 'Как сейчас выглядит сцена или источник — на клавише, которая её включает',
+      },
+      icon: 'page',
+      params: [
+        {
+          name: 'source',
+          type: 'select',
+          optionsFrom: 'shootable',
+          label: { en: 'What to show', ru: 'Что показывать' },
+          default: PROGRAM,
+          emptyNote: {
+            en: 'OBS is not running, so it cannot say what it has',
+            ru: 'OBS не запущен, поэтому список сцен взять неоткуда',
+          },
+        },
+        {
+          /*
+           * How often, chosen rather than fixed. A key showing what is on air
+           * wants a second; a key showing the scene you switch to at the end
+           * of a stream is as good at a minute, and cheaper.
+           *
+           * Not offered faster than a second on purpose. A screenshot costs
+           * OBS a real capture, and a key is looked at, not watched.
+           */
+          name: 'every',
+          type: 'select',
+          label: { en: 'Refresh', ru: 'Обновлять' },
+          default: '5',
+          options: [
+            { value: '1', label: { en: 'Every second', ru: 'Раз в секунду' } },
+            { value: '5', label: { en: 'Every 5 seconds', ru: 'Раз в 5 секунд' } },
+            { value: '10', label: { en: 'Every 10 seconds', ru: 'Раз в 10 секунд' } },
+            { value: '30', label: { en: 'Every 30 seconds', ru: 'Раз в 30 секунд' } },
+            { value: '60', label: { en: 'Every minute', ru: 'Раз в минуту' } },
+          ],
+        },
+      ],
+    },
+  ],
 
   settings: [
     {
@@ -595,6 +681,21 @@ export class ObsPlugin implements Plugin {
    */
   private watching: readonly Watch[] = [];
 
+  /**
+   * The last picture taken of each source, and when.
+   *
+   * A surface is asked for on every repaint, and a repaint happens whenever
+   * anything at all moves — so drawing straight from OBS here would take a
+   * screenshot every time a clock ticked somewhere else on the page. The
+   * picture is therefore kept, handed over as often as anybody asks, and
+   * refreshed on the beat below.
+   */
+  private readonly shots = new Map<string, { source: string; at: number }>();
+
+  /** What the thumbnails on screen are of, and how often each wants refreshing. */
+  private wanted: readonly { source: string; everyMs: number }[] = [];
+  private ticker?: Ticker;
+
   constructor(private readonly options: ObsPluginOptions = {}) {}
 
   start(host: PluginHost): void {
@@ -608,11 +709,142 @@ export class ObsPlugin implements Plugin {
       // is running should start showing something immediately.
       if (this.connection?.connected) void this.readWatched();
     });
+
+    host.provideSurface('obs.thumbnail', async (request) => this.thumbnail(request));
+
+    /*
+     * Which thumbnails are on screen decides both what is photographed and how
+     * often. A page with no OBS key on it costs nothing at all, and a page
+     * with one minute-refresh key costs one screenshot a minute — neither of
+     * which the plugin could work out for itself.
+     */
+    host.onWidgets((widgets) => {
+      this.wanted = widgets
+        .filter((widget) => widget.type === 'obs.thumbnail')
+        .map((widget) => ({
+          source: String(widget.params['source'] ?? PROGRAM),
+          everyMs: Math.max(1, Number(widget.params['every']) || 5) * 1000,
+        }));
+
+      this.retime();
+      void this.refresh();
+    });
+
+    // Registered stopped: what is worth photographing depends on what is on
+    // screen, and at this point nothing has said.
+    this.ticker = host.update(0, () => this.refresh());
   }
 
   stop(): void {
+    this.ticker?.stop();
+    this.ticker = undefined;
     this.connection?.stop();
     this.connection = undefined;
+  }
+
+  // --- thumbnails -----------------------------------------------------------
+
+  /**
+   * The last picture of whatever this key names.
+   *
+   * Nothing until the first one has been taken, which is a key showing its own
+   * still or nothing at all — the same as any other widget that is not ready.
+   */
+  private thumbnail(request: SurfaceRequest): SurfaceFrame | undefined {
+    const kept = this.shots.get(String(request.params['source'] ?? PROGRAM));
+    return kept ? { source: kept.source } : undefined;
+  }
+
+  /**
+   * A beat as often as the most impatient thumbnail on screen.
+   *
+   * The beat is the plugin's and the interval is the key's, so this is the
+   * shortest of them: a page holding a one-second key and a one-minute key
+   * beats every second, and the minute one is simply not due most of the time.
+   */
+  private retime(): void {
+    const soonest = this.wanted.reduce(
+      (least, one) => Math.min(least, one.everyMs),
+      Number.POSITIVE_INFINITY,
+    );
+
+    this.ticker?.every(Number.isFinite(soonest) ? soonest : 0);
+  }
+
+  /** Takes a new picture of everything that is due, and asks for a repaint. */
+  private async refresh(): Promise<void> {
+    const connection = this.connection;
+    if (!connection?.connected || this.wanted.length === 0) return;
+
+    const now = Date.now();
+    const due = new Map<string, number>();
+    for (const one of this.wanted) {
+      const taken = this.shots.get(one.source)?.at ?? 0;
+      // The shortest interval wins where two keys show the same source: they
+      // share one picture, and the impatient key is the one to satisfy.
+      if (now - taken >= one.everyMs) due.set(one.source, one.everyMs);
+    }
+
+    if (due.size === 0) return;
+
+    let changed = false;
+    for (const source of due.keys()) {
+      const picture = await this.shoot(connection, source);
+      if (picture === undefined) continue;
+
+      const before = this.shots.get(source)?.source;
+      this.shots.set(source, { source: picture, at: now });
+      if (picture !== before) changed = true;
+    }
+
+    // Only when something actually looks different. A still scene photographed
+    // every second produces the same bytes, and asking every deck to paint
+    // over that would be work for nothing.
+    if (changed) this.host?.redraw();
+  }
+
+  /**
+   * One screenshot, with the two standing answers resolved first.
+   *
+   * `@program` and `@preview` are looked up on every shot rather than
+   * remembered: a key showing what is on air has to follow the switch, and
+   * that is the whole reason it does not name a scene.
+   */
+  private async shoot(connection: ObsConnection, source: string): Promise<string | undefined> {
+    try {
+      let name = source;
+
+      if (source === PROGRAM || source === PREVIEW) {
+        const scenes = await connection.request<{
+          currentProgramSceneName?: string;
+          currentPreviewSceneName?: string;
+        }>('GetSceneList');
+
+        name = String(
+          (source === PROGRAM ? scenes.currentProgramSceneName : scenes.currentPreviewSceneName) ?? '',
+        );
+
+        // Studio mode is off, so there is no preview scene to photograph.
+        if (name === '') return undefined;
+      }
+
+      const shot = await connection.request<{ imageData?: string }>('GetSourceScreenshot', {
+        sourceName: name,
+        imageFormat: SHOT_FORMAT,
+        imageWidth: SHOT_SIZE,
+        imageHeight: SHOT_SIZE,
+        imageCompressionQuality: SHOT_QUALITY,
+      });
+
+      // Already a data URL, which is exactly what a frame wants.
+      return typeof shot.imageData === 'string' && shot.imageData !== '' ? shot.imageData : undefined;
+    } catch (cause) {
+      // A scene that has been renamed or deleted since the key named it, or a
+      // source that cannot be photographed. The key shows its last picture, or
+      // none; saying so once in the log is the whole of what is useful.
+      this.host?.log('warn', `Cannot photograph '${source}': ${describe(cause)}`);
+      return undefined;
+    }
   }
 
   /** Used by the settings window's Reconnect button. */
@@ -651,8 +883,15 @@ export class ObsPlugin implements Plugin {
       onState: (state, message) => {
         host.setStatus(state, message ? { en: message } : undefined);
         host.setVariable('obs.connected', state === 'ready');
-        if (state === 'ready') void this.readEverything();
-        else this.clearVariables();
+        if (state === 'ready') {
+          void this.readEverything();
+          // Whatever was photographed belongs to the OBS that has just gone;
+          // taking new pictures at once is what makes a key come back to life
+          // rather than show a scene from before the restart.
+          void this.refresh();
+        } else {
+          this.clearVariables();
+        }
       },
       log: (level, message) => host.log(level, message),
     });
@@ -695,6 +934,40 @@ export class ObsPlugin implements Plugin {
      * all, and the ones that say no are the ones left out. That is one small
      * request per input, paid only when somebody opens the field.
      */
+    /*
+     * Everything a thumbnail can be taken of, with the two standing answers
+     * first because they are what most keys want.
+     *
+     * Scenes and sources in one list rather than two fields. A key showing a
+     * picture does not care which kind of thing it is a picture of, and asking
+     * would be a field whose only purpose is to shorten the next one.
+     */
+    host.provideOptions('shootable', async () => {
+      const connection = this.require();
+
+      const scenes = await connection.request<{ scenes?: { sceneName?: string }[] }>('GetSceneList');
+      const inputs = await connection.request<{ inputs?: { inputName?: string }[] }>('GetInputList');
+
+      const named = (name: string, prefix: string): ParamOption => ({
+        value: name,
+        label: { en: `${prefix} ${name}` },
+      });
+
+      return [
+        { value: PROGRAM, label: { en: 'What is on air', ru: 'Что в эфире' } },
+        { value: PREVIEW, label: { en: 'What is queued (studio mode)', ru: 'Что на превью (студийный режим)' } },
+        ...[...(scenes.scenes ?? [])]
+          .reverse()
+          .map((scene) => String(scene.sceneName ?? ''))
+          .filter((name) => name !== '')
+          .map((name) => named(name, '🎬')),
+        ...(inputs.inputs ?? [])
+          .map((input) => String(input.inputName ?? ''))
+          .filter((name) => name !== '')
+          .map((name) => named(name, '▪')),
+      ];
+    });
+
     host.provideOptions('audio-inputs', async () => {
       const connection = this.require();
       const data = await connection.request<{ inputs?: { inputName?: string }[] }>('GetInputList');

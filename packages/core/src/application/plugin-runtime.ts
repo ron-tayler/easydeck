@@ -68,6 +68,13 @@ export interface PluginRuntimeOptions {
     name: string,
     value: VariableValue | undefined,
   ) => void;
+  /**
+   * Asks every deck to paint again, because a plugin's picture has changed.
+   *
+   * Every deck, for the same reason `setWidgetParam` is: the key showing that
+   * picture may be on a panel and a tablet at once.
+   */
+  readonly redraw?: () => void;
   /** Opens a URL in the user's browser. */
   readonly openExternal?: (url: string) => void;
   readonly log?: (pluginId: string, level: 'info' | 'warn' | 'error', message: string) => void;
@@ -453,6 +460,12 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
         entry.surfaces.set(type, draw);
         return () => entry.surfaces.delete(type);
       },
+
+      // Quietly nothing where no deck is listening, unlike its neighbours
+      // which throw: this one is called on a beat rather than by a key press,
+      // and a plugin drawing into a headless test should not be punished for
+      // asking for a repaint that nobody needs.
+      redraw: () => this.options.redraw?.(),
 
       onWidgets: (listen) => {
         entry.widgetWatchers.push(listen);

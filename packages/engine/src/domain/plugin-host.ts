@@ -124,6 +124,27 @@ export interface PluginHost {
   provideSurface(type: string, draw: SurfaceProvider): () => void;
 
   /**
+   * Says that the pictures this plugin draws have changed, so ask again.
+   *
+   * A surface is only asked for while a repaint is happening, and a repaint
+   * happens because something *else* moved — a variable, a press, a page turn.
+   * That is enough for a plugin whose picture is a function of its own
+   * variables: the hardware graph is live only because `hw.cpu` changes beside
+   * it every two seconds and drags a repaint along with it.
+   *
+   * It is not enough for a picture that changes on its own schedule and has no
+   * variable to ride on — a thumbnail of an OBS scene, a level meter. Without
+   * this such a widget would be redrawn whenever something unrelated happened
+   * to move, which is to say: never, on a quiet page.
+   *
+   * Blunt on purpose. It asks for a repaint rather than naming a key, because
+   * every widget on screen is re-asked on any repaint anyway, and a picture
+   * that comes back the same keeps its identity and so costs nothing further
+   * down — the tile cache compares what was drawn, not who asked.
+   */
+  redraw(): void;
+
+  /**
    * Which widgets are on screen, whoever declared them.
    *
    * The same bargain `onWatched` makes for variables, and scoped the same way:

@@ -35,6 +35,7 @@ const STATE = {
     ],
   },
   GetInputAudioTracks: { inputAudioTracks: { '1': true } },
+  GetSourceScreenshot: { imageData: 'data:image/jpg;base64,AAAA' },
   ToggleInputMute: {},
   GetSourceFilterList: { filters: [{ filterName: 'Noise gate' }, { filterName: 'Colour' }] },
   GetSourceFilter: { filterEnabled: true },
@@ -442,6 +443,95 @@ describe('the OBS plugin', () => {
     await delay(120);
 
     assert.equal(bed.variables.has('obs.filter(Ghost, Gate)'), false);
+    await bed.dispose();
+  });
+
+  it('photographs only what a key on screen is showing, and only when due', async () => {
+    /*
+     * A surface is asked for on every repaint, and a repaint happens whenever
+     * anything at all moves — so a thumbnail drawn straight from OBS would take
+     * a screenshot every time a clock ticked elsewhere on the page. The picture
+     * is kept and refreshed on its own beat, and this is that beat.
+     */
+    const bed = await bench();
+    await bed.until('a connection', () => bed.runtime.status('obs')?.status === 'ready');
+
+    const shots = () => bed.obs.requests.filter((request) => request.type === 'GetSourceScreenshot');
+    assert.equal(shots().length, 0, 'nothing on screen, nothing photographed');
+
+    bed.runtime.setWidgets([
+      { buttonId: 'b1', type: 'obs.thumbnail', params: { source: 'Game', every: '1' } },
+    ]);
+
+    await bed.until('the first picture', () => shots().length === 1);
+    assert.deepEqual(shots()[0]?.data?.['sourceName'], 'Game');
+
+    // The key is still there, but a second has not passed.
+    await delay(120);
+    assert.equal(shots().length, 1, 'not due yet');
+
+    await bed.dispose();
+  });
+
+  it('follows the switch when a key shows whatever is on air', async () => {
+    // A key showing the live scene must not name one, or it stops being about
+    // the live scene the moment somebody switches.
+    const bed = await bench();
+    await bed.until('a connection', () => bed.runtime.status('obs')?.status === 'ready');
+
+    bed.runtime.setWidgets([
+      { buttonId: 'b1', type: 'obs.thumbnail', params: { source: '@program', every: '1' } },
+    ]);
+
+    await bed.until(
+      'a picture of the live scene',
+      () =>
+        bed.obs.requests.some(
+          (request) => request.type === 'GetSourceScreenshot' && request.data['sourceName'] === 'Intro',
+        ),
+    );
+
+    await bed.dispose();
+  });
+
+  it('hands the same picture over as often as it is asked for', async () => {
+    const bed = await bench();
+    await bed.until('a connection', () => bed.runtime.status('obs')?.status === 'ready');
+
+    bed.runtime.setWidgets([
+      { buttonId: 'b1', type: 'obs.thumbnail', params: { source: 'Game', every: '60' } },
+    ]);
+    await bed.until('the first picture', () =>
+      bed.obs.requests.some((request) => request.type === 'GetSourceScreenshot'),
+    );
+
+    const request = { type: 'obs.thumbnail', params: { source: 'Game' }, cols: 1, rows: 1, buttons: ['b1'] };
+    const first = await bed.runtime.drawSurface(request);
+    const second = await bed.runtime.drawSurface(request);
+
+    assert.equal(first?.source, 'data:image/jpg;base64,AAAA');
+    assert.equal(second?.source, first?.source);
+    assert.equal(
+      bed.obs.requests.filter((each) => each.type === 'GetSourceScreenshot').length,
+      1,
+      'drawing twice is not photographing twice',
+    );
+
+    await bed.dispose();
+  });
+
+  it('offers what can be photographed, the standing answers first', async () => {
+    const bed = await bench();
+    await bed.until('a connection', () => bed.runtime.status('obs')?.status === 'ready');
+
+    const options = await bed.runtime.optionsFor('obs', 'shootable');
+    assert.deepEqual(options.slice(0, 2).map((option) => option.value), ['@program', '@preview']);
+    // Scenes as a person lists them, then the sources.
+    assert.deepEqual(
+      options.slice(2).map((option) => option.value),
+      ['Intro', 'Game', 'Ending', 'Mic', 'Desktop', 'Заставка', 'Чат', 'Логотип'],
+    );
+
     await bed.dispose();
   });
 

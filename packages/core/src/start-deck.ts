@@ -174,6 +174,7 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
       // for why forbidding it would be a fiction.
       setWidgetParam: (pluginId, buttonId, name, value) =>
         registry?.setWidgetParam(buttonId, name, value, pluginId),
+      redraw: () => registry?.redraw(),
       log: (pluginId, level, message) => {
         if (level === 'error') warnings.push(`${pluginId}: ${message}`);
       },
