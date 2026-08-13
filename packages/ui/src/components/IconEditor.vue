@@ -65,6 +65,31 @@ const layers = ref<Layer[]>([]);
 const active = ref(0);
 const adding = ref(false);
 
+/**
+ * How near a placement has to come before it is taken as meant, in pixels on
+ * the screen rather than on the key.
+ *
+ * The key is drawn at whatever width the window can spare, so a reach measured
+ * in the key's own hundredths would be a wide magnet in a large window and no
+ * magnet at all in a small one. Measured against the pointer it is the same
+ * grab everywhere.
+ */
+const SNAP_REACH = 7;
+
+/**
+ * Where the picture would be if nothing had pulled it, kept for as long as the
+ * drag lasts.
+ *
+ * Without it a snap is a trap: the placement is written back snapped, the next
+ * movement is added to the snapped placement, and the picture can only leave
+ * the line one whole reach at a time. Dragging against the raw position lets a
+ * line hold the picture while the pointer passes through it, and lets go.
+ */
+const loose = ref<{ x: number; y: number }>();
+
+/** The lines the picture is sitting on, drawn while it is, in key hundredths. */
+const guides = ref<{ x?: number; y?: number }>({});
+
 const current = computed(() => layers.value[active.value]);
 
 /**
@@ -201,10 +226,19 @@ function onWheel(event: WheelEvent): void {
 
   const step = event.deltaY < 0 ? 1.06 : 1 / 1.06;
   resize(Math.min(ICON_CANVAS * 4, Math.max(4, Math.max(box.width, box.height) * step)));
+
+  // A picture sized mid-drag has been moved by something other than the
+  // pointer, and the raw position no longer describes it.
+  const sized = current.value?.box;
+  if (loose.value && sized) loose.value = { x: sized.x, y: sized.y };
 }
 
 function onDown(index: number, event: PointerEvent): void {
   active.value = index;
+
+  const box = layers.value[index]?.box;
+  if (box) loose.value = { x: box.x, y: box.y };
+
   (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 }
 
@@ -212,12 +246,65 @@ function onMove(event: PointerEvent): void {
   if (!(event.buttons & 1)) return;
 
   const rect = canvas.value?.getBoundingClientRect();
-  if (!rect) return;
+  const box = current.value?.box;
+  if (!rect || !box || !loose.value) return;
 
   // Measured against the canvas rather than taken from the movement of the
   // element, which is being moved by this and would chase itself.
   const perPixel = ICON_CANVAS / rect.width;
-  patch((box) => ({ ...box, x: box.x + event.movementX * perPixel, y: box.y + event.movementY * perPixel }));
+  const free = {
+    x: loose.value.x + event.movementX * perPixel,
+    y: loose.value.y + event.movementY * perPixel,
+  };
+  loose.value = free;
+
+  const reach = SNAP_REACH * perPixel;
+  const x = snap(free.x, box.width, reach);
+  const y = snap(free.y, box.height, reach);
+
+  guides.value = { x: x.line, y: y.line };
+  patch((held) => ({ ...held, x: x.at, y: y.at }));
+}
+
+function onUp(): void {
+  loose.value = undefined;
+  guides.value = {};
+}
+
+/**
+ * Where a guide sits, held inside the key at its edges.
+ *
+ * The key crops what hangs over it, and a line on the edge hangs half over it —
+ * so the two lines that matter most, flush left and flush right, would be the
+ * two that could not be seen.
+ */
+function onLine(along: number): string {
+  return `clamp(0px, calc(${along}% - 0.5px), calc(100% - 1px))`;
+}
+
+/**
+ * The placement a near miss was meant to be, on one axis.
+ *
+ * Three lines are worth hitting on a square key: its middle, and its two
+ * edges — which for a picture wider than the key means flush left or flush
+ * right, the crop taken off one side instead of shared between both. Whichever
+ * is nearest wins, so the middle of a picture that nearly fills the key does
+ * not fight with its edges.
+ */
+function snap(at: number, span: number, reach: number): { at: number; line?: number } {
+  const lines = [
+    { at: 0, line: 0 },
+    { at: (ICON_CANVAS - span) / 2, line: ICON_CANVAS / 2 },
+    { at: ICON_CANVAS - span, line: ICON_CANVAS },
+  ];
+
+  let best: { at: number; line: number; gap: number } | undefined;
+  for (const line of lines) {
+    const gap = Math.abs(at - line.at);
+    if (gap <= reach && (best === undefined || gap < best.gap)) best = { ...line, gap };
+  }
+
+  return best ? { at: best.at, line: best.line } : { at };
 }
 
 function centre(): void {
@@ -302,21 +389,18 @@ function apply(): void {
           draggable="false"
           @pointerdown="onDown(index, $event)"
           @pointermove="onMove"
+          @pointerup="onUp"
+          @pointercancel="onUp"
         />
+
+        <!-- Shown only while a line is holding the picture: the proof that the
+             placement is exact rather than nearly. -->
+        <span v-if="guides.x !== undefined" class="guide down" :style="{ left: onLine(guides.x) }" />
+        <span v-if="guides.y !== undefined" class="guide across" :style="{ top: onLine(guides.y) }" />
       </div>
 
       <div class="row">
-        <label class="field">
-          <span>{{ t('iconEditor.size') }}</span>
-          <input
-            type="range"
-            min="4"
-            max="200"
-            :value="size"
-            @input="resize((Number(($event.target as HTMLInputElement).value) / 100) * ICON_CANVAS)"
-          />
-          <span class="reading">{{ size }}%</span>
-        </label>
+        <span class="reading muted">{{ t('iconEditor.size') }} {{ size }}%</span>
 
         <button type="button" @click="centre">{{ t('iconEditor.centre') }}</button>
         <button type="button" @click="fill">{{ t('iconEditor.fill') }}</button>
@@ -435,27 +519,27 @@ h2 { margin: 0; font-size: 14px; }
 /* Only while there is something to tell apart. */
 .placed.current { outline: 1px dashed var(--accent); outline-offset: 1px; }
 
+/* Over the picture, and never in the way of the pointer that summoned it. */
+.guide {
+  position: absolute;
+  background: var(--accent);
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.down { top: 0; bottom: 0; width: 1px; }
+.across { left: 0; right: 0; height: 1px; }
+
 .row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.field {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.field input { flex: 1; min-width: 0; }
-
+/* Says what the wheel has done; the two buttons are what the row is for. */
 .reading {
-  width: 4ch;
-  text-align: right;
+  margin-right: auto;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 

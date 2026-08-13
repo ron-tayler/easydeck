@@ -22,6 +22,14 @@ import {
   setSessionVolume,
 } from './win32-audio.js';
 import type { AudioDirection } from './win32-audio.js';
+import {
+  RATE_RANGE,
+  VOLUME_RANGE,
+  listVoices,
+  speak,
+  speechAvailable,
+  stop as stopSpeaking,
+} from './win32-speech.js';
 
 /**
  * Sound devices and per-application volume, as things a key can do.
@@ -196,6 +204,99 @@ export const audioActions: ActionDefinition[] = [
   },
 ];
 
+/**
+ * Saying something out loud, which is the one thing a key cannot show.
+ *
+ * A deck has no window for messages, and the moment worth announcing — the
+ * stream dropped, the timer finished — is the moment nobody is looking at the
+ * panel. The clock plugin already reached for this and settled for a system
+ * sound; this is the same idea with words in it, and it is a handler's natural
+ * companion rather than a soundboard feature.
+ *
+ * Straight to whatever plays sound by default, deliberately. Choosing a device
+ * would be a second question about a thing whose whole purpose is to be heard
+ * by the person sitting there.
+ */
+const speechActions: ActionDefinition[] = [
+  {
+    type: 'media.speak',
+    icon: 'text',
+    label: { en: 'Speak', ru: 'Синтез речи' },
+    description: {
+      en: 'Reads text out through the default speakers. Variables in it are filled in first',
+      ru: 'Читает текст вслух в колонки по умолчанию. Переменные в нём подставляются',
+    },
+    params: [
+      {
+        name: 'text',
+        type: 'text',
+        label: { en: 'What to say', ru: 'Что сказать' },
+        placeholder: { en: 'The processor is at {{hw.cpu}} percent', ru: 'Процессор на {{hw.cpu}} процентов' },
+      },
+      {
+        name: 'voice',
+        type: 'select',
+        optionsFrom: 'voices',
+        label: { en: 'Voice', ru: 'Голос' },
+        required: false,
+        description: {
+          en: 'Left empty, Windows picks. A voice that has been removed falls back to that too',
+          ru: 'Пусто — выберет Windows. Удалённый голос тоже приводит к этому',
+        },
+        emptyNote: {
+          en: 'This machine has no speech voices installed',
+          ru: 'На этой машине не установлено ни одного голоса',
+        },
+      },
+      {
+        /*
+         * Waiting rather than interrupting by default: two of these talking
+         * over each other is two phrases nobody can make out, and the usual
+         * reason for saying something is that it should be heard. A key that
+         * reads out a number on every press wants the other answer.
+         */
+        name: 'busy',
+        type: 'select',
+        label: { en: 'If it is already speaking', ru: 'Если уже говорит' },
+        default: 'queue',
+        options: [
+          { value: 'queue', label: { en: 'Wait its turn', ru: 'Дождаться очереди' } },
+          { value: 'interrupt', label: { en: 'Cut it off', ru: 'Прервать' } },
+        ],
+      },
+      {
+        name: 'rate',
+        type: 'number',
+        label: { en: 'Speed', ru: 'Скорость' },
+        default: 0,
+        min: RATE_RANGE.min,
+        max: RATE_RANGE.max,
+        required: false,
+        description: { en: 'Zero is normal', ru: 'Ноль — обычная' },
+      },
+      {
+        name: 'volume',
+        type: 'number',
+        label: { en: 'Volume, %', ru: 'Громкость, %' },
+        default: 100,
+        min: VOLUME_RANGE.min,
+        max: VOLUME_RANGE.max,
+        required: false,
+      },
+    ],
+  },
+  {
+    type: 'media.stop-speaking',
+    icon: 'stop',
+    label: { en: 'Stop speaking', ru: 'Замолчать' },
+    description: {
+      en: 'Cuts off what is being said and forgets what was waiting',
+      ru: 'Обрывает сказанное и забывает то, что стояло в очереди',
+    },
+    params: [],
+  },
+];
+
 /** Variables the plugin publishes, so a key can show what is in use. */
 const audioVariables = [
   {
@@ -228,6 +329,12 @@ export class AudioPlugin implements Plugin {
 
   start(host: PluginHost): void {
     host.provideOptions('devices', (params) => this.devices(params));
+
+    // Read when somebody opens the field: a voice can be installed while the
+    // deck runs, and the list costs a process to produce.
+    host.provideOptions('voices', async () =>
+      (await listVoices()).map((voice) => ({ value: voice, label: { en: voice } })),
+    );
 
     /*
      * The same list with one more line at the top.
@@ -356,6 +463,34 @@ export async function registerAudioActions(
       await setAppDevice(stringParam(params, 'app'), endpoint, directionOf(params));
     },
   });
+
+  /*
+   * Speech rides with the rest, and is gated with it.
+   *
+   * Both are Windows-only today, so one gate is honest and two would be two
+   * ways of saying the same thing. The day a synthesiser arrives for anything
+   * else is the day this needs a gate of its own — and it will be obvious,
+   * because it is the day `speechAvailable` stops agreeing with
+   * `audioAvailable`.
+   */
+  if (speechAvailable()) {
+    registry.extendPlugin(MEDIA_PLUGIN_ID, speechActions, {
+      // Returns as soon as the phrase is accepted, not when it has been read
+      // out: a key press must not wait several seconds for a sentence.
+      'media.speak': (params) =>
+        speak({
+          text: stringParam(params, 'text'),
+          ...(typeof params['voice'] === 'string' && params['voice'] !== ''
+            ? { voice: params['voice'] }
+            : {}),
+          rate: numberParam(params, 'rate', 0),
+          volume: numberParam(params, 'volume', 100),
+          interrupt: params['busy'] === 'interrupt',
+        }),
+
+      'media.stop-speaking': () => stopSpeaking(),
+    });
+  }
 
   // Installed with the variables it publishes; the actions above are the
   // registry's business and these are the runtime's.

@@ -95,7 +95,7 @@
   },
   iconEditor: {
     title: 'Place the picture',
-    hint: 'Drag to move, scroll or use the slider to resize. The key is what you see.',
+    hint: 'Drag to move, scroll to resize. It snaps to the centre and the edges. The key is what you see.',
     size: 'Size',
     centre: 'Centre',
     fill: 'Fill the key',
