@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 /**
@@ -37,12 +37,35 @@ const { t } = useI18n();
 
 const choosable = computed(() => (props.options ?? []).length > 0);
 
-const rows = computed<string[]>(() =>
-  props.modelValue === '' ? [] : props.modelValue.split('\n'),
+const split = (value: string): string[] => (value === '' ? [] : value.split('\n'));
+
+/**
+ * The rows on screen, held here rather than read back out of what is stored.
+ *
+ * Because a blank row and no row at all are the same string. Adding the first
+ * row to an empty list wrote `''`, which read back as zero rows, and the
+ * button did nothing at all — for ever, since the list could never leave
+ * empty. Every row after the first worked, which is why it survived being
+ * tried.
+ *
+ * So the rows are the component's, and what is stored is what they came to.
+ */
+const rows = ref<string[]>(split(props.modelValue));
+
+/**
+ * Follows the value when it changes underneath — a different key selected, a
+ * form reloaded — and stays put when the change was this component's own.
+ */
+watch(
+  () => props.modelValue,
+  (next) => {
+    if (next !== rows.value.join('\n')) rows.value = split(next);
+  },
 );
 
 function put(next: readonly string[]): void {
-  emit('update:modelValue', next.join('\n'));
+  rows.value = [...next];
+  emit('update:modelValue', rows.value.join('\n'));
 }
 
 function rename(at: number, name: string): void {
