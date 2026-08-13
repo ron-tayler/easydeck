@@ -25,6 +25,7 @@ import type { AudioDirection } from './win32-audio.js';
 import {
   RATE_RANGE,
   VOLUME_RANGE,
+  closeSpeech,
   listVoices,
   speak,
   speechAvailable,
@@ -372,6 +373,9 @@ export class AudioPlugin implements Plugin {
   stop(): void {
     this.beat?.stop();
     this.beat = undefined;
+    // The voice is a COM object held for the life of the process; a daemon
+    // shutting down should let go of it rather than leave it to the exit.
+    closeSpeech();
   }
 
   private async devices(params: Readonly<Record<string, unknown>>): Promise<ParamOption[]> {

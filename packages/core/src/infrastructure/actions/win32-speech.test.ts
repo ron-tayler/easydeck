@@ -1,81 +1,59 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { literal, script } from './win32-speech.js';
+import { RATE_RANGE, VOLUME_RANGE, escapeXml } from './win32-speech.js';
 
 /**
- * The script, not the speaking.
+ * What can be checked without a voice.
  *
- * What is worth being wrong about here is what reaches a shell. The text on a
- * key is whatever somebody typed — and it is a template, so it may also be
- * whatever a plugin published into a variable, which is to say whatever OBS or
- * a chat message put there.
+ * The speaking itself is COM on Windows and is verified by running it — the
+ * vtable slots by writing a rate and reading the same number back, the text by
+ * a phrase whose length is proportional to what was said. Neither of those is
+ * a thing a test on any machine can do.
+ *
+ * What is left here is the escaping, which is the only place a value somebody
+ * else controls is put into something with syntax.
  */
 
-describe('quoting for PowerShell', () => {
-  it('doubles the one character that ends a literal', () => {
-    assert.equal(literal("it's"), "'it''s'");
-    assert.equal(literal('plain'), "'plain'");
+describe('escaping for SAPI markup', () => {
+  it('covers the five characters XML cares about', () => {
+    assert.equal(escapeXml('a & b'), 'a &amp; b');
+    assert.equal(escapeXml('<b>'), '&lt;b&gt;');
+    assert.equal(escapeXml(`"quoted" and 'quoted'`), '&quot;quoted&quot; and &apos;quoted&apos;');
   });
 
-  it('leaves everything else exactly as it was', () => {
-    // A single-quoted PowerShell string expands nothing: no `$`, no backtick,
-    // no subexpression. That is the whole reason this quoting is one rule.
-    assert.equal(literal('$(Remove-Item C:\\)'), "'$(Remove-Item C:\\)'");
-    assert.equal(literal('`n'), "'`n'");
-    assert.equal(literal('100% & "quoted"'), "'100% & \"quoted\"'");
+  it('escapes the ampersand first, so nothing is escaped twice', () => {
+    // The other order turns `<` into `&lt;` and then into `&amp;lt;`, which is
+    // read out as the letters rather than as the sign.
+    assert.equal(escapeXml('<'), '&lt;');
+    assert.equal(escapeXml('&lt;'), '&amp;lt;');
+  });
+
+  it('leaves alone everything that is not one of the five', () => {
+    // Cyrillic in particular: it goes into SAPI as UTF-16 and needs nothing
+    // done to it, which is the whole reason this no longer goes near a shell.
+    assert.equal(escapeXml('Процессор на 40%'), 'Процессор на 40%');
+  });
+
+  it('cannot be used to smuggle a second voice tag in', () => {
+    /*
+     * The text and the voice are put into one string, so a label reading
+     * `<voice required="Name=…"/>` must arrive as those characters rather than
+     * as markup — otherwise a variable holding a chat message could change
+     * which voice is speaking.
+     */
+    const smuggled = escapeXml('<voice required="Name=Other"/>hello');
+
+    assert.doesNotMatch(smuggled, /<voice/);
+    assert.match(smuggled, /&lt;voice/);
   });
 });
 
-describe('the script that says something', () => {
-  it('never pastes the text in raw', () => {
-    const made = script({ text: "'; Remove-Item -Recurse C:\\; '" });
-
-    // The injected quote is doubled, so the whole thing stays one argument.
-    assert.match(made, /\$voice\.Speak\('''; Remove-Item -Recurse C:\\; ''''?\)/);
-    assert.doesNotMatch(made, /^Remove-Item/m);
-  });
-
-  it('quotes the voice as carefully as the text', () => {
-    // Descriptions come from Windows, but they reach the same shell.
-    const made = script({ text: 'hello', voice: "Bob's Voice" });
-    assert.match(made, /\$wanted = 'Bob''s Voice'/);
-  });
-
-  it('asks for nothing it was not told', () => {
-    // A rate of zero is a choice and a missing rate is not, so an untouched
-    // field must not write itself into the script as a number.
-    const bare = script({ text: 'hello' });
-
-    assert.doesNotMatch(bare, /\$voice\.Rate/);
-    assert.doesNotMatch(bare, /\$voice\.Volume/);
-    assert.doesNotMatch(bare, /\$voice\.Voice/);
-  });
-
-  it('keeps the numbers inside the range SAPI takes', () => {
-    const loud = script({ text: 'hello', rate: 99, volume: 500 });
-    assert.match(loud, /\$voice\.Rate = 10/);
-    assert.match(loud, /\$voice\.Volume = 100/);
-
-    const slow = script({ text: 'hello', rate: -99, volume: -20 });
-    assert.match(slow, /\$voice\.Rate = -10/);
-    assert.match(slow, /\$voice\.Volume = 0/);
-  });
-
-  it('falls back rather than falling silent when a voice has gone', () => {
-    /*
-     * A key naming a voice somebody has since uninstalled should still be
-     * heard. The script looks the description up and only assigns it if it
-     * found one, so an absent voice leaves whatever Windows prefers.
-     */
-    const made = script({ text: 'hello', voice: 'Microsoft Irina Desktop - Russian' });
-    assert.match(made, /if \(\$found\) \{ \$voice\.Voice = \$found \}/);
-  });
-
-  it('speaks synchronously, which is what makes stopping possible', () => {
-    // The process living is what "still speaking" means, so killing it is an
-    // interruption and its exit is the cue for the next phrase.
-    const made = script({ text: 'hello' });
-    assert.doesNotMatch(made, /Speak\([^)]*,\s*1\)/);
+describe('the ranges SAPI takes', () => {
+  it('are the ones the form offers', () => {
+    // Declared here and used in the manifest, so a field cannot offer a number
+    // the voice would refuse.
+    assert.deepEqual(RATE_RANGE, { min: -10, max: 10 });
+    assert.deepEqual(VOLUME_RANGE, { min: 0, max: 100 });
   });
 });

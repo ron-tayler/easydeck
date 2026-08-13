@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process';
-import type { ChildProcess } from 'node:child_process';
+
+import { call, create, guid, invoke, loadCom, release } from './win32-com.js';
+import type { ComPointer } from './win32-com.js';
 
 /**
  * Saying something out loud, through whatever Windows speaks with.
@@ -10,32 +12,44 @@ import type { ChildProcess } from 'node:child_process';
  * panel. The clock plugin already reached for this and settled for a system
  * sound; this is the same idea with words in it.
  *
- * SAPI through a short-lived PowerShell rather than through COM directly.
- * Measured on the developer's machine: about half a second from starting the
- * process to the first sound, of which five hundred milliseconds is creating
- * the voice object. That is fine for something announcing an event and would
- * not be for a key that beeps under the finger — but the alternatives are a
- * PowerShell sitting resident for the once-an-hour it is used, or hand-written
- * vtable offsets into `ISpVoice`, where being one slot out is not a wrong
- * answer but a crashed daemon.
+ * Straight to SAPI through COM, the way the audio stack next door is called.
+ * The first attempt shelled out to PowerShell and was wrong twice over: a
+ * phrase cost half a second of process startup before any sound, and — worse —
+ * PowerShell reads its standard input in the console's code page, so a Russian
+ * sentence arrived as sixty-five characters of mojibake and was read out as
+ * such. Through COM there is no encoding step at all: a JavaScript string is
+ * already UTF-16, which is exactly what SAPI takes.
+ *
+ * It also removes the shell, and with it the whole question of what happens
+ * when a variable holding a chat message reaches a command line.
+ *
+ * The vtable slots below were verified rather than trusted: writing a rate and
+ * reading the same number back out of the slot after it is evidence the layout
+ * is what it is believed to be, and it costs nothing if it is not.
  *
  * Windows only. Elsewhere this does nothing rather than shelling out to
- * whichever synthesiser happens to be installed, which is the same choice the
- * system sounds next door make and for the same reason.
+ * whichever synthesiser happens to be installed — the same choice the system
+ * sounds next door make and for the same reason.
  */
 
-/** SAPI's own range, and the numbers its own properties take. */
-export const RATE_RANGE = { min: -10, max: 10 } as const;
-export const VOLUME_RANGE = { min: 0, max: 100 } as const;
+const CLSID_SpVoice = guid('96749377-3391-11D2-9EE3-00C04F797396');
+const IID_ISpVoice = guid('6C44DF74-72B9-4992-A1EC-EF996E0422D4');
+
+/** Slots in `ISpVoice`, counted past `IUnknown`, `ISpNotifySource` and `ISpEventSource`. */
+const SLOT = { speak: 20, setRate: 28, getRate: 29, setVolume: 30, getVolume: 31 } as const;
 
 /**
- * How many phrases may be waiting before the oldest is dropped.
+ * `SPEAKFLAGS`, of which four matter here.
  *
- * A handler that fires in a loop would otherwise build a queue the machine
- * spends the next ten minutes reading out. The oldest goes rather than the
- * newest, because the point of every one of these is to be news.
+ * `ASYNC` is what lets a key press return at once — measured at ten
+ * milliseconds against the real thing — and it is also the queue: SAPI speaks
+ * one phrase after another by itself, so nothing here has to.
  */
-const QUEUE_LIMIT = 8;
+const SPF = { async: 1, purge: 2, isXml: 8, notXml: 16 } as const;
+
+/** SAPI's own ranges, and the numbers its own properties take. */
+export const RATE_RANGE = { min: -10, max: 10 } as const;
+export const VOLUME_RANGE = { min: 0, max: 100 } as const;
 
 export interface SpeechRequest {
   readonly text: string;
@@ -43,128 +57,142 @@ export interface SpeechRequest {
   readonly voice?: string;
   readonly rate?: number;
   readonly volume?: number;
-  /** Cuts off whatever is being said rather than waiting its turn. */
+  /** Throws away what is queued and cuts off what is being said. */
   readonly interrupt?: boolean;
 }
 
-const speakable = process.platform === 'win32';
+let voice: ComPointer | undefined;
+let opened = false;
 
-let speaking: ChildProcess | undefined;
-const waiting: SpeechRequest[] = [];
+/** Creates the voice once and keeps it, which is where the speed comes from. */
+async function open(): Promise<ComPointer | undefined> {
+  if (opened) return voice;
+  opened = true;
+
+  if (!(await loadCom())) return undefined;
+
+  try {
+    voice = create(CLSID_SpVoice, IID_ISpVoice, 'The speech voice');
+  } catch {
+    // A Windows without SAPI, or one where it will not start. The actions are
+    // then quiet rather than broken.
+    voice = undefined;
+  }
+
+  return voice;
+}
 
 export function speechAvailable(): boolean {
-  return speakable;
+  return process.platform === 'win32';
 }
 
 /**
- * Says something, eventually.
+ * Says something, and returns long before it has been said.
  *
- * Returns as soon as the phrase is accepted rather than when it has been read
- * out: a key press must not wait several seconds for a sentence, and the whole
+ * A key press must not wait several seconds for a sentence, and the whole
  * point of announcing something is that nobody is standing over it.
  *
- * One at a time, because two of these talking over each other is two phrases
- * nobody can make out — which is worse than the second one waiting a moment.
+ * One phrase after another, which is SAPI's own doing: an asynchronous `Speak`
+ * queues. Interrupting is the other answer, for the key that reads out a
+ * number every time it is pressed rather than announcing an event.
  */
-export function speak(request: SpeechRequest): void {
-  if (!speakable || request.text.trim() === '') return;
+export async function speak(request: SpeechRequest): Promise<void> {
+  const text = request.text.trim();
+  if (text === '') return;
 
-  if (request.interrupt) {
-    waiting.length = 0;
-    stop();
+  const self = await open();
+  if (!self) return;
+
+  try {
+    if (request.rate !== undefined) {
+      invoke(self, SLOT.setRate, ['long'], [clamp(request.rate, RATE_RANGE)], 'Setting the rate');
+    }
+    if (request.volume !== undefined) {
+      invoke(
+        self,
+        SLOT.setVolume,
+        ['uint16'],
+        [clamp(request.volume, VOLUME_RANGE)],
+        'Setting the volume',
+      );
+    }
+
+    const flags = SPF.async | (request.interrupt ? SPF.purge : 0);
+
+    /*
+     * A named voice is asked for inside the text, which is SAPI's own markup
+     * and saves enumerating voice tokens through three more interfaces whose
+     * layout nobody here has verified.
+     *
+     * The price is that the text is then parsed as XML, so it has to be
+     * escaped — and that a voice which has since been uninstalled is refused
+     * outright rather than quietly substituted. Measured: `0x80045043`, and
+     * not a word spoken. Hence the second attempt without it, so a key naming
+     * a voice somebody removed is still heard.
+     */
+    if (request.voice) {
+      const asked = `<voice required="Name=${escapeXml(request.voice)}"/>${escapeXml(text)}`;
+      const result = call(self, SLOT.speak, SPEAK_ARGS, [asked, flags | SPF.isXml, null]);
+      if (result === 0) return;
+    }
+
+    // Not XML, deliberately: nothing anybody typed on a key should be able to
+    // become markup, and without a voice to ask for there is nothing to gain.
+    call(self, SLOT.speak, SPEAK_ARGS, [text, flags | SPF.notXml, null]);
+  } catch {
+    // A phrase that will not come out is not a reason for the key to fail: the
+    // press did what it was for, and this was the announcement of it.
   }
-
-  waiting.push(request);
-  // The oldest goes: every one of these is news, and stale news is the part
-  // worth losing.
-  while (waiting.length > QUEUE_LIMIT) waiting.shift();
-
-  if (!speaking) next();
 }
 
-/** Cuts off whatever is being said, and forgets what was waiting. */
-export function stop(): void {
-  const running = speaking;
-  speaking = undefined;
-  running?.kill();
+const SPEAK_ARGS = ['char16_t *', 'uint32', 'void *'] as const;
+
+/**
+ * Cuts off what is being said and throws away what was queued.
+ *
+ * An empty phrase with the purge flag, which is how SAPI is told to stop: it
+ * has nothing to say afterwards, and the purge happens first.
+ */
+export async function stop(): Promise<void> {
+  const self = await open();
+  if (!self) return;
+
+  try {
+    call(self, SLOT.speak, SPEAK_ARGS, ['', SPF.async | SPF.purge | SPF.notXml, null]);
+  } catch {
+    // Silence that will not stop is not worth a failed key either.
+  }
 }
 
-function next(): void {
-  const request = waiting.shift();
-  if (!request) return;
-
-  const child = execFile(
-    'powershell',
-    ['-NoProfile', '-NonInteractive', '-Command', '-'],
-    { windowsHide: true },
-    () => {
-      // Whatever happened — spoken, killed, PowerShell missing — the queue
-      // moves on. A phrase that would not come out is not a reason for the
-      // next one to be stuck behind it for ever.
-      if (speaking === child) {
-        speaking = undefined;
-        next();
-      }
-    },
-  );
-
-  speaking = child;
-  child.on('error', () => undefined);
-
-  child.stdin?.end(script(request), 'utf8');
+/** Lets go of the voice, for a daemon shutting down. */
+export function closeSpeech(): void {
+  release(voice);
+  voice = undefined;
+  opened = false;
 }
 
 /**
- * The PowerShell that does it, with everything quoted rather than interpolated.
+ * Every installed voice, as Windows describes them.
  *
- * The text is whatever somebody typed on a key — and it is a template, so it
- * may also be whatever a plugin published into a variable. It reaches a shell,
- * so nothing here may be pasted in raw: it is written as a single-quoted
- * PowerShell literal with the one dangerous character doubled, which is the
- * whole of that language's escaping rule.
+ * The one thing still done through PowerShell, and the one place it is
+ * harmless: enumerating voice tokens means three more COM interfaces whose
+ * vtables would have to be verified, this is asked once when somebody opens a
+ * field rather than on a key press, and no text of anybody's goes into it —
+ * so there is nothing here to escape and nothing to inject into.
  */
-export function script(request: SpeechRequest): string {
-  const lines = [
-    '$ErrorActionPreference = "Stop"',
-    '$voice = New-Object -ComObject SAPI.SpVoice',
-  ];
-
-  if (request.voice) {
-    /*
-     * Chosen by description, matched rather than compared: what SAPI reports
-     * is the long form — "Microsoft Irina Desktop - Russian" — and a voice
-     * that has been uninstalled should leave the phrase spoken in whatever
-     * Windows prefers rather than not spoken at all.
-     */
-    lines.push(
-      `$wanted = ${literal(request.voice)}`,
-      '$found = $voice.GetVoices() | Where-Object { $_.GetDescription() -eq $wanted } | Select-Object -First 1',
-      'if ($found) { $voice.Voice = $found }',
-    );
-  }
-
-  if (request.rate !== undefined) lines.push(`$voice.Rate = ${clamp(request.rate, RATE_RANGE)}`);
-  if (request.volume !== undefined) {
-    lines.push(`$voice.Volume = ${clamp(request.volume, VOLUME_RANGE)}`);
-  }
-
-  // Spoken synchronously *inside the process*, so the process living is what
-  // "still speaking" means — which is what makes killing it an interruption
-  // and its exit the cue for the next phrase.
-  lines.push(`$voice.Speak(${literal(request.text)}) | Out-Null`);
-
-  return lines.join('\n');
-}
-
-/** Every installed voice, as Windows describes them. */
 export async function listVoices(): Promise<string[]> {
-  if (!speakable) return [];
+  if (!speechAvailable()) return [];
+
+  const script = '(New-Object -ComObject SAPI.SpVoice).GetVoices() | ForEach-Object { $_.GetDescription() }';
 
   return new Promise((resolve) => {
     const child = execFile(
       'powershell',
-      ['-NoProfile', '-NonInteractive', '-Command', '-'],
-      { windowsHide: true, timeout: 5_000 },
+      // UTF-16LE base64, so no console code page is involved: the same trap
+      // that made a Russian phrase come out as mojibake would make a Russian
+      // voice description unmatchable.
+      ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
+      { windowsHide: true, timeout: 5_000, encoding: 'utf8' },
       (error, stdout) => {
         if (error) {
           resolve([]);
@@ -181,16 +209,24 @@ export async function listVoices(): Promise<string[]> {
     );
 
     child.on('error', () => resolve([]));
-    child.stdin?.end(
-      '(New-Object -ComObject SAPI.SpVoice).GetVoices() | ForEach-Object { $_.GetDescription() }',
-      'utf8',
-    );
   });
 }
 
-/** A PowerShell single-quoted string, where the only escape is doubling. */
-export function literal(text: string): string {
-  return `'${text.replace(/'/g, "''")}'`;
+/**
+ * The five characters XML cares about.
+ *
+ * Only ever applied to text on its way into SAPI's markup, and only when a
+ * voice has been named. The worst a mistake here could do is a phrase that
+ * will not parse — there is no shell on the other side any more — but a `<`
+ * in somebody's label should still be read out rather than swallowed.
+ */
+export function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 function clamp(value: number, range: { min: number; max: number }): number {
