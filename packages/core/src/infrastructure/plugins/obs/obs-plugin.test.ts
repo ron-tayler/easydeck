@@ -547,12 +547,21 @@ describe('the OBS plugin', () => {
     await bed.until('a connection', () => bed.runtime.status('obs')?.status === 'ready');
 
     bed.runtime.setWidgets([
-      { buttonId: 'b1', type: 'obs.meter', params: { input: 'Mic', direction: 'bottom', thickness: 18 } },
+      {
+        buttonId: 'b1',
+        type: 'obs.meter',
+        // No trough, so what is measured below is the level and nothing else.
+        params: { inputs: 'Mic\nDesktop', direction: 'bottom', thickness: 100, track: '' },
+      },
     ]);
 
-    // Loud, then quiet, inside one publishing interval.
+    // Loud, then quiet, inside one publishing interval. The desktop stays
+    // silent throughout, so the two bars must not come out alike.
     bed.obs.emit('InputVolumeMeters', {
-      inputs: [{ inputName: 'Mic', inputLevelsMul: [[0, 0, 0.7]] }],
+      inputs: [
+        { inputName: 'Mic', inputLevelsMul: [[0, 0, 0.7]] },
+        { inputName: 'Desktop', inputLevelsMul: [[0, 0, 0]] },
+      ],
     });
     bed.obs.emit('InputVolumeMeters', {
       inputs: [{ inputName: 'Mic', inputLevelsMul: [[0, 0, 0.001]] }],
@@ -561,7 +570,8 @@ describe('the OBS plugin', () => {
     const drawn = async (): Promise<string> => {
       const frame = await bed.runtime.drawSurface({
         type: 'obs.meter',
-        params: { input: 'Mic', direction: 'bottom', thickness: 18 },
+        // No trough, so what is measured below is the level and nothing else.
+        params: { inputs: 'Mic\nDesktop', direction: 'bottom', thickness: 100, track: '' },
         cols: 1,
         rows: 1,
         buttons: ['b1'],
@@ -573,14 +583,15 @@ describe('the OBS plugin', () => {
     await bed.until('a level', async () => (await drawn()).includes('<rect'), 3_000);
 
     const svg = await drawn();
-    const lit = [...svg.matchAll(/width="([\d.]+)" height="[\d.]+"/g)].reduce(
+    const lit = [...svg.matchAll(/<rect [^>]*width="([\d.]+)"/g)].reduce(
       (total, match) => total + Number(match[1]),
       0,
     );
 
-    // 0.7 of full scale is about −3 dB, which is most of the bar. The 0.001
-    // that arrived after it is silence, and would have drawn nothing.
-    assert.ok(lit > 80, `the loud moment survived, not the quiet one (${lit})`);
+    // 0.7 of full scale is about −3 dB, which is most of one bar. The 0.001
+    // that arrived after it is silence and would have drawn nothing, and the
+    // desktop was silent all along — so this is one bar's worth, not two.
+    assert.ok(lit > 80 && lit <= 100, `the loud moment survived, alone (${lit})`);
 
     await bed.dispose();
   });

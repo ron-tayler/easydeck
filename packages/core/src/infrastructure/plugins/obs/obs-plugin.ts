@@ -1,4 +1,10 @@
-import { PLUGIN_API_VERSION, numberParam, parseVariableKey, stringParam } from '@easydeck/engine';
+import {
+  PLUGIN_API_VERSION,
+  numberParam,
+  parseVariableKey,
+  readList,
+  stringParam,
+} from '@easydeck/engine';
 import type {
   ActionHandler,
   ActionRegistry,
@@ -161,10 +167,19 @@ export const obsManifest: PluginManifest = {
       icon: 'mute',
       params: [
         {
-          name: 'input',
-          type: 'select',
+          /*
+           * Several, because one bar on a key is a key that has told you about
+           * one microphone and spent itself doing it. A mixer is read by
+           * comparing the bars against each other.
+           */
+          name: 'inputs',
+          type: 'list',
           optionsFrom: 'audio-inputs',
-          label: { en: 'Source', ru: 'Источник' },
+          label: { en: 'Sources', ru: 'Источники' },
+          description: {
+            en: 'Drawn in the order listed, sharing one scale so they can be compared',
+            ru: 'Рисуются в порядке списка, по общей шкале — чтобы их можно было сравнивать',
+          },
           emptyNote: {
             en: 'OBS is not running, so it cannot say what it has',
             ru: 'OBS не запущен, поэтому список источников взять неоткуда',
@@ -173,28 +188,39 @@ export const obsManifest: PluginManifest = {
         {
           name: 'direction',
           type: 'select',
-          label: { en: 'Along', ru: 'Расположение' },
+          label: { en: 'Bars', ru: 'Полоски' },
           default: 'bottom',
           options: [
-            { value: 'bottom', label: { en: 'The bottom edge', ru: 'По нижнему краю' } },
-            { value: 'side', label: { en: 'The left edge', ru: 'По левому краю' } },
+            { value: 'bottom', label: { en: 'Lying, stacked upward', ru: 'Лежат, стопкой снизу вверх' } },
+            { value: 'side', label: { en: 'Standing, side by side', ru: 'Стоят рядом, слева направо' } },
           ],
         },
         {
           name: 'thickness',
           type: 'number',
-          label: { en: 'How thick, % of the key', ru: 'Толщина, % от клавиши' },
-          default: 18,
+          label: { en: 'How much of the key, %', ru: 'Сколько от клавиши, %' },
+          default: 100,
           min: 2,
           max: 100,
           description: {
-            en: 'A strip rather than the whole key, so the label underneath still says which input',
-            ru: 'Полоска, а не вся клавиша: подпись под ней говорит, какой это вход',
+            en: 'Less than all of it leaves room for a label saying which inputs these are',
+            ru: 'Меньше ста оставляет место для подписи, какие это входы',
           },
         },
         { name: 'calm', type: 'color', label: { en: 'Quiet', ru: 'Тихо' }, default: '#3fb950' },
         { name: 'loud', type: 'color', label: { en: 'Loud', ru: 'Громко' }, default: '#d29922' },
         { name: 'hot', type: 'color', label: { en: 'Too loud', ru: 'Перегруз' }, default: '#f85149' },
+        {
+          name: 'track',
+          type: 'color',
+          label: { en: 'The trough behind a bar', ru: 'Подложка под полоской' },
+          default: '#ffffff20',
+          required: false,
+          description: {
+            en: 'Without it a silent input draws nothing, and you cannot tell which bar is which',
+            ru: 'Без неё молчащий вход не рисует ничего, и не понять, где какая полоска',
+          },
+        },
         {
           name: 'background',
           type: 'color',
@@ -839,8 +865,7 @@ export class ObsPlugin implements Plugin {
       this.metered = new Set(
         widgets
           .filter((widget) => widget.type === 'obs.meter')
-          .map((widget) => String(widget.params['input'] ?? ''))
-          .filter((name) => name !== ''),
+          .flatMap((widget) => readList(widget.params['inputs'])),
       );
 
       this.connection?.subscribeExtra(this.metered.size > 0 ? VOLUME_METERS : 0);
@@ -937,9 +962,12 @@ export class ObsPlugin implements Plugin {
   }
 
   private meter(request: SurfaceRequest): SurfaceFrame | undefined {
-    const input = String(request.params['input'] ?? '');
-    const level = this.levels.get(input);
-    if (level === undefined) return undefined;
+    const inputs = readList(request.params['inputs']);
+    // Nothing until the first levels have arrived, which is a key showing
+    // whatever it was given to show meanwhile.
+    if (inputs.length === 0 || !inputs.some((name) => this.levels.has(name))) return undefined;
+
+    const levels = inputs.map((name) => this.levels.get(name) ?? 0);
 
     const colour = (key: string, fallback: string): string =>
       typeof request.params[key] === 'string' && request.params[key] !== ''
@@ -947,14 +975,23 @@ export class ObsPlugin implements Plugin {
         : fallback;
 
     const background = colour('background', '');
+    const track =
+      request.params['track'] === undefined ? '#ffffff20' : String(request.params['track']);
+
     const source = drawMeter(
-      level,
+      levels,
       {
         vertical: request.params['direction'] === 'side',
-        thickness: (Number(request.params['thickness']) || 18) / 100,
+        thickness: (Number(request.params['thickness']) || 100) / 100,
         calm: colour('calm', '#3fb950'),
         loud: colour('loud', '#d29922'),
         hot: colour('hot', '#f85149'),
+        /*
+         * Absent is a different thing from empty, and this is the line that
+         * keeps them apart: nobody has chosen means the default trough, and
+         * somebody clearing the field means no trough at all.
+         */
+        ...(track === '' ? {} : { track }),
         ...(background ? { background } : {}),
         warnAt: WARN_AT,
         hotAt: HOT_AT,

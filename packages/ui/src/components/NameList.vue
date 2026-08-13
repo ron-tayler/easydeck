@@ -19,11 +19,23 @@ const props = defineProps<{
   /** One entry per line, which is how a `list` is stored. */
   modelValue: string;
   placeholder?: string;
+  /**
+   * What may go in a row, where that is knowable.
+   *
+   * With choices a row is a list to pick from; without them it is a box to
+   * type in. Same control either way, because it is the same list — the only
+   * difference is whether anybody can say in advance what belongs in it. A
+   * meter naming three OBS inputs should not be typed from memory; a set of
+   * timer names has nothing to offer and must be.
+   */
+  options?: readonly { value: string; label?: string }[];
 }>();
 
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
 
 const { t } = useI18n();
+
+const choosable = computed(() => (props.options ?? []).length > 0);
 
 const rows = computed<string[]>(() =>
   props.modelValue === '' ? [] : props.modelValue.split('\n'),
@@ -51,12 +63,25 @@ function remove(at: number): void {
 <template>
   <div class="list">
     <div v-for="(row, at) in rows" :key="at" class="row">
+      <select
+        v-if="choosable"
+        :value="row"
+        @change="rename(at, ($event.target as HTMLSelectElement).value)"
+      >
+        <option value="" disabled>{{ t('editor.choose') }}</option>
+        <option v-for="option in options" :key="option.value" :value="option.value">
+          {{ option.label ?? option.value }}
+        </option>
+      </select>
+
       <input
+        v-else
         type="text"
         :value="row"
         :placeholder="placeholder"
         @input="rename(at, ($event.target as HTMLInputElement).value)"
       />
+
       <button type="button" class="remove" :title="t('variables.remove')" @click="remove(at)">
         ✕
       </button>
@@ -80,7 +105,8 @@ function remove(at: number): void {
   gap: 4px;
 }
 
-.row input {
+.row input,
+.row select {
   flex: 1;
   min-width: 0;
 }

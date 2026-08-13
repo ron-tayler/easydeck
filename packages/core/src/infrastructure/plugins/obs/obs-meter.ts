@@ -1,5 +1,5 @@
 /**
- * A level meter, drawn as a key.
+ * Level meters, drawn as a key.
  *
  * Pure, like the hardware graph next door and for the same reason: everything
  * that can be wrong here is arithmetic about numbers and colours, and none of
@@ -7,13 +7,22 @@
  */
 
 export interface MeterStyle {
-  /** Along the bottom, or up one side. */
+  /** Bars standing up side by side, rather than lying along the key. */
   readonly vertical: boolean;
-  /** How much of the key the bar takes across its short side, 0..1. */
+  /** How much of the key the whole block of bars takes, 0..1. */
   readonly thickness: number;
   readonly calm: string;
   readonly loud: string;
   readonly hot: string;
+  /**
+   * The trough each bar sits in, drawn whether or not there is a level.
+   *
+   * Without it a silent input draws nothing at all, and a key metering three
+   * things where two are quiet looks exactly like a key metering one — you
+   * cannot tell which bar is which, or that the others are there. Every mixer
+   * has this for the same reason.
+   */
+  readonly track?: string;
   readonly background?: string;
   /** Where amber starts and where red starts, as shares of the scale. */
   readonly warnAt: number;
@@ -27,6 +36,9 @@ export interface MeterStyle {
  * the room rather than the person in it.
  */
 export const FLOOR_DB = -60;
+
+/** Between one bar and the next, in the hundred units a key is. */
+const GAP = 3;
 
 /**
  * A level as a share of the scale, from the multiplier OBS reports.
@@ -53,18 +65,29 @@ export function levelOf(multiplier: number): number {
 /**
  * The picture, as SVG text.
  *
- * A strip rather than the whole key, so the meter is one layer of the face and
- * the label and the icon underneath still say *which* microphone it is. The
- * key's own background shows through unless one is asked for.
+ * Several inputs at once, because one bar on a key is a key that has told you
+ * about one microphone and spent itself doing it. A mixer is read by comparing
+ * the bars against each other, so they share a scale, a size and a colouring,
+ * and the only thing that tells them apart is their order — which is the order
+ * they were listed in.
  *
- * Coloured by where each part of the bar sits rather than by how loud it is
+ * The block of bars takes as much of the key as it was told to and no more, so
+ * a meter can be a strip along the bottom with a label above it, or the whole
+ * face of the key. What is under it shows through unless a background is asked
+ * for.
+ *
+ * Coloured by where each part of a bar sits rather than by how loud it is
  * overall: a bar reaching into the red is green, then amber, then red, which is
  * what every mixer in the world looks like and therefore needs no explaining.
  */
-export function drawMeter(level: number, style: MeterStyle, cols = 1, rows = 1): string {
+export function drawMeter(
+  levels: readonly number[],
+  style: MeterStyle,
+  cols = 1,
+  rows = 1,
+): string {
   const width = 100 * cols;
   const height = 100 * rows;
-  const filled = Math.max(0, Math.min(1, level));
 
   const parts: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">`,
@@ -74,28 +97,46 @@ export function drawMeter(level: number, style: MeterStyle, cols = 1, rows = 1):
     parts.push(`<rect width="${width}" height="${height}" fill="${escape(style.background)}"/>`);
   }
 
-  const thick = Math.max(2, Math.min(1, style.thickness) * (style.vertical ? width : height));
+  if (levels.length > 0) {
+    // The block runs across the key's short way; the bars divide it between
+    // them, and each grows along the long way.
+    const across = Math.max(2, Math.min(1, style.thickness) * (style.vertical ? width : height));
+    const gaps = GAP * Math.max(0, levels.length - 1);
+    const thick = Math.max(1, (across - gaps) / levels.length);
 
-  // Zones as shares of the scale, clipped to how much of the bar is lit.
-  const zones: [number, number, string][] = [
-    [0, Math.min(filled, style.warnAt), style.calm],
-    [style.warnAt, Math.min(filled, style.hotAt), style.loud],
-    [style.hotAt, filled, style.hot],
-  ];
+    levels.forEach((level, index) => {
+      const filled = Math.max(0, Math.min(1, level));
+      const offset = index * (thick + GAP);
 
-  for (const [from, to, colour] of zones) {
-    if (to <= from) continue;
+      const zones: [number, number, string][] = [
+        // The trough first and full length, so every bar is visible at rest
+        // and the lit part is drawn over it.
+        ...(style.track ? ([[0, 1, style.track]] as [number, number, string][]) : []),
+        [0, Math.min(filled, style.warnAt), style.calm],
+        [style.warnAt, Math.min(filled, style.hotAt), style.loud],
+        [style.hotAt, filled, style.hot],
+      ];
 
-    // Vertical grows upward from the bottom, which is the one direction a
-    // level is ever drawn in; horizontal grows rightward from the left.
-    const box = style.vertical
-      ? { x: 0, y: height - to * height, w: thick, h: (to - from) * height }
-      : { x: from * width, y: height - thick, w: (to - from) * width, h: thick };
+      for (const [from, to, colour] of zones) {
+        if (to <= from) continue;
 
-    parts.push(
-      `<rect x="${round(box.x)}" y="${round(box.y)}" width="${round(box.w)}" ` +
-        `height="${round(box.h)}" fill="${escape(colour)}"/>`,
-    );
+        /*
+         * Vertical bars grow upward from the bottom and are laid out from the
+         * left; horizontal bars grow rightward and are stacked from the bottom
+         * up. Upward and rightward are the only directions a level is ever
+         * drawn in, and bottom-up stacking puts the first one where the eye
+         * already is on a key with a label above it.
+         */
+        const box = style.vertical
+          ? { x: offset, y: height - to * height, w: thick, h: (to - from) * height }
+          : { x: from * width, y: height - thick - offset, w: (to - from) * width, h: thick };
+
+        parts.push(
+          `<rect x="${round(box.x)}" y="${round(box.y)}" width="${round(box.w)}" ` +
+            `height="${round(box.h)}" fill="${escape(colour)}"/>`,
+        );
+      }
+    });
   }
 
   parts.push('</svg>');

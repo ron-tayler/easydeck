@@ -13,6 +13,7 @@ import { THIS_BUTTON } from '@easydeck/engine/actions';
 
 import ColorPicker from './ColorPicker.vue';
 import HotkeyInput from './HotkeyInput.vue';
+import NameList from './NameList.vue';
 import PasswordInput from './PasswordInput.vue';
 import VariablePicker from './VariablePicker.vue';
 import VariableSelect from './VariableSelect.vue';
@@ -264,6 +265,19 @@ const choices = (param: ParamDefinition): readonly { value: string; label?: Loca
   dynamic.value[param.name] ?? [];
 
 /**
+ * The rows of a `list`, already said in the reader's language.
+ *
+ * `NameList` is used by the plugin settings window too, which has no plugin to
+ * ask and no locale of its own to reason about — so the translating happens
+ * here and it receives plain strings.
+ */
+const listChoices = (param: ParamDefinition): { value: string; label?: string }[] =>
+  (param.options?.length ? param.options : choices(param)).map((option) => ({
+    value: option.value,
+    ...(option.label ? { label: say(option.label) } : {}),
+  }));
+
+/**
  * Every text parameter is a template, so say so where it is being filled in.
  *
  * The engine substitutes variables into any text an action receives, not only
@@ -478,6 +492,17 @@ async function dropSecret(param: ParamDefinition, reference: string): Promise<vo
       >
         {{ say(param.emptyNote) }}
       </p>
+
+      <!-- Several answers where a select takes one. Rows are lists to pick
+           from when the plugin can say what belongs in them, and boxes to type
+           in when it cannot. -->
+      <NameList
+        v-else-if="param.type === 'list'"
+        :model-value="valueOf(param)"
+        :placeholder="say(param.placeholder)"
+        :options="listChoices(param)"
+        @update:model-value="set(param, $event)"
+      />
 
       <input
         v-else-if="param.type === 'select'"
