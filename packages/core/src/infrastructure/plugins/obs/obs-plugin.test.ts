@@ -104,10 +104,10 @@ async function bench(
     registry,
     runtime,
     /** Waits until the condition holds, or gives up loudly. */
-    async until(what: string, holds: () => boolean, timeoutMs = 3_000) {
+    async until(what: string, holds: () => boolean | Promise<boolean>, timeoutMs = 3_000) {
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
-        if (holds()) return;
+        if (await holds()) return;
         await delay(20);
       }
       assert.fail(`timed out waiting for ${what}`);
@@ -531,6 +531,56 @@ describe('the OBS plugin', () => {
       options.slice(2).map((option) => option.value),
       ['Intro', 'Game', 'Ending', 'Mic', 'Desktop', 'Заставка', 'Чат', 'Логотип'],
     );
+
+    await bed.dispose();
+  });
+
+  it('asks for levels only while a meter is on a page, and holds the peak', async () => {
+    /*
+     * Twenty events a second carrying every input is exactly the flood the
+     * ordinary subscription set leaves out, so it is asked for when a meter
+     * appears and dropped when the page turns. And what reaches the key is the
+     * loudest moment of the half-second, not the latest sample — a clap
+     * between two samples is what a meter is for.
+     */
+    const bed = await bench();
+    await bed.until('a connection', () => bed.runtime.status('obs')?.status === 'ready');
+
+    bed.runtime.setWidgets([
+      { buttonId: 'b1', type: 'obs.meter', params: { input: 'Mic', direction: 'bottom', thickness: 18 } },
+    ]);
+
+    // Loud, then quiet, inside one publishing interval.
+    bed.obs.emit('InputVolumeMeters', {
+      inputs: [{ inputName: 'Mic', inputLevelsMul: [[0, 0, 0.7]] }],
+    });
+    bed.obs.emit('InputVolumeMeters', {
+      inputs: [{ inputName: 'Mic', inputLevelsMul: [[0, 0, 0.001]] }],
+    });
+
+    const drawn = async (): Promise<string> => {
+      const frame = await bed.runtime.drawSurface({
+        type: 'obs.meter',
+        params: { input: 'Mic', direction: 'bottom', thickness: 18 },
+        cols: 1,
+        rows: 1,
+        buttons: ['b1'],
+      });
+      const source = String(frame?.source ?? '');
+      return Buffer.from(source.split(',')[1] ?? '', 'base64').toString('utf8');
+    };
+
+    await bed.until('a level', async () => (await drawn()).includes('<rect'), 3_000);
+
+    const svg = await drawn();
+    const lit = [...svg.matchAll(/width="([\d.]+)" height="[\d.]+"/g)].reduce(
+      (total, match) => total + Number(match[1]),
+      0,
+    );
+
+    // 0.7 of full scale is about −3 dB, which is most of the bar. The 0.001
+    // that arrived after it is silence, and would have drawn nothing.
+    assert.ok(lit > 80, `the loud moment survived, not the quiet one (${lit})`);
 
     await bed.dispose();
   });

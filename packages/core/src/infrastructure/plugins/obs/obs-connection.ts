@@ -23,10 +23,21 @@ const OP = {
   hello: 0,
   identify: 1,
   identified: 2,
+  reidentify: 3,
   event: 5,
   request: 6,
   requestResponse: 7,
 } as const;
+
+/**
+ * `EventSubscription::InputVolumeMeters`, which OBS keeps behind its own flag.
+ *
+ * Measured on the developer's machine: twenty events a second carrying every
+ * input at once, whether or not anything is making a sound. That is the reason
+ * it is a flag rather than part of the ordinary set, and the reason this
+ * connection asks for it only while a key is showing a meter.
+ */
+export const VOLUME_METERS = 1 << 16;
 
 /**
  * Which event categories to receive.
@@ -90,11 +101,37 @@ export class ObsConnection {
   private ready = false;
   /** Whether this connection ever got as far as being identified. */
   private everReady = false;
+  /**
+   * Event flags asked for beyond the ordinary set.
+   *
+   * Kept rather than passed once, because it has to survive a reconnection: a
+   * meter on screen when OBS restarts must still be a meter afterwards, and
+   * the handshake that comes back knows nothing of what was asked before it.
+   */
+  private extra = 0;
 
   constructor(private readonly options: ObsConnectionOptions) {}
 
   get connected(): boolean {
     return this.ready;
+  }
+
+  /**
+   * Asks for a high-volume event stream, or stops asking.
+   *
+   * OBS lets a live connection change its mind — that is what `Reidentify` is
+   * for — so nothing is torn down and no request in flight is lost. Quiet when
+   * the answer would not change anything, since this is called from a page
+   * turn and most page turns do not involve a meter.
+   */
+  subscribeExtra(flags: number): void {
+    if (flags === this.extra) return;
+    this.extra = flags;
+
+    if (!this.ready) return;
+    this.socket?.send(
+      JSON.stringify({ op: OP.reidentify, d: { eventSubscriptions: SUBSCRIPTIONS | this.extra } }),
+    );
   }
 
   start(): void {
@@ -227,12 +264,21 @@ export class ObsConnection {
         this.identify(data);
         return;
 
-      case OP.identified:
+      /*
+       * OBS answers a `Reidentify` with another `Identified`, so this arrives
+       * again every time the subscriptions change — which is every time a page
+       * with a meter on it is turned to. Announcing "connected" each time would
+       * make the plugin re-read all of OBS and re-photograph every thumbnail
+       * for a connection that never went anywhere.
+       */
+      case OP.identified: {
+        const wasReady = this.ready;
         this.attempt = 0;
         this.ready = true;
         this.everReady = true;
-        this.options.onState('ready');
+        if (!wasReady) this.options.onState('ready');
         return;
+      }
 
       case OP.event:
         this.options.onEvent(
@@ -264,7 +310,9 @@ export class ObsConnection {
     const auth = hello['authentication'] as { challenge?: string; salt?: string } | undefined;
     const identify: Record<string, unknown> = {
       rpcVersion: 1,
-      eventSubscriptions: SUBSCRIPTIONS,
+      // Whatever was asked for beyond the ordinary set is asked for again:
+      // a meter that was on screen when OBS restarted is still on screen.
+      eventSubscriptions: SUBSCRIPTIONS | this.extra,
     };
 
     if (auth?.challenge !== undefined && auth.salt !== undefined) {

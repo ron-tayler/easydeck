@@ -15,7 +15,8 @@ import type {
 } from '@easydeck/engine';
 
 import type { PluginRuntime } from '../../../application/plugin-runtime.js';
-import { ObsConnection } from './obs-connection.js';
+import { ObsConnection, VOLUME_METERS } from './obs-connection.js';
+import { drawMeter, levelOf } from './obs-meter.js';
 
 /**
  * OBS Studio, as a deck sees it.
@@ -62,6 +63,20 @@ const PREVIEW = '@preview';
 const SHOT_FORMAT = 'jpg';
 const SHOT_SIZE = 144;
 const SHOT_QUALITY = 70;
+
+/**
+ * How often a level reaches a key.
+ *
+ * OBS sends twenty a second. A key is looked at rather than watched, and
+ * twenty repaints a second would be twenty pictures down the USB cable — so
+ * what reaches it is the loudest moment of each half-second rather than every
+ * sample of it.
+ */
+const METER_INTERVAL_MS = 500;
+
+/** Where amber starts and where red starts, as shares of the scale. */
+const WARN_AT = 0.75;
+const HOT_AT = 0.92;
 
 export const obsManifest: PluginManifest = {
   id: OBS_PLUGIN_ID,
@@ -123,6 +138,72 @@ export const obsManifest: PluginManifest = {
             { value: '30', label: { en: 'Every 30 seconds', ru: 'Раз в 30 секунд' } },
             { value: '60', label: { en: 'Every minute', ru: 'Раз в минуту' } },
           ],
+        },
+      ],
+    },
+
+    /*
+     * The level of a sound, which is the other thing no variable can say.
+     *
+     * `obs.mute(Микрофон)` answers whether the microphone is switched on. It
+     * cannot answer whether anybody can hear you — a live microphone with a
+     * dead cable reads exactly the same as a working one. That is a shape
+     * moving twenty times a second, and it belongs on the key you would press
+     * to fix it.
+     */
+    {
+      type: 'obs.meter',
+      label: { en: 'Level meter', ru: 'Индикатор уровня' },
+      description: {
+        en: 'How loud an input actually is, as a strip along the key',
+        ru: 'Насколько громок вход на самом деле — полоской по краю клавиши',
+      },
+      icon: 'mute',
+      params: [
+        {
+          name: 'input',
+          type: 'select',
+          optionsFrom: 'audio-inputs',
+          label: { en: 'Source', ru: 'Источник' },
+          emptyNote: {
+            en: 'OBS is not running, so it cannot say what it has',
+            ru: 'OBS не запущен, поэтому список источников взять неоткуда',
+          },
+        },
+        {
+          name: 'direction',
+          type: 'select',
+          label: { en: 'Along', ru: 'Расположение' },
+          default: 'bottom',
+          options: [
+            { value: 'bottom', label: { en: 'The bottom edge', ru: 'По нижнему краю' } },
+            { value: 'side', label: { en: 'The left edge', ru: 'По левому краю' } },
+          ],
+        },
+        {
+          name: 'thickness',
+          type: 'number',
+          label: { en: 'How thick, % of the key', ru: 'Толщина, % от клавиши' },
+          default: 18,
+          min: 2,
+          max: 100,
+          description: {
+            en: 'A strip rather than the whole key, so the label underneath still says which input',
+            ru: 'Полоска, а не вся клавиша: подпись под ней говорит, какой это вход',
+          },
+        },
+        { name: 'calm', type: 'color', label: { en: 'Quiet', ru: 'Тихо' }, default: '#3fb950' },
+        { name: 'loud', type: 'color', label: { en: 'Loud', ru: 'Громко' }, default: '#d29922' },
+        { name: 'hot', type: 'color', label: { en: 'Too loud', ru: 'Перегруз' }, default: '#f85149' },
+        {
+          name: 'background',
+          type: 'color',
+          label: { en: 'Behind the meter', ru: 'Фон индикатора' },
+          required: false,
+          description: {
+            en: "Empty lets the key's own background show through",
+            ru: 'Пусто — виден собственный фон клавиши',
+          },
         },
       ],
     },
@@ -696,6 +777,14 @@ export class ObsPlugin implements Plugin {
   private wanted: readonly { source: string; everyMs: number }[] = [];
   private ticker?: Ticker;
 
+  /** Inputs a meter on screen is showing, and therefore worth listening for. */
+  private metered = new Set<string>();
+  /** The loudest each of those has been since the last publish. */
+  private readonly peaks = new Map<string, number>();
+  /** What the meters are drawing, which changes on the beat and not before. */
+  private readonly levels = new Map<string, number>();
+  private meterBeat?: Ticker;
+
   constructor(private readonly options: ObsPluginOptions = {}) {}
 
   start(host: PluginHost): void {
@@ -711,6 +800,19 @@ export class ObsPlugin implements Plugin {
     });
 
     host.provideSurface('obs.thumbnail', async (request) => this.thumbnail(request));
+    host.provideSurface('obs.meter', async (request) => this.meter(request));
+
+    /*
+     * Levels are published on a beat of their own rather than as they arrive.
+     *
+     * OBS sends twenty a second; a key is looked at, not watched, and twenty
+     * repaints a second would be twenty pictures down the USB cable. What is
+     * published every half-second is the *peak* since the last one, not the
+     * latest sample — a clap between two samples is exactly what a meter is
+     * for, and taking the last value would throw away thirty-nine readings in
+     * forty and miss it.
+     */
+    this.meterBeat = host.update(0, () => this.publishLevels());
 
     /*
      * Which thumbnails are on screen decides both what is photographed and how
@@ -726,6 +828,28 @@ export class ObsPlugin implements Plugin {
           everyMs: Math.max(1, Number(widget.params['every']) || 5) * 1000,
         }));
 
+      /*
+       * The meters on screen decide whether OBS is asked for levels at all.
+       *
+       * Twenty events a second carrying every input, arriving whether or not
+       * anybody is looking, is exactly the flood the ordinary subscription set
+       * leaves out. Asked for while a meter is on a page and dropped when the
+       * page turns — which is the thing `onWidgets` was built for.
+       */
+      this.metered = new Set(
+        widgets
+          .filter((widget) => widget.type === 'obs.meter')
+          .map((widget) => String(widget.params['input'] ?? ''))
+          .filter((name) => name !== ''),
+      );
+
+      this.connection?.subscribeExtra(this.metered.size > 0 ? VOLUME_METERS : 0);
+      this.meterBeat?.every(this.metered.size > 0 ? METER_INTERVAL_MS : 0);
+      if (this.metered.size === 0) {
+        this.peaks.clear();
+        this.levels.clear();
+      }
+
       this.retime();
       void this.refresh();
     });
@@ -737,7 +861,9 @@ export class ObsPlugin implements Plugin {
 
   stop(): void {
     this.ticker?.stop();
+    this.meterBeat?.stop();
     this.ticker = undefined;
+    this.meterBeat = undefined;
     this.connection?.stop();
     this.connection = undefined;
   }
@@ -753,6 +879,91 @@ export class ObsPlugin implements Plugin {
   private thumbnail(request: SurfaceRequest): SurfaceFrame | undefined {
     const kept = this.shots.get(String(request.params['source'] ?? PROGRAM));
     return kept ? { source: kept.source } : undefined;
+  }
+
+  // --- levels ---------------------------------------------------------------
+
+  /**
+   * Keeps the loudest moment of each input until the next publish.
+   *
+   * Every event carries every input; only the ones a key is showing are kept,
+   * which is most of the saving. What is kept is the maximum, because a level
+   * is about the loudest thing that happened and not about whenever the last
+   * sample happened to land.
+   */
+  private onMeters(data: Record<string, unknown>): void {
+    const inputs = (data['inputs'] as { inputName?: string; inputLevelsMul?: number[][] }[]) ?? [];
+
+    for (const input of inputs) {
+      const name = String(input.inputName ?? '');
+      if (!this.metered.has(name)) continue;
+
+      let loudest = 0;
+      for (const channel of input.inputLevelsMul ?? []) {
+        /*
+         * The largest of whatever the channel carries.
+         *
+         * obs-websocket documents three numbers per channel, and on the
+         * machine this was measured on only the third ever moved — the first
+         * two were flat zero for every input, loud or quiet. Taking the
+         * largest means the meter works whichever of them a given build fills
+         * in, and costs nothing to do.
+         */
+        for (const value of channel) loudest = Math.max(loudest, Number(value) || 0);
+      }
+
+      this.peaks.set(name, Math.max(this.peaks.get(name) ?? 0, loudest));
+    }
+  }
+
+  /** Hands the held peaks to the keys, and starts holding again from nothing. */
+  private publishLevels(): void {
+    let changed = false;
+
+    for (const name of this.metered) {
+      const level = levelOf(this.peaks.get(name) ?? 0);
+      // Rounded before comparing: a bar is a hundred pixels wide at most, and
+      // the fourth decimal place of a level is a repaint for nobody.
+      const shown = Math.round(level * 100) / 100;
+
+      if (this.levels.get(name) !== shown) {
+        this.levels.set(name, shown);
+        changed = true;
+      }
+    }
+
+    this.peaks.clear();
+    if (changed) this.host?.redraw();
+  }
+
+  private meter(request: SurfaceRequest): SurfaceFrame | undefined {
+    const input = String(request.params['input'] ?? '');
+    const level = this.levels.get(input);
+    if (level === undefined) return undefined;
+
+    const colour = (key: string, fallback: string): string =>
+      typeof request.params[key] === 'string' && request.params[key] !== ''
+        ? (request.params[key] as string)
+        : fallback;
+
+    const background = colour('background', '');
+    const source = drawMeter(
+      level,
+      {
+        vertical: request.params['direction'] === 'side',
+        thickness: (Number(request.params['thickness']) || 18) / 100,
+        calm: colour('calm', '#3fb950'),
+        loud: colour('loud', '#d29922'),
+        hot: colour('hot', '#f85149'),
+        ...(background ? { background } : {}),
+        warnAt: WARN_AT,
+        hotAt: HOT_AT,
+      },
+      request.cols,
+      request.rows,
+    );
+
+    return { source };
   }
 
   /**
@@ -895,6 +1106,10 @@ export class ObsPlugin implements Plugin {
       },
       log: (level, message) => host.log(level, message),
     });
+
+    // A fresh connection knows nothing of what the last one was asked for, and
+    // the meters on screen did not go anywhere while it was being replaced.
+    this.connection.subscribeExtra(this.metered.size > 0 ? VOLUME_METERS : 0);
 
     this.registerOptions(host);
     this.connection.start();
@@ -1228,6 +1443,12 @@ export class ObsPlugin implements Plugin {
        * it has, and publishing the lot would put back exactly the flood that
        * watching was meant to avoid.
        */
+      // Twenty a second while a meter is on screen, and never otherwise. Not
+      // published here: see `publishLevels` for why it is held instead.
+      case 'InputVolumeMeters':
+        this.onMeters(data);
+        return;
+
       case 'InputMuteStateChanged':
         this.publishIfWatched('obs.mute', String(data['inputName'] ?? ''), data['inputMuted'] === true);
         return;
