@@ -134,6 +134,63 @@ test('a region with no picture is just its background', async () => {
   assert.deepEqual(pixel(tile, 50, 50), [0, 0, 255]);
 });
 
+test('a linear background runs the way CSS would run it', async () => {
+  // Ninety degrees is left to right, and the same number in the browser turns
+  // the preview the same way round. A gradient that came out mirrored — or
+  // running down instead of across — is a preview nobody can trust again.
+  const composer = new CanvasPanelComposer();
+
+  const source = await composer.open({
+    background: {
+      base: '#000000',
+      linear: {
+        angle: 90,
+        stops: [
+          { color: '#ff0000', at: 0 },
+          { color: '#0000ff', at: 1 },
+        ],
+      },
+    },
+    width: TILE,
+    height: TILE,
+  });
+  const tile = composer.cutTile(source.composeFrame(0), { ...SQUARE, x: 0, y: 0 });
+
+  const [leftRed, , leftBlue] = pixel(tile, 2, 50);
+  const [rightRed, , rightBlue] = pixel(tile, 97, 50);
+
+  assert.ok(leftRed > 240 && leftBlue < 15, `left end was ${leftRed},${leftBlue}`);
+  assert.ok(rightBlue > 240 && rightRed < 15, `right end was ${rightRed},${rightBlue}`);
+  // Across, not down: both rows of the same column agree.
+  assert.deepEqual(pixel(tile, 50, 5), pixel(tile, 50, 95));
+});
+
+test('a spot lights the key where it was put, and fades in its own colour', async () => {
+  const composer = new CanvasPanelComposer();
+
+  const source = await composer.open({
+    background: {
+      base: '#000000',
+      spots: [{ color: '#00ff00', x: 0.25, y: 0.25, radius: 0.3 }],
+    },
+    width: TILE,
+    height: TILE,
+  });
+  const tile = composer.cutTile(source.composeFrame(0), { ...SQUARE, x: 0, y: 0 });
+
+  const centre = pixel(tile, 25, 25);
+  const away = pixel(tile, 90, 90);
+
+  assert.ok(centre[1] > 240, `the spot's own place was ${centre.join()}`);
+  assert.deepEqual(away, [0, 0, 0], 'and the far corner is untouched');
+
+  // The tell-tale of fading to `transparent` instead of to the same colour: a
+  // red or blue channel appearing where a green spot thins out.
+  const edge = pixel(tile, 25, 52);
+  assert.ok(edge[1] > 0, 'still lit at the rim');
+  assert.deepEqual([edge[0], edge[2]], [0, 0], `the rim went grey: ${edge.join()}`);
+});
+
 test('the label goes over the picture, not into a strip of its own', async () => {
   const composer = new CanvasPanelComposer();
 

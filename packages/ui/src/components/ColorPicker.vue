@@ -2,6 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
+import { contrastInk } from '@easydeck/engine/background';
+
 /**
  * A colour, chosen the way colours are chosen everywhere else: one button, and
  * a panel behind it holding the whole space at once.
@@ -106,12 +108,11 @@ const handle = computed(() => ({
  * Black on a light colour, white on a dark one.
  *
  * The button *is* the swatch, so the palette on it has to stay legible against
- * whatever it is showing.
+ * whatever it is showing. Asked of the shared function rather than worked out
+ * here: the gradient button stands next to this one showing the same colour
+ * with something over it, and the two must not disagree about black or white.
  */
-const contrast = computed(() => {
-  const { r, g, b } = rgb.value;
-  return 0.299 * r + 0.587 * g + 0.114 * b > 140 ? '#000000' : '#ffffff';
-});
+const contrast = computed(() => contrastInk(current.value));
 
 const panelStyle = computed(() => ({ left: `${at.value.x}px`, top: `${at.value.y}px` }));
 
@@ -493,7 +494,11 @@ function aim(event: PointerEvent): void {
 
 .panel {
   position: fixed;
-  z-index: 30;
+  /* Above every window in the program, including the ones that open over the
+     button editor: this panel is opened from inside two of them, and a colour
+     chosen behind the thing it is being chosen for is not a choice anyone can
+     make. */
+  z-index: 50;
   width: 236px;
   padding: 10px;
   display: flex;

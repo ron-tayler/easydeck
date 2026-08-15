@@ -1,5 +1,6 @@
 import type { AssetRef } from '../../domain/asset.js';
 import type { RegionGeometry } from '../../domain/panel-format.js';
+import type { SceneBackground } from '../../domain/scene.js';
 
 /**
  * Outbound port: everything that touches pixels.
@@ -82,7 +83,8 @@ export interface FrameSource {
 export interface OpenRequest {
   /** Absent means a region with no picture: just the background. */
   readonly asset?: AssetRef;
-  readonly background?: string;
+  /** A colour, or the gradient description the renderer knows how to paint. */
+  readonly background?: SceneBackground;
   readonly geometry: RegionGeometry;
 }
 

@@ -1,3 +1,5 @@
+import type { BackgroundSpec } from '@easydeck/engine/background';
+
 /**
  * Declarative description of what a key should look like.
  *
@@ -6,8 +8,14 @@
  * no canvas, no pixels — just intent.
  */
 export interface ButtonVisual {
-  /** CSS color. Defaults to black. */
-  readonly background?: string;
+  /**
+   * CSS color, or a gradient over one. Defaults to black.
+   *
+   * The gradient's shape is described by the engine, which is also where the
+   * arithmetic behind it lives: the web preview and this zone have to draw the
+   * same picture, and they can only do that from the same numbers.
+   */
+  readonly background?: BackgroundSpec;
   /** Corner rounding in pixels at 100x100 scale. Defaults to 12. */
   readonly cornerRadius?: number;
   /** Drawn behind everything: this key's share of a multi-key picture. */

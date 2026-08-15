@@ -1,3 +1,5 @@
+import type { BackgroundSpec } from '@easydeck/engine/background';
+
 import type { LabelSpec } from '../domain/button-visual.js';
 import type { RgbaBitmap } from '../domain/render-target.js';
 
@@ -16,7 +18,7 @@ import type { RgbaBitmap } from '../domain/render-target.js';
 export interface RegionRequest {
   /** A path, a data URL, or the bytes themselves. Absent means plain background. */
   readonly source?: string | Uint8Array;
-  readonly background?: string;
+  readonly background?: BackgroundSpec;
   /** The size of the whole region in pixels, gaps between displays included. */
   readonly width: number;
   readonly height: number;

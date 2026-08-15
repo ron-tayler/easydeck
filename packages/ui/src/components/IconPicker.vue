@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { IconSpec, LibraryImage, LocalizedText } from '@easydeck/core';
+import type { BackgroundSpec } from '@easydeck/engine/background';
 import type { IconColorSlot } from '@easydeck/engine/icons';
 import { drawableIcon, readIconPalette, svgTextOf, usesCurrentColor } from '@easydeck/engine/icons';
 
@@ -28,7 +29,7 @@ const props = defineProps<{
   /** Pictures already on a key of this profile, offered for reuse. */
   profileIcons: readonly UsedIcon[];
   /** What the key shows behind the picture, so a placement is judged on it. */
-  background?: string;
+  background?: BackgroundSpec;
   /** Pictures the folder holds but the library had no room for. */
   omittedIcons?: number;
   /**

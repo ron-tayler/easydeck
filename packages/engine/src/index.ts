@@ -91,6 +91,32 @@ export type {
   LabelSpec,
 } from './domain/visual.js';
 export type {
+  BackgroundSpec,
+  GradientBackground,
+  GradientSpot,
+  GradientStop,
+  LinearGradient,
+} from './domain/background.js';
+export {
+  DEFAULT_BACKGROUND,
+  backgroundBase,
+  backgroundCss,
+  backgroundSignature,
+  colorAt,
+  contrastInk,
+  gradientLine,
+  hasGradient,
+  linearGradientCss,
+  mixColors,
+  opacityOf,
+  orderedStops,
+  sampleStops,
+  shade,
+  withBase,
+  withOpacity,
+  withoutGradient,
+} from './domain/background.js';
+export type {
   ActionDescriptor,
   ActionContext,
   ActionHandler,

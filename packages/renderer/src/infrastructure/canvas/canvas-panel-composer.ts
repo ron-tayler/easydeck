@@ -14,6 +14,7 @@ import { rasterizeSvg } from './svg-rasterizer.js';
 import type { RgbaBitmap } from '../../domain/render-target.js';
 import { layoutLabel } from '@easydeck/engine/label';
 
+import { paintBackground } from './paint-background.js';
 import { resolveFontFamily } from './font-registry.js';
 import { openGif, isGif } from './gif-sequence.js';
 import type { GifSequence } from './gif-sequence.js';
@@ -231,8 +232,7 @@ export class CanvasPanelComposer implements PanelComposer {
   }
 
   private fill(ctx: SKRSContext2D, request: RegionRequest): void {
-    ctx.fillStyle = request.background ?? DEFAULT_BACKGROUND;
-    ctx.fillRect(0, 0, request.width, request.height);
+    paintBackground(ctx, request.background ?? DEFAULT_BACKGROUND, request.width, request.height);
   }
 
   /**

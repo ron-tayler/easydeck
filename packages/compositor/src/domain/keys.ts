@@ -1,6 +1,6 @@
 import type { PanelFormat } from './panel-format.js';
 import { alertAt, cornersOf, labelAt } from './scene.js';
-import type { SceneLabel, SceneRegion } from './scene.js';
+import type { SceneBackground, SceneLabel, SceneRegion } from './scene.js';
 
 /**
  * Cache identity, as short strings.
@@ -34,9 +34,38 @@ export function regionKey(format: PanelFormat, region: SceneRegion): string {
     panel,
     `${region.cols}x${region.rows}`,
     image,
-    region.background ?? NONE,
+    backgroundPart(region.background),
     region.cornerRadius ?? NONE,
   ].join('|');
+}
+
+/**
+ * The background, as a string, whatever shape it has.
+ *
+ * A colour is itself. A gradient is written out field by field with its keys in
+ * a fixed order, rather than passed to `JSON.stringify`, which follows the order
+ * the object was built in: two gradients that draw the same picture would then
+ * produce two keys, and the second one would compose a tile the cache already
+ * held. Nothing here knows what the fields mean, which is what lets a gradient
+ * gain one without this file being the place a stale tile comes from.
+ */
+function backgroundPart(background: SceneBackground | undefined): string {
+  if (background === undefined) return NONE;
+  return typeof background === 'string' ? background : stable(background);
+}
+
+function stable(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
+
+  if (value !== null && typeof value === 'object') {
+    const fields = Object.entries(value as Record<string, unknown>)
+      .filter(([, held]) => held !== undefined)
+      .sort(([one], [other]) => (one < other ? -1 : one > other ? 1 : 0))
+      .map(([name, held]) => `${name}:${stable(held)}`);
+    return `{${fields.join(',')}}`;
+  }
+
+  return JSON.stringify(value) ?? NONE;
 }
 
 /**

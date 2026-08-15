@@ -12,6 +12,9 @@
  * special handling anywhere downstream.
  */
 
+import { backgroundSignature } from './background.js';
+import type { BackgroundSpec } from './background.js';
+
 export interface SceneAsset {
   /** Short, stable name for the picture; never the picture itself. */
   readonly id: string;
@@ -38,7 +41,7 @@ export interface SceneRegion {
   readonly key: number;
   readonly cols: number;
   readonly rows: number;
-  readonly background?: string;
+  readonly background?: BackgroundSpec;
   readonly cornerRadius?: number;
   readonly image?: SceneImage;
   readonly labels?: readonly SceneLabel[];
@@ -73,7 +76,7 @@ export function sceneSignature(scene: Scene): string {
     parts.push(
       `${region.key}:${region.cols}x${region.rows}`,
       region.image ? region.image.asset.id : '',
-      region.background ?? '',
+      backgroundSignature(region.background),
       region.cornerRadius === undefined ? '' : String(region.cornerRadius),
     );
 

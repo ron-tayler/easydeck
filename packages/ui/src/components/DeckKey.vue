@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { KeyView } from '@easydeck/core';
 
+import { backgroundCss } from '@easydeck/engine/background';
 import { drawableIcon } from '@easydeck/engine/icons';
 
 import KeyLabel from './KeyLabel.vue';
@@ -67,7 +68,7 @@ const over = ref(false);
  * background, the same label position, the same default colours. It is a
  * preview, so looking like the panel matters more than looking like the web.
  */
-const background = computed(() => props.view?.visual.background ?? '#111318');
+const background = computed(() => backgroundCss(props.view?.visual.background));
 const label = computed(() => props.view?.visual.label);
 const icon = computed(() => props.view?.visual.icon);
 

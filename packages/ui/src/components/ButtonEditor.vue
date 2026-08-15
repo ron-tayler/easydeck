@@ -16,6 +16,7 @@ import type {
   VariableType,
 } from '@easydeck/core';
 
+import { backgroundBase, backgroundCss, withBase } from '@easydeck/engine/background';
 import { isStateRange } from '@easydeck/engine/profile';
 import {
   drawableIcon,
@@ -37,6 +38,7 @@ import { TEXT_POSITIONS, textPositionIcon } from '../icons/text-position.js';
 import KeyLabel from './KeyLabel.vue';
 import MacroEditor from './MacroEditor.vue';
 import ColorPicker from './ColorPicker.vue';
+import GradientPicker from './GradientPicker.vue';
 import PluginList from './PluginList.vue';
 import VariablePicker from './VariablePicker.vue';
 import VariableSelect from './VariableSelect.vue';
@@ -739,7 +741,9 @@ const preview = computed(() => {
   const label = state.value.visual.label;
 
   return {
-    background: state.value.visual.background ?? '#111318',
+    // The same call the grid and the panel make, so a gradient is one picture
+    // with three surfaces drawing it rather than three interpretations of it.
+    background: backgroundCss(state.value.visual.background),
     label: label ? { ...label, text: renderTemplate(label.text, props.variables) } : undefined,
   };
 });
@@ -867,13 +871,26 @@ const previewIcon = computed(() => {
               transparency in it has been sitting on plain black ever since.
             -->
             <div class="look-tools">
-              <ColorPicker
-                :label="t('editor.look.background')"
-                :model-value="state.visual.background"
-                fallback="#111318"
-                :title="t('editor.background')"
-                @update:model-value="patchVisual({ background: $event })"
-              />
+              <!--
+                The colour and the gradient on one line, the way the picture and
+                its own controls stand on theirs. They are not alternatives: a
+                gradient is drawn on the colour, and the colour button sets what
+                is underneath whether or not there is anything over it.
+              -->
+              <div class="look-fill">
+                <ColorPicker
+                  :label="t('editor.look.background')"
+                  :model-value="backgroundBase(state.visual.background)"
+                  fallback="#111318"
+                  :title="t('editor.background')"
+                  @update:model-value="patchVisual({ background: withBase(state.visual.background, $event) })"
+                />
+
+                <GradientPicker
+                  :background="state.visual.background"
+                  @update="patchVisual({ background: $event })"
+                />
+              </div>
 
               <!--
                 Picture and widget are one slot with two ways into it, so they
@@ -1421,6 +1438,22 @@ h3 {
 
 .look-slot > * { min-width: 0; }
 .look-slot > :last-child { flex: 1; }
+
+/*
+ * The fill's own row: the colour named, the gradient a square beside it.
+ *
+ * The other way round would give the width to the rarer of the two — every key
+ * has a colour and few have a gradient — and the word that has to be readable
+ * is the one on the control people reach for every time.
+ */
+.look-fill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.look-fill > :first-child { flex: 1; min-width: 0; }
 
 .preview {
   container-type: inline-size;

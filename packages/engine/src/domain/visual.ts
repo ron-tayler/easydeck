@@ -12,6 +12,7 @@
  * any drift between them.
  */
 
+import type { BackgroundSpec } from './background.js';
 import type { IconBinding } from './icon-params.js';
 import type { SurfaceSpec } from './surface-spec.js';
 
@@ -88,7 +89,14 @@ export interface BackdropSlice {
 }
 
 export interface ButtonVisual {
-  readonly background?: string;
+  /**
+   * A colour, or a colour with a gradient over it.
+   *
+   * Still a plain string on almost every key, and on every key written before
+   * gradients existed — see `background.ts` for why the simple form was kept
+   * rather than wrapped.
+   */
+  readonly background?: BackgroundSpec;
   readonly cornerRadius?: number;
   /** Drawn behind everything else: it belongs to the region, not the button. */
   readonly backdrop?: BackdropSlice;

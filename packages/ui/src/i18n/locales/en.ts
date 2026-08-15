@@ -105,6 +105,28 @@
     back: 'Send back',
     remove: 'Remove',
   },
+  gradient: {
+    title: 'Gradient',
+    add: 'Add a gradient',
+    change: 'Edit the gradient',
+    clear: 'Remove the gradient',
+    hint: 'Click the key to drop a spot of light, drag to move it. The ends of the line turn the ramp; hold shift for the eight obvious directions.',
+    linear: 'Ramp',
+    angle: 'Angle',
+    /* A mark on the bar and a spot on the key. Named for what they are: the
+       labels under the sliders change with whatever is selected. */
+    stop: 'Stop',
+    spot: 'Spot',
+    addStop: 'Click the bar to add a stop',
+    presets: 'Ready-made',
+    base: 'Fill',
+    opacity: 'Opacity',
+    radius: 'Radius',
+    position: 'Position',
+    remove: 'Remove',
+    nothing: 'Choose a spot on the key or a stop on the bar.',
+    done: 'Done',
+  },
   color: {
     open: 'Choose colour',
     icon: 'Picture colour',

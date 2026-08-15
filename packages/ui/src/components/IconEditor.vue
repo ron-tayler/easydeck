@@ -2,6 +2,8 @@
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { IconSpec, LibraryImage } from '@easydeck/core';
+import { backgroundCss } from '@easydeck/engine/background';
+import type { BackgroundSpec } from '@easydeck/engine/background';
 import {
   ICON_CANVAS,
   composeIcon,
@@ -36,7 +38,7 @@ const props = defineProps<{
   /** The picture as chosen, which may already be one this window produced. */
   source: string;
   /** What the key shows behind them, so the placement is judged against it. */
-  background?: string;
+  background?: BackgroundSpec;
   userIcons: readonly LibraryImage[];
   profileIcons: readonly UsedIcon[];
   omittedIcons?: number;
@@ -370,7 +372,7 @@ function apply(): void {
       <div
         ref="canvas"
         class="key"
-        :style="{ background: background ?? '#111318' }"
+        :style="{ background: backgroundCss(background) }"
         @wheel.prevent="onWheel"
       >
         <img

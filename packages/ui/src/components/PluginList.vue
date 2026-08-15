@@ -8,6 +8,7 @@ import type {
   PluginManifest,
   VariableValue,
 } from '@easydeck/core';
+import { backgroundCss } from '@easydeck/engine/background';
 import { renderTemplate } from '@easydeck/engine/template';
 import { CORE_DELAY, CORE_FOR, CORE_IF } from '@easydeck/engine/actions';
 
@@ -154,7 +155,7 @@ function preview(preset: ButtonPreset): {
   const values = props.variables ?? {};
 
   return {
-    background: state?.visual.background ?? '#111318',
+    background: backgroundCss(state?.visual.background),
     text: renderTemplate(state?.visual.label?.text ?? '', values),
     icon: state?.visual.icon?.source,
   };

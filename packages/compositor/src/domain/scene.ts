@@ -36,12 +36,39 @@ export interface SceneImage {
   readonly asset: AssetRef;
 }
 
+/**
+ * A flat colour, or a colour with a gradient over it.
+ *
+ * Nothing in this zone looks inside one: the background is carried from the
+ * scene to the composer and folded into a cache key, and what the fields mean
+ * is between the engine that writes them and the renderer that paints them.
+ * The shape is spelled out anyway, the way `SceneLabel` is — the alternative,
+ * an object of anything, is assignable to nothing and would have to be cast
+ * back into a real type at the one seam that exists to catch drift.
+ */
+export type SceneBackground = string | SceneGradient;
+
+export interface SceneGradient {
+  readonly base: string;
+  readonly linear?: {
+    /** Degrees clockwise from straight up, as CSS counts them. */
+    readonly angle: number;
+    readonly stops: readonly { readonly color: string; readonly at: number }[];
+  };
+  readonly spots?: readonly {
+    readonly color: string;
+    readonly x: number;
+    readonly y: number;
+    readonly radius: number;
+  }[];
+}
+
 export interface SceneRegion {
   /** Top-left key of the rectangle, in the panel's row-major numbering. */
   readonly key: number;
   readonly cols: number;
   readonly rows: number;
-  readonly background?: string;
+  readonly background?: SceneBackground;
   readonly cornerRadius?: number;
   /** One picture for the whole region. Absent means a plain background. */
   readonly image?: SceneImage;

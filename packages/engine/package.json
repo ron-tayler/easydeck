@@ -27,6 +27,10 @@
       "types": "./dist/domain/variables.d.ts",
       "import": "./dist/domain/variables.js"
     },
+    "./background": {
+      "types": "./dist/domain/background.d.ts",
+      "import": "./dist/domain/background.js"
+    },
     "./label": {
       "types": "./dist/domain/label-layout.d.ts",
       "import": "./dist/domain/label-layout.js"
