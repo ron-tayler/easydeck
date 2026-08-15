@@ -260,7 +260,10 @@ export class PluginRuntime extends EventEmitter<PluginRuntimeEvents> {
    * from a blank frame. See `docs/live-surfaces.md`.
    */
   async drawSurface(request: SurfaceRequest): Promise<SurfaceFrame | undefined> {
-    const pluginId = request.type.slice(0, request.type.indexOf('.'));
+    // Up to the *last* dot: a surface type is `<pluginId>.<name>`, and a
+    // plugin id may itself carry an author — `ed.obs.thumbnail` belongs to
+    // `ed.obs`, not to a plugin called `ed`.
+    const pluginId = request.type.slice(0, request.type.lastIndexOf('.'));
     const draw = this.entries.get(pluginId)?.surfaces.get(request.type);
     if (!draw) return undefined;
 

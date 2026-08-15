@@ -196,6 +196,8 @@ export type {
 } from './domain/surface-spec.js';
 export { surfaceKey } from './domain/surface-spec.js';
 export { PLUGIN_API_VERSION, localized, readList } from './domain/plugin.js';
+export { definePlugin } from './domain/plugin-module.js';
+export type { PluginActivation, PluginModule } from './domain/plugin-module.js';
 export { DeckController } from './application/deck-controller.js';
 export type {
   DeckControllerOptions,

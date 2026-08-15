@@ -25,6 +25,9 @@ import { registerHardwarePlugin } from './infrastructure/plugins/hardware-plugin
 import { registerObsPlugin } from './infrastructure/plugins/obs/obs-plugin.js';
 import { registerSoundpadPlugin } from './infrastructure/plugins/soundpad/soundpad-plugin.js';
 import { registerVtsPlugin } from './infrastructure/plugins/vts/vts-plugin.js';
+import { registerYandexPlugin } from './infrastructure/plugins/yandex/yandex-plugin.js';
+import { loadCodePlugins } from './infrastructure/plugins/code-plugins.js';
+import { pluginsDir } from './infrastructure/config-paths.js';
 import { openTarget } from './infrastructure/actions/system-actions.js';
 import type { DeviceDirectory } from './application/device-directory.js';
 import type { SecretVault } from './application/ports/secret-vault.js';
@@ -191,6 +194,17 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
       await registerObsPlugin(actions, plugins);
       await registerSoundpadPlugin(actions, plugins);
       await registerVtsPlugin(actions, plugins);
+      await registerYandexPlugin(actions, plugins);
+    }
+
+    /*
+     * Plugins that arrived as code, after the built-ins so a downloaded
+     * folder can never claim a built-in's id — the registry refuses the
+     * second claimant, and the built-ins got there first.
+     */
+    const code = await loadCodePlugins(pluginsDir(), actions, plugins);
+    for (const problem of code.problems) {
+      warnings.push(`plugin ${problem.id}: ${problem.problem}`);
     }
 
     const watchDirectory =

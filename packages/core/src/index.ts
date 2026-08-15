@@ -116,6 +116,16 @@ export {
 } from './infrastructure/plugins/hardware-plugin.js';
 export { registerObsPlugin, obsManifest, OBS_PLUGIN_ID } from './infrastructure/plugins/obs/obs-plugin.js';
 export { registerVtsPlugin, vtsManifest, VTS_PLUGIN_ID } from './infrastructure/plugins/vts/vts-plugin.js';
+export {
+  registerYandexPlugin,
+  yandexManifest,
+  YandexPlugin,
+  YANDEX_PLUGIN_ID,
+} from './infrastructure/plugins/yandex/yandex-plugin.js';
+export { discoverSpeakers } from './infrastructure/plugins/yandex/glagol-discovery.js';
+export { loadCodePlugins } from './infrastructure/plugins/code-plugins.js';
+export type { CodePluginProblem, LoadedCodePlugins } from './infrastructure/plugins/code-plugins.js';
+export type { DiscoveredSpeaker } from './infrastructure/plugins/yandex/glagol-discovery.js';
 export { ObsConnection } from './infrastructure/plugins/obs/obs-connection.js';
 export { plainSecretVault } from './application/ports/secret-vault.js';
 export type { SecretVault } from './application/ports/secret-vault.js';

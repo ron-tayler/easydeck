@@ -159,7 +159,13 @@ function dropped(
   return rest;
 }
 
-const pluginOf = (type: string | undefined): string => (type ?? '').split('.')[0] ?? '';
+// Up to the last dot, not the first: an action type is `<pluginId>.<name>`,
+// and a plugin id may carry its author — `ed.obs.set-scene` asks `ed.obs`.
+const pluginOf = (type: string | undefined): string => {
+  const whole = type ?? '';
+  const dot = whole.lastIndexOf('.');
+  return dot > 0 ? whole.slice(0, dot) : '';
+};
 
 /**
  * The parameters as a question rather than as an answer.
