@@ -1495,6 +1495,7 @@ onBeforeUnmount(() => {
       :message="configuringStatus.message"
       :note="configuring.note"
       :busy="configuring.busy"
+      :load-options="loadActionOptions"
       @save="onSavePluginSettings"
       @command="onPluginCommand"
       @close="configuring = undefined"

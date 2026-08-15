@@ -165,6 +165,20 @@ export interface ParamDefinition {
    * possibly its history.
    */
   readonly secret?: boolean;
+  /**
+   * The plugin's own bookkeeping: declared so it can be stored, never drawn.
+   *
+   * `remember` will only keep a setting the manifest declared, which is what
+   * stops it becoming a general-purpose scratchpad — but some of what a plugin
+   * has to keep is nobody's business to edit. A list of speakers found on the
+   * network with a token for each is not a *setting*; it is what the plugin
+   * learned, and putting it in the window as a box asks somebody to fill in
+   * something they cannot possibly know.
+   *
+   * Still stored and sealed exactly as any other, `secret` included. The only
+   * difference is that the settings window leaves it out.
+   */
+  readonly internal?: boolean;
   /** For `number`. */
   readonly min?: number;
   readonly max?: number;

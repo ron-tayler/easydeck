@@ -22,6 +22,7 @@
     "test": "tsc -p tsconfig.json && node --test \"dist/**/*.test.js\"",
     "start": "tsc -p tsconfig.json && node dist/examples/run-headless.js",
     "keyboard-check": "tsc -p tsconfig.json && node dist/examples/keyboard-check.js",
+    "yandex-check": "tsc -p tsconfig.json && node dist/examples/yandex-check.js",
     "api-client": "tsc -p tsconfig.json && node dist/examples/api-client.js"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
     "@easydeck/engine": "workspace:*",
     "@easydeck/renderer": "workspace:*",
     "@easydeck/ui": "workspace:*",
+    "bonjour-service": "^1.4.4",
     "koffi": "^3.1.2",
     "ws": "^8.21.1"
   },

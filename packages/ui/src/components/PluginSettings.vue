@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { LocalizedText, ParamDefinition, PluginManifest, VariableValue } from '@easydeck/core';
+import type {
+  LocalizedText,
+  ParamDefinition,
+  PluginCommand,
+  PluginManifest,
+  VariableValue,
+} from '@easydeck/core';
 
 import NameList from './NameList.vue';
+import { confirmAction } from '../composables/useConfirm.js';
 
 /**
  * What a plugin needs to be told, drawn from what it declared.
@@ -30,6 +37,19 @@ const props = defineProps<{
   /** What a command last said, if anything. */
   note?: string;
   busy?: boolean;
+  /**
+   * Asks the plugin for the choices behind a setting it declared with
+   * `optionsFrom` — the speakers it found on the network.
+   *
+   * The same function the action forms use. Without it a setting like "which
+   * speaker" drew an empty list, which is the one thing worse than a text box:
+   * a box invites a name, and an empty list says there is nothing to choose.
+   */
+  loadOptions?: (
+    pluginId: string,
+    source: string,
+    params: Readonly<Record<string, unknown>>,
+  ) => Promise<readonly { value: string; label?: LocalizedText }[]>;
 }>();
 
 const emit = defineEmits<{
@@ -43,7 +63,17 @@ const { t, locale } = useI18n();
 const say = (text: LocalizedText | undefined): string =>
   text === undefined ? '' : (text[locale.value] ?? text.en);
 
-const fields = computed<readonly ParamDefinition[]>(() => props.plugin.settings ?? []);
+/**
+ * What to draw, which is not everything the plugin declared.
+ *
+ * A setting marked `internal` is the plugin's own bookkeeping — a list of
+ * speakers it found, with a token for each. It has to be declared so it can be
+ * stored, and it has no business being a box: nobody can fill it in, and a
+ * sealed one shows up as an empty password field asking to be guessed at.
+ */
+const fields = computed<readonly ParamDefinition[]>(() =>
+  (props.plugin.settings ?? []).filter((field) => !field.internal),
+);
 
 /**
  * The form, held apart from what was loaded.
@@ -70,6 +100,7 @@ watch(
     }
     draft.value = next;
     touched.value = new Set();
+    void loadChoices();
   },
   { immediate: true },
 );
@@ -80,6 +111,65 @@ function set(field: ParamDefinition, raw: string): void {
 }
 
 const filled = (field: ParamDefinition): boolean => props.filledSecrets.includes(field.name);
+
+/**
+ * The choices a plugin answers with, per setting that asked for them.
+ *
+ * Refreshed when the window opens and after every command, because the command
+ * is usually what fills them in: pressing "Find speakers" and then having to
+ * close and reopen the window to see them would be the plugin working and the
+ * window pretending otherwise.
+ */
+const dynamic = ref<Record<string, readonly { value: string; label?: LocalizedText }[]>>({});
+
+async function loadChoices(): Promise<void> {
+  for (const field of fields.value) {
+    if (!field.optionsFrom || !props.loadOptions) continue;
+
+    try {
+      const options = await props.loadOptions(props.plugin.id, field.optionsFrom, {});
+      dynamic.value = { ...dynamic.value, [field.name]: options };
+    } catch {
+      dynamic.value = { ...dynamic.value, [field.name]: [] };
+    }
+  }
+}
+
+/** What to put in a select: whatever the plugin answered, or what it declared. */
+const choices = (field: ParamDefinition): readonly { value: string; label?: LocalizedText }[] =>
+  field.optionsFrom ? (dynamic.value[field.name] ?? []) : (field.options ?? []);
+
+/**
+ * Runs a command, asking first when the plugin said to ask.
+ *
+ * A command acts the moment it is pressed and some of them throw access away —
+ * signing out of an account, revoking a token — which is why the manifest can
+ * carry a question. Suppression is keyed per plugin and command, so ticking
+ * "do not ask again" for one plugin's Sign out does not disarm another's.
+ */
+async function runCommand(command: PluginCommand): Promise<void> {
+  const question = say(command.confirm);
+  if (question) {
+    const kind = `plugin-command:${props.plugin.id}:${command.name}`;
+    if (!(await confirmAction(kind, say(command.label), question))) return;
+  }
+
+  emit('command', command.name);
+}
+
+/**
+ * A command has finished doing whatever it does.
+ *
+ * Watched rather than emitted back, because the parent is what knows: `busy`
+ * goes up while the command runs and down when it is done, and what it did may
+ * well be the thing that gives this window something to offer.
+ */
+watch(
+  () => props.busy,
+  (now, before) => {
+    if (before === true && now !== true) void loadChoices();
+  },
+);
 
 function save(): void {
   const values: Record<string, VariableValue> = {};
@@ -151,8 +241,8 @@ function save(): void {
             :value="draft[field.name]"
             @change="set(field, ($event.target as HTMLSelectElement).value)"
           >
-            <option v-for="option in field.options ?? []" :key="option.value" :value="option.value">
-              {{ say(option.label) }}
+            <option v-for="option in choices(field)" :key="option.value" :value="option.value">
+              {{ say(option.label) || option.value }}
             </option>
           </select>
 
@@ -199,7 +289,7 @@ function save(): void {
           type="button"
           :disabled="busy"
           :title="say(command.description)"
-          @click="emit('command', command.name)"
+          @click="runCommand(command)"
         >
           {{ say(command.label) }}
         </button>
