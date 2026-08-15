@@ -127,6 +127,39 @@ async function readDocument(file: string): Promise<Record<string, VariableValue>
   }
 }
 
+/**
+ * Carries a renamed plugin's files over to its new name.
+ *
+ * When a built-in moved to the plugins repository its id gained an author —
+ * `obs` became `ed.obs` — and its settings and sealed tokens were filed under
+ * the old name. Renaming the files is what keeps the move invisible: the OBS
+ * password somebody typed a month ago still opens OBS today.
+ *
+ * The new name wins when both exist: it is the one the running plugin has
+ * been writing to, and the old file is then a leftover, not a truth.
+ */
+export async function adoptRenamedPluginFiles(
+  renames: Readonly<Record<string, string>>,
+  openDir: string = pluginSettingsDir(),
+  sealedDir: string = secretsDir(),
+): Promise<void> {
+  for (const directory of [openDir, sealedDir]) {
+    for (const [oldId, newId] of Object.entries(renames)) {
+      const from = join(directory, `${oldId}.json`);
+      const to = join(directory, `${newId}.json`);
+
+      try {
+        await readFile(to);
+        continue; // the new name already has a file; leave both alone
+      } catch {
+        // nothing under the new name — adopt the old file if there is one
+      }
+
+      await rename(from, to).catch(() => undefined);
+    }
+  }
+}
+
 async function writeDocument(
   file: string,
   values: Readonly<Record<string, VariableValue>>,

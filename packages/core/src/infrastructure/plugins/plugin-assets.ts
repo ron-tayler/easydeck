@@ -37,8 +37,14 @@ import { pluginsDir } from '../config-paths.js';
 
 const PREFIX = 'plugin:';
 
-/** `plugin:<id>/<path>`, with the id restricted so it cannot climb anywhere. */
-const REFERENCE = /^plugin:([A-Za-z0-9][A-Za-z0-9_-]*)\/(.+)$/;
+/**
+ * `plugin:<id>/<path>`, with the id restricted so it cannot climb anywhere.
+ *
+ * Dots are in the set because an id carries its author — `ed.yandex` — and
+ * they are safe there: escaping a folder takes a separator, and the first
+ * character still has to be a letter or digit, so `..` alone can never match.
+ */
+const REFERENCE = /^plugin:([A-Za-z0-9][A-Za-z0-9._-]*)\/(.+)$/;
 
 const TYPES: Readonly<Record<string, string>> = {
   '.png': 'image/png',

@@ -31,7 +31,78 @@ export function migrateProfile(raw: unknown): ProfileDefinition {
     version < 3 ? migrateV2ToV3(v2 as unknown as Record<string, unknown>) : (v2 as ProfileDefinition);
   const v4 = version < 4 ? migrateV3ToV4(v3) : v3;
   const v5 = version < 5 ? migrateV4ToV5(v4) : v4;
-  return migrateV5ToV6(v5);
+  const v6 = version < 6 ? migrateV5ToV6(v5) : v5;
+  return migrateV6ToV7(v6);
+}
+
+/**
+ * Version 7 walks four plugins out of the box: `obs.` becomes `ed.obs.`, and
+ * likewise vts, soundpad and yandex.
+ *
+ * Plugin ids grew an author when plugins moved to their own repository — see
+ * docs/plugin-distribution.md — and a profile is full of the old names:
+ * action types, surface types, the variables keys bind to and labels
+ * substitute. Renamed here once, so a key that said `{{obs.scene}}` keeps
+ * saying the scene rather than going blank the day the plugin arrives from
+ * the store instead of the box.
+ */
+function migrateV6ToV7(profile: ProfileDefinition): ProfileDefinition {
+  return {
+    ...(renamePluginPrefixes(profile) as ProfileDefinition),
+    formatVersion: PROFILE_FORMAT_VERSION,
+  };
+}
+
+/** The four that moved out, old prefix to new. */
+const V6_PLUGIN_IDS: Readonly<Record<string, string>> = {
+  obs: 'ed.obs',
+  vts: 'ed.vts',
+  soundpad: 'ed.soundpad',
+  yandex: 'ed.yandex',
+};
+
+/** `{{obs.scene}}` wherever it appears, spacing preserved. */
+const V6_TEMPLATE = new RegExp(`\\{\\{(\\s*)(${Object.keys(V6_PLUGIN_IDS).join('|')})(?=\\.)`, 'g');
+
+/**
+ * Renames the prefixes everywhere a profile stores one.
+ *
+ * The knowledge of *where* is the point of this function: `type` names an
+ * action or a widget's picture, `stateFrom` and an icon's `variable` bind
+ * keys, a condition keeps its variable under `name` beside `source`, and any
+ * text at all may substitute `{{obs.…}}`. What is deliberately left alone is
+ * every other string — a page named "yandex.ru links" is somebody's name for
+ * a page, not a reference.
+ */
+function renamePluginPrefixes(value: unknown, key?: string): unknown {
+  if (Array.isArray(value)) return value.map((item) => renamePluginPrefixes(item));
+
+  if (typeof value === 'string') {
+    const direct = key === 'type' || key === 'stateFrom' || key === 'variable';
+    const renamed = direct ? withNewPrefix(value) : value;
+    return renamed.replace(V6_TEMPLATE, (_, spacing: string, id: string) => `{{${spacing}${V6_PLUGIN_IDS[id]}`);
+  }
+
+  if (typeof value !== 'object' || value === null) return value;
+
+  const record = value as Record<string, unknown>;
+  const entries = Object.entries(record).map(([name, item]) => [name, renamePluginPrefixes(item, name)]);
+  const rebuilt = Object.fromEntries(entries) as Record<string, unknown>;
+
+  // A condition names its variable under `name`, which is too common a key to
+  // rewrite blindly — the `source` beside it is what says it is a variable.
+  if (record['source'] === 'variable' && typeof rebuilt['name'] === 'string') {
+    rebuilt['name'] = withNewPrefix(rebuilt['name']);
+  }
+
+  return rebuilt;
+}
+
+function withNewPrefix(value: string): string {
+  const dot = value.indexOf('.');
+  if (dot <= 0) return value;
+  const renamed = V6_PLUGIN_IDS[value.slice(0, dot)];
+  return renamed === undefined ? value : `${renamed}${value.slice(dot)}`;
 }
 
 /**

@@ -19,13 +19,9 @@ import { FileProfileRepository } from './infrastructure/file-profile-repository.
 import { FileSettingsRepository } from './infrastructure/file-settings-repository.js';
 import { DeckRegistry } from './application/deck-registry.js';
 import { PluginRuntime } from './application/plugin-runtime.js';
-import { PluginSettingsStore } from './infrastructure/plugins/plugin-settings-store.js';
+import { PluginSettingsStore, adoptRenamedPluginFiles } from './infrastructure/plugins/plugin-settings-store.js';
 import { registerClockPlugin } from './infrastructure/plugins/clock/clock-plugin.js';
 import { registerHardwarePlugin } from './infrastructure/plugins/hardware-plugin.js';
-import { registerObsPlugin } from './infrastructure/plugins/obs/obs-plugin.js';
-import { registerSoundpadPlugin } from './infrastructure/plugins/soundpad/soundpad-plugin.js';
-import { registerVtsPlugin } from './infrastructure/plugins/vts/vts-plugin.js';
-import { registerYandexPlugin } from './infrastructure/plugins/yandex/yandex-plugin.js';
 import { loadCodePlugins } from './infrastructure/plugins/code-plugins.js';
 import { pluginsDir } from './infrastructure/config-paths.js';
 import { openTarget } from './infrastructure/actions/system-actions.js';
@@ -60,6 +56,20 @@ export interface StartDeckOptions {
    */
   readonly secrets?: SecretVault;
 }
+
+/**
+ * The built-ins that moved to the plugins repository, old id to new.
+ *
+ * Named here rather than in the settings store because this list is history —
+ * the eviction of August 2026 — and the store is machinery. Profiles get the
+ * same renames in migrate-profile.ts, format version 7.
+ */
+const EVICTED_PLUGIN_IDS: Readonly<Record<string, string>> = {
+  obs: 'ed.obs',
+  vts: 'ed.vts',
+  soundpad: 'ed.soundpad',
+  yandex: 'ed.yandex',
+};
 
 /**
  * Opens the first supported device and runs a profile on it.
@@ -169,6 +179,11 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
      * connection has somewhere to hold it, and so its variables land in the
      * store every deck reads.
      */
+    // Settings filed under a plugin's old name follow it to the new one:
+    // obs became ed.obs when it moved to the plugins repository, and the
+    // password typed before the move has to keep opening OBS after it.
+    await adoptRenamedPluginFiles(EVICTED_PLUGIN_IDS);
+
     plugins = new PluginRuntime({
       settings: new PluginSettingsStore(options.secrets),
       variables: registry.variables,
@@ -191,10 +206,6 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
 
       await registerClockPlugin(actions, plugins);
       await registerHardwarePlugin(actions, plugins);
-      await registerObsPlugin(actions, plugins);
-      await registerSoundpadPlugin(actions, plugins);
-      await registerVtsPlugin(actions, plugins);
-      await registerYandexPlugin(actions, plugins);
     }
 
     /*

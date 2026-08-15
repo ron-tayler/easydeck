@@ -7,7 +7,7 @@ import type { ButtonVisualTemplate } from './visual.js';
  * it, so an old file can be recognised and upgraded instead of failing to
  * load with a confusing validation error.
  */
-export const PROFILE_FORMAT_VERSION = 6;
+export const PROFILE_FORMAT_VERSION = 7;
 
 /**
  * Adding a page is meant to be cheaper than creating a folder, but a scene
