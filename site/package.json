@@ -1,0 +1,15 @@
+{
+  "name": "@easydeck/site",
+  "version": "0.1.0",
+  "description": "Site zone: the public page — what EasyDeck is, where to download it, the plugin store and the documentation. Static output, no runtime of its own",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:site": "node build.mjs",
+    "serve": "node serve.mjs"
+  },
+  "devDependencies": {
+    "marked": "^17.0.0"
+  }
+}

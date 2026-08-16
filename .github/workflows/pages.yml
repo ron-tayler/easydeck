@@ -1,0 +1,54 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    # Only when the site itself changed. A commit that touches the daemon has
+    # nothing to publish, and a deploy that runs anyway makes the badge lie
+    # about which change is live.
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+# Read for the checkout, and the two Pages needs to hand a folder over.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and the one in flight is allowed to finish: cancelling
+# a deploy halfway leaves the site as whatever it managed to upload.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+
+      - name: Build
+        # A project page is served from a subfolder, and every link has to
+        # carry it. Taken from the workflow rather than hard-coded, so the same
+        # build serves a custom domain by setting this to `/`.
+        env:
+          SITE_BASE: /${{ github.event.repository.name }}/
+        run: pnpm --filter @easydeck/site build:site
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

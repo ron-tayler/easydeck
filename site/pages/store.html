@@ -1,0 +1,32 @@
+<h1>Плагины</h1>
+<p class="sub" style="color: var(--muted); max-width: 62ch;">
+  Тот же каталог, который программа показывает у себя в настройках. Здесь его
+  можно посмотреть без установки и скачать файл руками — например, чтобы
+  положить его на машину без интернета.
+</p>
+
+<div class="actions" style="margin: 22px 0 6px;">
+  <a class="button second" href="{{base}}dev/">Написать свой плагин</a>
+  <a class="button second" href="https://github.com/{{plugins}}">Исходники плагинов</a>
+</div>
+
+<div id="plugins-status" class="status" style="margin-top: 28px;">Читаем каталог…</div>
+<ul class="plugins" id="plugins"></ul>
+
+<section class="band">
+  <h2>Как поставить скачанный файл</h2>
+  <ol style="color: var(--muted); max-width: 68ch;">
+    <li>Откройте <strong>Настройки → Плагины → Установлено</strong>.</li>
+    <li>Выберите скачанный файл <code>.easydeck</code>.</li>
+    <li>
+      Программа проверит контрольную сумму и распакует плагин к себе. Если
+      плагин с таким идентификатором уже стоит, она предложит обновить.
+    </li>
+  </ol>
+  <p class="note">
+    Обычно проще другое: в тех же настройках есть вкладка <strong>Магазин</strong>,
+    которая читает этот же каталог и ставит плагин в одно нажатие.
+  </p>
+</section>
+
+<script src="{{base}}store.js" data-repo="{{plugins}}" data-branch="main" defer></script>

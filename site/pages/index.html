@@ -1,0 +1,139 @@
+<section class="hero">
+  <div>
+    <span class="tag">Ранняя разработка</span>
+    <h1>Ваша дека, ваши правила</h1>
+    <p class="lead">
+      EasyDeck — свободная программа для макро-панелей. Профили и папки, клавиши
+      с несколькими состояниями, переменные, живые виджеты и плагины —
+      без облака, без учётной записи и без фирменного приложения.
+    </p>
+
+    <div class="actions">
+      <a class="button" id="download" href="https://github.com/{{repo}}/releases">Скачать</a>
+      <a class="button second" href="{{base}}docs/">Как это работает</a>
+    </div>
+    <p class="note" id="download-note">Windows, macOS и Linux.</p>
+  </div>
+
+  <!--
+    The panel as it looks on a desk: fifteen keys, three by five, which is the
+    layout of the device this was written for. Drawn rather than photographed
+    so the page stays honest when the interface changes.
+  -->
+  <div class="panel" aria-hidden="true">
+    <div class="key lit">Микрофон</div>
+    <div class="key">Сцена</div>
+    <div class="key cool">Пауза</div>
+    <div class="key">🔉 40%</div>
+    <div class="key hot">Запись</div>
+    <div class="key">Discord</div>
+    <div class="key cool">Общий<br>4 чел.</div>
+    <div class="key">Свет</div>
+    <div class="key">OBS</div>
+    <div class="key">Папка</div>
+    <div class="key">Звук 1</div>
+    <div class="key">Звук 2</div>
+    <div class="key lit">Алиса</div>
+    <div class="key">Steam</div>
+    <div class="key">Назад</div>
+  </div>
+</section>
+
+<section class="band">
+  <h2>Что она умеет</h2>
+  <p class="sub">
+    Не «кнопка запускает программу», а маленькая система: клавиша знает своё
+    состояние, читает переменные и может показывать картинку, которую рисует
+    плагин прямо сейчас.
+  </p>
+
+  <ul class="cards">
+    <li class="card">
+      <h3>Клавиши с состояниями</h3>
+      <p>
+        Одна клавиша — несколько внешних видов, привязанных к переменной.
+        Микрофон выключили другой программой — клавиша об этом узнает.
+      </p>
+    </li>
+    <li class="card">
+      <h3>Профили, папки, страницы</h3>
+      <p>
+        Папки открываются как на телефоне, страницы листаются. Картинку можно
+        растянуть на несколько клавиш — как объединённую ячейку.
+      </p>
+    </li>
+    <li class="card">
+      <h3>Макросы, а не одна команда</h3>
+      <p>
+        Последовательность шагов с условиями, паузами и повторами. Отдельно
+        обрабатываются долгое и двойное нажатие.
+      </p>
+    </li>
+    <li class="card">
+      <h3>Переменные и подписи</h3>
+      <p>
+        <code>{{obs.scene}}</code> в подписи, привязка состояния к значению,
+        стрелка на иконке, которая ходит за числом.
+      </p>
+    </li>
+    <li class="card">
+      <h3>Живые виджеты</h3>
+      <p>
+        Обложка играющего трека, миниатюра сцены OBS, индикатор громкости,
+        лица говорящих в Discord — картинку рисует плагин.
+      </p>
+    </li>
+    <li class="card">
+      <h3>Плагины извне</h3>
+      <p>
+        Магазин внутри программы и каталог на этом сайте. Плагин — это файл,
+        который можно скачать и поставить руками.
+      </p>
+    </li>
+  </ul>
+</section>
+
+<section class="band">
+  <h2>Железо</h2>
+  <p class="sub">
+    Протокол снят с USB-захвата фирменной программы, а не угадан. Пока
+    поддержана одна модель — но дека это не единственный способ нажать клавишу.
+  </p>
+
+  <ul class="cards">
+    <li class="card">
+      <h3>FIFINE AmpliGame D6</h3>
+      <p>15 клавиш 3×5, экраны 112×112. Клон Stream Dock на SINOWEALTH, протокол v1.</p>
+    </li>
+    <li class="card">
+      <h3>Телефон или планшет</h3>
+      <p>
+        Дека открывается в браузере на том же Wi-Fi. Устройство надо один раз
+        разрешить в программе — оно ждёт в очереди, пока человек не подтвердит.
+      </p>
+    </li>
+    <li class="card">
+      <h3>Несколько дек сразу</h3>
+      <p>
+        Панель и планшет работают на одних переменных: выключили микрофон на
+        планшете — клавиша на панели покраснела.
+      </p>
+    </li>
+  </ul>
+</section>
+
+<section class="band">
+  <h2>Честно о состоянии</h2>
+  <p class="sub">
+    Программа в стадии ранней разработки. Контракт плагинов ещё меняется,
+    формат профиля мигрируется от версии к версии, а часть задуманного пока
+    только задумана. Если это не пугает — добро пожаловать.
+  </p>
+  <div class="actions">
+    <a class="button second" href="{{base}}store/">Каталог плагинов</a>
+    <a class="button second" href="{{base}}dev/">Написать свой плагин</a>
+    <a class="button second" href="https://github.com/{{repo}}/issues">Сообщить о проблеме</a>
+  </div>
+</section>
+
+<script src="{{base}}download.js" data-repo="{{repo}}" defer></script>

@@ -1,5 +1,9 @@
 packages:
   - packages/*
+  # The public page. Not part of the program, and deliberately not built by
+  # `pnpm build`: its script is `build:site`, so a three-platform CI matrix
+  # does not rebuild a website three times to learn nothing.
+  - site
 
 onlyBuiltDependencies:
   - node-hid
