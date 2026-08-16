@@ -7,6 +7,7 @@ import {
   iconParamsProblem,
   readIconParams,
   resolveIconParams,
+  svgTextOf,
 } from './icon-params.js';
 
 /** A gauge as somebody would actually write one: valid SVG, works in a browser. */
@@ -226,5 +227,54 @@ describe('pinning a transform to the point it turns about', () => {
 
     assert.match(drawn, /translate\(126px, 126px\) rotate\(90deg\) translate\(-126px, -126px\)/);
     assert.doesNotMatch(drawn, /var\(/);
+  });
+});
+
+describe('reading the markup out of a stored picture', () => {
+  /** Big enough that a fresh decode could never be mistaken for a kept one. */
+  const BIG = `<svg xmlns="http://www.w3.org/2000/svg">${'<path d="M0 0h1v1z"/>'.repeat(20_000)}</svg>`;
+  const asDataUrl = (svg: string): string =>
+    `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`;
+
+  it('reads markup, a base64 data URL and a plain one alike', () => {
+    assert.equal(svgTextOf(NEEDLE), NEEDLE);
+    assert.equal(svgTextOf(asDataUrl(NEEDLE)), NEEDLE);
+    assert.equal(
+      svgTextOf(`data:image/svg+xml,${encodeURIComponent(NEEDLE)}`),
+      NEEDLE,
+    );
+  });
+
+  it('keeps the bytes intact through base64, letters and all', () => {
+    // An icon whose layers are named in Russian is bytes that are not ASCII,
+    // and a decoder that goes through characters rather than bytes mangles them.
+    const russian = '<svg><title>Кнопка «Звук»</title></svg>';
+    assert.equal(svgTextOf(asDataUrl(russian)), russian);
+  });
+
+  it('decodes one picture once, however often it is asked about', () => {
+    /*
+     * Not a matter of speed alone: a key is resolved on every variable that
+     * moves, and each pass asked whether its icon declares parameters — which
+     * meant decoding the whole picture to find out. Nine traced drawings came
+     * to 130 ms a pass, several times a second, and pressing a key felt late.
+     *
+     * Asserted by identity rather than by a clock: a second decode would build
+     * a new string, so the very same one coming back is the cache answering.
+     */
+    const source = asDataUrl(BIG);
+    const first = svgTextOf(source);
+
+    assert.equal(first, BIG);
+    assert.equal(svgTextOf(source), first);
+    assert.ok(Object.is(svgTextOf(source), first), 'the picture was decoded again');
+  });
+
+  it('says nothing about a picture that is not markup', () => {
+    // Which is how the whole mechanism stays absent from ordinary icons: a PNG
+    // is never decoded looking for parameters it cannot have.
+    assert.equal(svgTextOf('data:image/png;base64,iVBORw0KGgo='), undefined);
+    assert.equal(svgTextOf('C:/icons/mic.png'), undefined);
+    assert.equal(svgTextOf('data:image/svg+xml;base64,'), '');
   });
 });

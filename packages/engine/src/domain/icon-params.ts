@@ -125,6 +125,9 @@ export function svgTextOf(source: string): string | undefined {
   if (source.startsWith('<')) return source;
   if (!source.startsWith('data:image/svg+xml')) return undefined;
 
+  const kept = decoded.get(source);
+  if (kept !== undefined) return kept;
+
   const comma = source.indexOf(',');
   if (comma < 0) return undefined;
 
@@ -132,35 +135,88 @@ export function svgTextOf(source: string): string | undefined {
   const header = source.slice(0, comma);
 
   try {
-    if (header.includes(';base64')) return fromBase64(body);
-    return decodeURIComponent(body);
+    return remember(source, header.includes(';base64') ? fromBase64(body) : decodeURIComponent(body));
   } catch {
     return undefined;
   }
 }
 
+/**
+ * Artwork already decoded, kept until the room runs out.
+ *
+ * This is asked the same question about the same picture over and over: a key
+ * is resolved on every variable that moves, and each pass wanted to know
+ * whether its icon declares parameters or reads `currentColor` — which meant
+ * decoding the whole picture to find out. Measured on a folder of nine traced
+ * drawings, that was 130 ms a pass on the daemon and the same again in the
+ * browser, several times a second, and it made pressing a key feel late.
+ *
+ * A module-level cache rather than something owned, because both sides of the
+ * program ask: the daemon while building a scene, and the window while drawing
+ * the same key. Neither has a natural place to hang it, and the answer cannot
+ * be wrong — the same text always decodes to the same text.
+ *
+ * Bounded by bytes rather than by count, since what matters is the memory and
+ * icons differ by three orders of magnitude in size. The oldest go first,
+ * which for a deck is the page somebody has navigated away from.
+ */
+const DECODED_LIMIT = 8 * 1024 * 1024;
+const decoded = new Map<string, string>();
+let decodedSize = 0;
+
+function remember(source: string, svg: string): string {
+  decoded.set(source, svg);
+  decodedSize += svg.length;
+
+  for (const [key, value] of decoded) {
+    if (decodedSize <= DECODED_LIMIT) break;
+    decoded.delete(key);
+    decodedSize -= value.length;
+  }
+
+  return svg;
+}
+
 /*
- * `atob`/`btoa` rather than Buffer, because this runs in both places.
+ * The same bytes on both sides, by whichever route is quicker there.
  *
  * The panel substitutes before rasterizing and a browser substitutes before
- * showing, over the same text with the same code — which is the whole reason
- * the two agree about what an icon looks like. A Node-only call here would
- * have split that in half.
+ * showing, over the same text — which is the whole reason the two agree about
+ * what an icon looks like. That agreement is about the *result*, and base64 has
+ * exactly one result, so taking Node's decoder where there is one costs nothing
+ * and saves a great deal: `Uint8Array.from` with a callback is one function
+ * call per character, and a traced drawing is four hundred thousand of them.
  *
  * Both go through UTF-8 explicitly: base64 carries bytes, and an icon written
  * by somebody who names their layers in Russian has plenty that are not
  * ASCII.
  */
 function fromBase64(value: string): string {
+  const buffer = (globalThis as { Buffer?: { from(input: string, encoding: string): Uint8Array } })
+    .Buffer;
+  if (buffer) return new TextDecoder().decode(buffer.from(value, 'base64'));
+
   const binary = atob(value);
-  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  // An indexed loop rather than a callback per character, for the same reason.
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
   return new TextDecoder().decode(bytes);
 }
 
 function toBase64(value: string): string {
   const bytes = new TextEncoder().encode(value);
+
+  const buffer = (globalThis as {
+    Buffer?: { from(input: Uint8Array): { toString(encoding: string): string } };
+  }).Buffer;
+  if (buffer) return buffer.from(bytes).toString('base64');
+
+  // In chunks, because `String.fromCharCode` takes its arguments on the stack
+  // and a picture handed over in one call overflows it.
   let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
+  for (let index = 0; index < bytes.length; index += 8192) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 8192));
+  }
   return btoa(binary);
 }
 

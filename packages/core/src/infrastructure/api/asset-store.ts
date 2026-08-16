@@ -23,8 +23,28 @@ export interface StoredAsset {
 
 const DATA_URL = /^data:([^;,]+)(;base64)?,(.*)$/s;
 
+/**
+ * How many pictures are remembered by the text they arrived as.
+ *
+ * A page holds fifteen keys and a parametric icon is a new picture at every
+ * position of its needle, so this is generous for the first and deliberately
+ * finite for the second.
+ */
+const REMEMBERED = 256;
+
 export class AssetStore {
   private readonly assets = new Map<string, StoredAsset>();
+
+  /**
+   * Which link each picture was given, by the text it came in as.
+   *
+   * The digest is over the bytes, so working out a link means decoding the
+   * base64 and hashing the result — proportional to the picture, and the page
+   * view asks for every icon on it every time a variable moves. Nine traced
+   * drawings came to a few milliseconds a pass spent re-deciding something
+   * that cannot change.
+   */
+  private readonly links = new Map<string, string>();
 
   /**
    * Files the picture and returns the path to fetch it from, or the source
@@ -33,6 +53,9 @@ export class AssetStore {
    */
   link(source: string): string {
     if (!source.startsWith('data:')) return source;
+
+    const known = this.links.get(source);
+    if (known !== undefined) return known;
 
     const match = DATA_URL.exec(source);
     if (!match) return source;
@@ -48,7 +71,16 @@ export class AssetStore {
     const id = createHash('sha1').update(bytes).digest('base64url').slice(0, 16);
     if (!this.assets.has(id)) this.assets.set(id, { bytes, contentType: contentType! });
 
-    return `/asset/${id}`;
+    const path = `/asset/${id}`;
+    this.links.set(source, path);
+    // Oldest first. Forgetting one costs a hash the next time it is asked for
+    // and nothing else: the bytes stay filed under the id they already have.
+    for (const key of this.links.keys()) {
+      if (this.links.size <= REMEMBERED) break;
+      this.links.delete(key);
+    }
+
+    return path;
   }
 
   get(id: string): StoredAsset | undefined {

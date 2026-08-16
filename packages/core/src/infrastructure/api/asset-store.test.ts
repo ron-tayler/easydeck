@@ -43,4 +43,40 @@ describe('pictures handed out by link', () => {
   it('answers nothing for an unknown id', () => {
     assert.equal(new AssetStore().get('nope'), undefined);
   });
+
+  it('works out a link once and remembers it', () => {
+    /*
+     * The digest is over the bytes, so a link costs a base64 decode and a hash
+     * of the whole picture — and the page view asks for every icon on it every
+     * time a variable moves. The answer cannot change: the same text is the
+     * same picture.
+     *
+     * Asserted by identity, since a link worked out afresh would be an equal
+     * string rather than the same one.
+     */
+    const assets = new AssetStore();
+    const first = assets.link(GIF);
+
+    assert.ok(Object.is(assets.link(GIF), first), 'the link was worked out again');
+    assert.equal(assets.get(first.slice('/asset/'.length))?.contentType, 'image/gif');
+  });
+
+  it('forgets the oldest rather than growing without bound', () => {
+    /*
+     * A parametric icon is a different picture at every position of its
+     * needle, so what arrives here is unbounded and this cache must not be.
+     * Forgetting costs a hash next time and nothing else — the bytes stay
+     * filed under the id they already have.
+     */
+    const assets = new AssetStore();
+    const linkOf = (index: number) =>
+      assets.link(`data:image/svg+xml,${encodeURIComponent(`<svg id="${index}"/>`)}`);
+
+    const first = linkOf(0);
+    for (let index = 1; index <= 300; index += 1) linkOf(index);
+
+    // The same answer, because the picture decides it — just not from memory.
+    assert.equal(linkOf(0), first);
+    assert.ok(assets.get(first.slice('/asset/'.length)));
+  });
 });
