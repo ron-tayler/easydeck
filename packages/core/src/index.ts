@@ -177,6 +177,14 @@ export { DeviceDirectory } from './application/device-directory.js';
 export type { DeviceSummary } from './application/device-directory.js';
 export type { DeckEntry, DeckRegistryEvents } from './application/deck-registry.js';
 export { createPhysicalDeck } from './infrastructure/physical-deck.js';
+export {
+  VIRTUAL_DECK_ID,
+  VIRTUAL_DECK_NAME,
+  VirtualDeck,
+  createVirtualDeck,
+} from './infrastructure/virtual-deck.js';
+export { watchDevices } from './infrastructure/device-watcher.js';
+export type { DeviceWatcher, DeviceWatcherOptions } from './infrastructure/device-watcher.js';
 export { deckIdFor } from './infrastructure/deck-id.js';
 
 export { startDeck } from './start-deck.js';

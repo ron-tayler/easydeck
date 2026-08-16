@@ -55,7 +55,9 @@ function describe(status: HostStatus): string {
     case 'starting':
       return 'Starting…';
     case 'running':
-      return `Connected: ${status.device}`;
+      // Never "Connected" for the stand-in deck: the program is running and
+      // nothing is plugged into it, and those are two different pieces of news.
+      return status.virtual ? 'Running — no panel plugged in' : `Connected: ${status.device}`;
     case 'locked':
       return 'Released — screen locked';
     case 'error':

@@ -35,6 +35,7 @@ import type { DaemonSettings, DeckBinding } from '../domain/settings.js';
 import { localAddresses } from '../infrastructure/api/network-addresses.js';
 import { DEFAULT_PORT } from '../infrastructure/api/websocket-server.js';
 import { NetworkDeck } from '../infrastructure/network-deck.js';
+import { VIRTUAL_DECK_ID, VirtualDeck, createVirtualDeck } from '../infrastructure/virtual-deck.js';
 import type { DeckEntry, DeckRegistry } from './deck-registry.js';
 import type { PluginRuntime } from './plugin-runtime.js';
 import { openTarget } from '../infrastructure/actions/system-actions.js';
@@ -126,6 +127,14 @@ export interface DeckServiceOptions {
    * read them later, it does not replace the one that shows them now.
    */
   readonly log?: LogFile;
+  /**
+   * Anything the composition root started alongside the deck, stopped with it.
+   *
+   * The USB watcher, today: it belongs to whoever built the device manager,
+   * and it must stop before the decks do — a sweep landing mid-shutdown would
+   * open a panel nobody is left to close.
+   */
+  readonly onStop?: () => void | Promise<void>;
 }
 
 /** Debounce for filesystem events: editors save in several bursts. */
@@ -258,8 +267,11 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
 
   async state(): Promise<DeckState> {
     const { actions } = this.options;
-    const { surface, controller } = this.deck;
     const network = await this.networkState();
+    // Never none in practice — the stand-in sees to that — but the snapshot is
+    // what everything else is built on, and it must not be the one call that
+    // fails while the decks are being swapped over.
+    const active = this.options.decks.first;
 
     return {
       protocolVersion: 1,
@@ -267,6 +279,7 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
         id: deck.id,
         name: deck.name,
         online: deck.online,
+        ...(deck.id === VIRTUAL_DECK_ID ? { virtual: true } : {}),
         rows: deck.controller.layout.rows,
         cols: deck.controller.layout.cols,
         ...(deck.surface ? { model: deck.surface.info.modelName } : {}),
@@ -277,7 +290,7 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
         folderPath: deck.controller.folderPath.map((folder) => ({ id: folder.id, name: folder.name })),
         pages: deck.controller.currentFolderPages.map((page) => ({ id: page.id, name: page.name })),
       })),
-      activeDeckId: this.deck.id,
+      ...(active ? { activeDeckId: active.id } : {}),
       brightness: this.brightness,
       network,
       variables: this.options.decks.variables.snapshot(),
@@ -288,7 +301,10 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
   }
 
   async pageView(deckId?: string): Promise<readonly KeyView[]> {
-    return this.deckOf(deckId).controller.view();
+    // An empty page rather than a failure while there is no deck at all: the
+    // window asks for this on every refresh, and a blank grid says what is
+    // true where an error would only say that something went wrong.
+    return this.deckOrNone(deckId)?.controller.view() ?? [];
   }
 
   /**
@@ -463,7 +479,7 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     const buttonId = typeof params['buttonId'] === 'string' ? params['buttonId'] : '';
     if (!buttonId) return undefined;
 
-    const button = this.deck.controller.buttonInProfile(buttonId);
+    const button = this.deckOrNone(undefined)?.controller.buttonInProfile(buttonId);
     const spec = button?.states.map((state) => state.visual.surface).find(Boolean);
     if (!spec) return undefined;
 
@@ -788,6 +804,7 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     const deck = this.deckOf(deckId);
     const profile = await this.options.profiles.load(id);
 
+    this.fitVirtual(deck, profile);
     await this.options.decks.setProfile(deck.id, profile);
     this.activeProfileId = this.deck.controller.profileId;
 
@@ -822,6 +839,9 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     const controller = new DeckController(presenter, this.options.actions, {
       variables: this.options.decks.variables,
       deckId,
+      // The same pictures a panel gets: a tablet showing a clock or a graph is
+      // showing a plugin's widget, and without this it showed nothing at all.
+      surfaces: (request) => this.drawSurface(request),
     });
 
     const binding = (await this.options.settings.load()).decks?.[deckId];
@@ -832,13 +852,15 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
       profile,
     );
 
-    this.emit('state', await this.state());
+    // Takes the stand-in deck away, now that there is a real one.
+    await this.decksChanged();
     return { deckId };
   }
 
   async detachDeck(deckId: string): Promise<void> {
     await this.options.decks.removeDeck(deckId);
-    this.emit('state', await this.state());
+    // And brings the stand-in back, if that was the last deck there was.
+    await this.decksChanged();
   }
 
   reportGesture(deckId: string, key: number, gesture: string): void {
@@ -852,13 +874,64 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     this.emit(pressed ? 'keyDown' : 'keyUp', { deckId, key });
   }
 
+  /**
+   * Puts the stand-in deck into the shape of the profile going onto it.
+   *
+   * Only the stand-in: a panel's grid is a fact about the hardware, and a
+   * profile that does not fit it is a profile the controller is right to
+   * refuse. A deck that does not exist has no such fact to contradict.
+   */
+  private fitVirtual(deck: DeckEntry, profile: ProfileDefinition): void {
+    if (deck.presenter instanceof VirtualDeck) deck.presenter.resize(profile.layout);
+  }
+
+  /**
+   * Brings the stand-in deck in line with the real ones, and says what changed.
+   *
+   * Called whenever the set of decks moves: a panel plugged in or unplugged, a
+   * tablet joining or leaving. The rule is one sentence — the virtual deck
+   * exists exactly while no other deck does — and it lives here because this is
+   * the one place that hears about every kind of deck.
+   */
+  async decksChanged(): Promise<void> {
+    const decks = this.options.decks.list();
+    const standIn = decks.find((deck) => deck.id === VIRTUAL_DECK_ID);
+    const real = decks.some((deck) => deck.id !== VIRTUAL_DECK_ID);
+
+    if (real && standIn) {
+      await this.options.decks.removeDeck(VIRTUAL_DECK_ID);
+    } else if (!real && !standIn && !this.stopped) {
+      try {
+        const profile = await this.profileFor(
+          (await this.options.settings.load()).decks?.[VIRTUAL_DECK_ID]?.profileId,
+        );
+
+        await this.options.decks.add(
+          createVirtualDeck({
+            profile,
+            actions: this.options.actions,
+            variables: this.options.decks.variables,
+            surfaces: (request) => this.drawSurface(request),
+          }),
+          profile,
+        );
+      } catch (error) {
+        // No profile to run, or one that will not load: the window shows a
+        // machine with no deck, which is exactly what it has.
+        this.options.log?.error('The virtual deck could not be started', error);
+      }
+    }
+
+    this.emit('state', await this.state());
+  }
+
   /** The profile a deck should run, falling back to whatever is available. */
   private async profileFor(profileId: string | undefined): Promise<ProfileDefinition> {
     if (profileId && (await this.options.profiles.has(profileId))) {
       return this.options.profiles.load(profileId);
     }
 
-    const current = this.deckOf(undefined).controller.profileId;
+    const current = this.deckOrNone(undefined)?.controller.profileId ?? this.activeProfileId;
     if (current && (await this.options.profiles.has(current))) {
       return this.options.profiles.load(current);
     }
@@ -983,6 +1056,10 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     if (this.stopped) return;
     this.stopped = true;
 
+    // First of all: whatever the composition root has watching the outside
+    // world must stop before the decks it would add to are taken down.
+    await this.options.onStop?.();
+
     if (this.reloadTimer) clearTimeout(this.reloadTimer);
     this.watcher?.close();
 
@@ -1006,10 +1083,12 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
 
     // Nothing is showing it — an edit to a profile that is merely stored. The
     // active deck takes it, which is what activating a profile means.
-    const targets = showing.length > 0 ? showing : [this.deck];
+    const fallback = this.deckOrNone(undefined);
+    const targets = showing.length > 0 ? showing : fallback ? [fallback] : [];
 
     for (const deck of targets) {
       const { controller } = deck;
+      this.fitVirtual(deck, profile);
 
       /*
        * Editing one button reloads the whole profile it belongs to. Landing
@@ -1140,10 +1219,15 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
    * about *some* deck is more useful than an error nobody can act on.
    */
   private deckOf(deckId: string | undefined) {
-    const named = deckId === undefined ? undefined : this.options.decks.get(deckId);
-    const deck = named ?? this.options.decks.first;
+    const deck = this.deckOrNone(deckId);
     if (!deck) throw new Error('No deck is running');
     return deck;
+  }
+
+  /** The same, for the answers that are better empty than refused. */
+  private deckOrNone(deckId: string | undefined): DeckEntry | undefined {
+    const named = deckId === undefined ? undefined : this.options.decks.get(deckId);
+    return named ?? this.options.decks.first;
   }
 
   /**

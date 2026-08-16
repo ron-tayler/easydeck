@@ -2,7 +2,14 @@
   app: {
     title: 'EasyDeck',
   },
-  decks: { label: 'Deck', offline: 'offline', rename: 'Rename deck' },
+  decks: {
+    label: 'Deck',
+    offline: 'offline',
+    rename: 'Rename deck',
+    virtual: 'Virtual deck',
+    virtualHint:
+      'Nothing is plugged in. Profiles can be edited and buttons tried here; plug a panel in and it takes over on its own.',
+  },
   deckMode: {
       fullscreen: 'Fullscreen',
       exitFullscreen: 'Leave fullscreen',

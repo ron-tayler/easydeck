@@ -137,6 +137,17 @@ const nextRequest = computed(() => deck.pendingDevices.value[0]);
 const alsoWaiting = computed(() => Math.max(0, deck.pendingDevices.value.length - 1));
 const shownDeckId = computed(() => deck.deck.value?.id ?? '');
 
+/**
+ * What to call a deck.
+ *
+ * The stand-in deck is named by the window rather than by the daemon: it is
+ * not a device somebody named, it is the word for having none — and that word
+ * belongs in the language the window is in.
+ */
+function deckName(entry: { name: string; virtual?: boolean }): string {
+  return entry.virtual ? t('decks.virtual') : entry.name;
+}
+
 function onSelectDeck(event: Event): void {
   void deck.selectDeck((event.target as HTMLSelectElement).value || undefined);
 }
@@ -1207,16 +1218,26 @@ onBeforeUnmount(() => {
         <span class="muted">{{ t('decks.label') }}</span>
         <select :value="shownDeckId" @change="onSelectDeck">
           <option v-for="entry in decks" :key="entry.id" :value="entry.id">
-            {{ entry.name }}{{ entry.online ? '' : ` — ${t('decks.offline')}` }}
+            {{ deckName(entry) }}{{ entry.online ? '' : ` — ${t('decks.offline')}` }}
           </option>
         </select>
       </label>
 
       <div class="status">
         <template v-if="deck.deck.value">
-          <span class="dot" :class="deck.deck.value.online ? 'ok' : 'bad'" />
-          <span>{{ deck.deck.value.name }}</span>
+          <!-- Grey for the stand-in: nothing is wrong, and nothing is plugged
+               in either. Green would claim a panel that is not there. -->
+          <span
+            class="dot"
+            :class="deck.deck.value.virtual ? '' : deck.deck.value.online ? 'ok' : 'bad'"
+          />
+          <span :title="deck.deck.value.virtual ? t('decks.virtualHint') : undefined">
+            {{ deckName(deck.deck.value) }}
+          </span>
+          <!-- A deck that exists only until something is plugged in has no
+               name worth keeping. -->
           <button
+            v-if="!deck.deck.value.virtual"
             type="button"
             class="rename"
             :title="t('decks.rename')"

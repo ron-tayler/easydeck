@@ -1,5 +1,5 @@
-﻿import { DeviceNotFoundError, createDeviceManager } from '@easydeck/device';
-import type { Surface } from '@easydeck/device';
+﻿import { createDeviceManager } from '@easydeck/device';
+import type { DiscoveredDevice, Surface } from '@easydeck/device';
 import { ActionRegistry, createActionRegistry } from '@easydeck/engine';
 import type { ProfileDefinition, SurfaceProvider } from '@easydeck/engine';
 
@@ -30,6 +30,8 @@ import type { DeviceDirectory } from './application/device-directory.js';
 import type { SecretVault } from './application/ports/secret-vault.js';
 import { deckIdFor } from './infrastructure/deck-id.js';
 import { createPhysicalDeck } from './infrastructure/physical-deck.js';
+import { watchDevices } from './infrastructure/device-watcher.js';
+import { createVirtualDeck } from './infrastructure/virtual-deck.js';
 import type { LogFile } from './infrastructure/log-file.js';
 
 export interface StartDeckOptions {
@@ -46,6 +48,13 @@ export interface StartDeckOptions {
   readonly actions?: ActionRegistry;
   /** Reload the active profile when its file changes. On by default. */
   readonly watchProfiles?: boolean;
+  /**
+   * Notice panels being plugged in and unplugged. On by default.
+   *
+   * Off for a one-shot example or a test, which would otherwise keep a timer
+   * polling the USB bus long after it had said what it came to say.
+   */
+  readonly watchDevices?: boolean;
   /** Devices allowed in, and devices asking to be. */
   readonly devices?: DeviceDirectory;
   /** Brings the API server in line with the stored settings. */
@@ -82,10 +91,13 @@ const EVICTED_PLUGIN_IDS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Opens the first supported device and runs a profile on it.
+ * Opens every supported panel that is plugged in and runs a profile on each.
  *
  * This is the whole stack in one call, and what the daemon and its examples
  * are built around.
+ *
+ * None plugged in is a normal way to start, not a failure: the deck becomes a
+ * virtual one, and a panel plugged in later joins on its own.
  */
 export async function startDeck(options: StartDeckOptions = {}): Promise<DeckService> {
   const profiles = options.profiles ?? new FileProfileRepository();
@@ -94,24 +106,18 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
   const profile = options.profile ?? (await resolveProfile(profiles, settings));
 
   const manager = createDeviceManager();
-  const devices = await manager.list();
-  if (devices.length === 0) throw new DeviceNotFoundError();
-
   const initialBrightness = options.brightness ?? settings.brightness;
-  const opened: Surface[] = [];
+
+  /**
+   * The panels this run has open, by deck id.
+   *
+   * A map rather than a list because panels come and go while the daemon runs:
+   * a sweep of the USB bus has to be able to say which of the devices it found
+   * are already ours.
+   */
+  const opened = new Map<string, Surface>();
 
   try {
-    /*
-     * Every panel that is plugged in, not just the first.
-     *
-     * Each becomes a deck of its own: its own profile, page and history, but
-     * the same variables, because there is one truth about the machine and
-     * several ways to reach it.
-     */
-    for (const device of devices) {
-      opened.push(await manager.open(device, { brightness: initialBrightness }));
-    }
-
     /*
      * Brightness belongs to the service — it clamps, persists and reports it —
      * but actions have to be registered before the service can be built. This
@@ -125,7 +131,7 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
         if (service) await service.setBrightness(percent);
         else {
           const clamped = Math.min(100, Math.max(0, Math.round(percent)));
-          for (const surface of opened) await surface.setBrightness(clamped);
+          for (const surface of opened.values()) await surface.setBrightness(clamped);
         }
       },
     };
@@ -164,21 +170,79 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
     const surfaces: SurfaceProvider = async (request) =>
       plugins ? plugins.drawSurface(request) : undefined;
 
-    for (const [index, surface] of opened.entries()) {
-      const device = devices[index]!;
+    /**
+     * Opens one panel and gives it a deck of its own.
+     *
+     * Its own profile, page and history, but the same variables as every other
+     * deck, because there is one truth about the machine and several ways to
+     * reach it.
+     *
+     * The binding is read from disk each time rather than from the snapshot
+     * taken at startup: a panel plugged in an hour later must run whatever it
+     * has been bound to since.
+     */
+    const attach = async (device: DiscoveredDevice, id: string): Promise<void> => {
+      const surface = await manager.open(device, { brightness: brightness.current() });
+      opened.set(id, surface);
+
+      try {
+        const binding = (await settingsRepository.load()).decks?.[id];
+        const deck = await createPhysicalDeck({
+          surface,
+          id,
+          name: binding?.name ?? device.model.name,
+          actions,
+          variables: registry!.variables,
+          surfaces,
+        });
+
+        await registry!.add(deck, await profileForDeck(profiles, binding?.profileId, profile));
+      } catch (error) {
+        opened.delete(id);
+        await surface.close().catch(() => undefined);
+        throw error;
+      }
+    };
+
+    /** Lets go of a panel that has been unplugged, deck and all. */
+    const detach = async (id: string): Promise<void> => {
+      opened.delete(id);
+      // The registry closes the surface as it goes; a panel that is already
+      // gone simply fails at that, which it is allowed to do.
+      await registry!.removeDeck(id);
+    };
+
+    /*
+     * Every panel that is plugged in, not just the first.
+     *
+     * One that refuses to open — busy, or claimed by the vendor's own driver —
+     * is a warning rather than the end of the run. Before, it was the end of
+     * the run: a single stuck panel left somebody with no window to read about
+     * it in.
+     */
+    for (const device of await manager.list()) {
       const id = deckIdFor(device);
-      const binding = settings.decks?.[id];
+      try {
+        await attach(device, id);
+      } catch (error) {
+        options.log?.error(`The panel '${device.model.name}' could not be opened`, error);
+        warnings.push(`${device.model.name}: ${(error as Error).message}`);
+      }
+    }
 
-      const deck = await createPhysicalDeck({
-        surface,
-        id,
-        name: binding?.name ?? device.model.name,
-        actions,
-        variables: registry.variables,
-        surfaces,
-      });
-
-      await registry.add(deck, await profileForDeck(profiles, binding?.profileId, profile));
+    /*
+     * Nothing plugged in, so a deck that is not a device.
+     *
+     * Everything a person opens the window for hangs off a deck — the profile
+     * being edited, the page being looked at, even the network settings that
+     * would let a tablet in. See virtual-deck.ts.
+     */
+    if (registry.size === 0) {
+      await registry.add(
+        createVirtualDeck({ profile, actions, variables: registry.variables, surfaces }),
+        profile,
+      );
+      options.log?.info('No panel is plugged in — running on the virtual deck');
     }
 
     /*
@@ -243,6 +307,13 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
         ? profiles.path
         : undefined;
 
+    /*
+     * Stopped with the deck, and stopped first: a sweep that lands while
+     * everything is being taken down would open a panel nobody is going to
+     * close.
+     */
+    let watcher: { stop(): void } | undefined;
+
     service = new DeckService({
       /*
        * The store's shelf: the published one, or a checkout being worked on.
@@ -263,10 +334,39 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
       settingsValue: { ...settings, brightness: initialBrightness },
       warnings,
       watchDirectory,
+      onStop: () => watcher?.stop(),
     });
+
+    /*
+     * Panels arriving and leaving while the daemon runs.
+     *
+     * Without this, plugging a panel in means restarting the program — and the
+     * program is now perfectly happy to start with nothing plugged in, so that
+     * would be the normal way to use it rather than a corner.
+     */
+    if (options.watchDevices !== false) {
+      const running = service;
+      watcher = watchDevices({
+        manager,
+        identify: deckIdFor,
+        known: opened.keys(),
+        onArrived: async (device, id) => {
+          await attach(device, id);
+          options.log?.info(`Panel plugged in: ${device.model.name}`);
+          await running.decksChanged();
+        },
+        onGone: async (id) => {
+          await detach(id);
+          options.log?.info(`Panel unplugged: ${id}`);
+          await running.decksChanged();
+        },
+        onError: (error) => options.log?.error('Watching the USB bus failed', error),
+      });
+    }
+
     return service;
   } catch (error) {
-    for (const surface of opened) await surface.close().catch(() => undefined);
+    for (const surface of opened.values()) await surface.close().catch(() => undefined);
     throw error;
   }
 }

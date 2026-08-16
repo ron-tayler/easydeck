@@ -21,6 +21,8 @@ export type HostStatus =
       readonly state: 'running';
       readonly device: string;
       readonly profileId?: string;
+      /** Running on the stand-in deck, because no panel is plugged in. */
+      readonly virtual?: boolean;
     }
   /** Released on purpose because the workstation is locked or asleep. */
   | { readonly state: 'locked' }
@@ -457,14 +459,7 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
       deck.setListening(this.listening);
 
       const state = await deck.state();
-      // The tray shows one line, so it shows the active deck; the rest are a
-      // click away in the window.
-      const active = state.decks.find((entry) => entry.id === state.activeDeckId) ?? state.decks[0];
-      this.setStatus({
-        state: 'running',
-        device: active?.model ?? active?.name ?? 'deck',
-        ...(active?.profileId ? { profileId: active.profileId } : {}),
-      });
+      this.showState(state);
 
       // Opening the device takes a second or two, so a UI that connected
       // first will have been told there is no deck. Announcing the state on
@@ -492,9 +487,34 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     this.setStatus(locked ? { state: 'locked' } : { state: 'stopped' });
   }
 
+  /**
+   * What the tray says, taken from the deck's own snapshot.
+   *
+   * Recomputed on every snapshot rather than only at startup: panels are
+   * plugged in and unplugged while the app runs, and a tray still naming a
+   * device that was pulled out an hour ago is worse than no tray text at all.
+   */
+  private showState(state: DeckState): void {
+    // One line, so it shows the active deck; the rest are a click away in the
+    // window.
+    const active = state.decks.find((entry) => entry.id === state.activeDeckId) ?? state.decks[0];
+
+    this.setStatus({
+      state: 'running',
+      device: active?.model ?? active?.name ?? 'deck',
+      ...(active?.virtual ? { virtual: true } : {}),
+      ...(active?.profileId ? { profileId: active.profileId } : {}),
+    });
+  }
+
   /** Re-emits a deck's events as the host's own, so clients see one stream. */
   private forward(deck: DeckService): void {
-    deck.on('state', (state) => this.emit('state', state));
+    deck.on('state', (state) => {
+      this.emit('state', state);
+      // Only while a deck is what we have: a snapshot arriving as the machine
+      // locks must not undo the status that says so.
+      if (this.deck === deck && !this.locked) this.showState(state);
+    });
     deck.on('locationChanged', (location) => this.emit('locationChanged', location));
     deck.on('viewChanged', (keys) => this.emit('viewChanged', keys));
     deck.on('variablesChanged', (variables) => this.emit('variablesChanged', variables));

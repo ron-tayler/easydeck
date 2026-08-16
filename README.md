@@ -56,7 +56,13 @@ do not mention.
 
 It is the only model declared today. The family shares the protocol, so adding
 one is a table entry in `packages/device` plus somebody with the device to try
-it on. A deck in a browser needs no hardware at all.
+it on.
+
+**No hardware is needed to run the program.** With nothing plugged in it starts
+on a virtual deck: profiles can be built and buttons tried in the window, the
+network can be switched on, and a phone or tablet can take the deck over the
+wire. A panel plugged in later joins on its own — the virtual one steps aside,
+and comes back if the panel is unplugged.
 
 ## Install
 

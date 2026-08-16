@@ -77,6 +77,14 @@ export interface DeckSummary {
   readonly cols: number;
   /** Absent for a deck with no hardware behind it, such as a tablet. */
   readonly model?: string;
+  /**
+   * True for the stand-in deck the daemon runs while there is no other.
+   *
+   * A UI names it in its own language rather than showing the daemon's word
+   * for it, and can say plainly that nothing is plugged in — which is the one
+   * thing somebody looking at an empty grid needs to know.
+   */
+  readonly virtual?: boolean;
   readonly keyWidth: number;
   readonly keyHeight: number;
   readonly profileId?: string;

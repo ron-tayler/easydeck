@@ -80,6 +80,13 @@ async function refreshState(): Promise<void> {
   try {
     state.value = await client.call<DeckState>('getState');
     lastError.value = undefined;
+
+    // A deck that is no longer there stops being the one being shown: the
+    // stand-in deck goes away the moment a panel is plugged in, and a window
+    // still pointing at it would be filtering events for a deck nobody has.
+    if (selectedDeckId.value && !state.value.decks.some((deck) => deck.id === selectedDeckId.value)) {
+      selectedDeckId.value = undefined;
+    }
   } catch (error) {
     // A deck that is absent or locked is a normal condition, not a crash: the
     // protocol answers with an error and the UI shows it.
@@ -149,11 +156,26 @@ async function refreshPlugins(): Promise<void> {
   }
 }
 
+/**
+ * How long to keep asking a daemon that has not answered yet.
+ *
+ * Long enough that a machine still opening its panels is covered, short enough
+ * that it stops: a daemon which is up and says there is no deck has *answered*,
+ * and asking it forever would be waiting for news that already arrived.
+ */
 const RETRY_DELAY_MS = 1200;
+const RETRY_LIMIT = 10;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
+let retries = 0;
 
 async function refreshAll(): Promise<void> {
-  loading.value = true;
+  // Only the first pass says "connecting". A retry that flipped this back on
+  // made the status line alternate between "connecting" and "no deck" once a
+  // second, for as long as the program was left open — a flicker that read as
+  // something going wrong when nothing was.
+  const first = state.value === undefined && retries === 0;
+  if (first) loading.value = true;
+
   await Promise.all([
     refreshState(),
     refreshView(),
@@ -165,13 +187,22 @@ async function refreshAll(): Promise<void> {
   await refreshProfile();
   loading.value = false;
 
-  // Opening the device takes a moment, and the window is usually ready first,
-  // so the initial snapshot legitimately fails. Rather than leaving "no deck"
-  // on screen until something else happens to arrive, keep asking until the
-  // deck answers — the 'state' event does the same job, but neither can be
-  // relied on to be the one that wins.
+  // The window is usually ready before the daemon is, so the first snapshot
+  // legitimately fails. Rather than leaving "no deck" on screen until
+  // something else happens to arrive, keep asking for a while — the 'state'
+  // event does the same job, but neither can be relied on to be the one that
+  // wins.
   if (retryTimer) clearTimeout(retryTimer);
-  retryTimer = state.value ? undefined : setTimeout(() => void refreshAll(), RETRY_DELAY_MS);
+  retryTimer = undefined;
+
+  if (state.value) {
+    retries = 0;
+    return;
+  }
+
+  if (retries >= RETRY_LIMIT) return;
+  retries += 1;
+  retryTimer = setTimeout(() => void refreshAll(), RETRY_DELAY_MS);
 }
 
 /** The deck a request is about, as request parameters. */
@@ -217,7 +248,12 @@ function start(): void {
 
   client.onConnected((value) => {
     connected.value = value;
-    if (value) void refreshAll();
+    // A fresh connection gets a fresh budget of retries: whatever made the
+    // last one give up is not this one's history.
+    if (value) {
+      retries = 0;
+      void refreshAll();
+    }
   });
 
   // A repaint on the device and a repaint here are triggered by the same
