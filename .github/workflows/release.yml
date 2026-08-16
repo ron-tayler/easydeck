@@ -39,6 +39,7 @@ jobs:
     outputs:
       tag: ${{ steps.plan.outputs.tag }}
       version: ${{ steps.plan.outputs.version }}
+      channel: ${{ steps.plan.outputs.channel }}
       publish: ${{ steps.plan.outputs.publish }}
       sha: ${{ steps.plan.outputs.sha }}
 
@@ -88,9 +89,21 @@ jobs:
             publish=false
           fi
 
+          # There are two update channels and a suffix is what tells them
+          # apart. Which suffix does not matter: -rc.1, -beta.2 and -dev.5 all
+          # say how ripe a build is, not who should be offered it, and they all
+          # land in the one pre-release channel. Decided here so that the job
+          # that packages and the job that publishes cannot come to different
+          # conclusions about the same version.
+          case "$version" in
+            *-*) channel=beta ;;
+            *)   channel=latest ;;
+          esac
+
           {
             echo "tag=$tag"
             echo "version=$version"
+            echo "channel=$channel"
             echo "publish=$publish"
             echo "create=$create"
             # Every job packages this exact commit rather than whatever the
@@ -225,9 +238,14 @@ jobs:
           # gets published here is decided by the job below, from artifacts
           # every platform contributed to — never by one runner with a quarter
           # of the installers.
+          # The channel names the update manifest this build writes, and it is
+          # passed rather than inferred: the packager works it out from the
+          # version on its own, and what it works out is `latest` whatever the
+          # suffix — so a pre-release would quietly land in the stable channel.
           pnpm --filter @easydeck/app exec electron-builder \
             --publish never \
-            --config.extraMetadata.version=${{ needs.plan.outputs.version }}
+            --config.extraMetadata.version=${{ needs.plan.outputs.version }} \
+            --config.publish.channel=${{ needs.plan.outputs.channel }}
 
       # Patterns that match nothing on a given platform are fine; a job where
       # none of them matched is not, and that is what the error setting catches.
@@ -282,18 +300,11 @@ jobs:
       - name: One manifest per channel
         shell: bash
         env:
-          VERSION: ${{ needs.plan.outputs.version }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
         run: |
           set -euo pipefail
 
-          # The packager names a manifest after the version's prerelease
-          # identifier: 0.3.0-rc.1 writes rc.yml, 0.3.0 writes latest.yml.
-          channel=latest
-          case "$VERSION" in
-            *-*) rest="${VERSION#*-}"; channel="${rest%%.*}" ;;
-          esac
-          echo "Packaged as the '$channel' channel"
-
+          echo "Packaged as the '$CHANNEL' channel"
           mkdir -p installers
 
           # The installers need no thought: no two runners produced the same
@@ -308,13 +319,28 @@ jobs:
           # first zip it can use, looking for an architecture in the name only
           # when it is running on Apple silicon — so whatever is first is what
           # an Intel Mac ends up with.
-          intel="artifacts/installers-macos-15-intel/$channel-mac.yml"
-          arm="artifacts/installers-macos-latest/$channel-mac.yml"
+          intel="artifacts/installers-macos-15-intel/$CHANNEL-mac.yml"
+          arm="artifacts/installers-macos-latest/$CHANNEL-mac.yml"
+          merged="installers/$CHANNEL-mac.yml"
+
           if [ -f "$intel" ] && [ -f "$arm" ]; then
-            yq eval-all '. as $m ireduce ({}; . *+ $m)' "$intel" "$arm" \
-              > "installers/$channel-mac.yml"
+            expected=$(cat "$intel" "$arm" | grep -c 'url:')
+
+            yq eval-all '. as $m ireduce ({}; . *+ $m)' "$intel" "$arm" > "$merged"
+
+            # Counted rather than trusted. A merge that silently kept one side
+            # produces a perfectly valid manifest, and the only sign of it
+            # would be Macs of one architecture never being offered anything.
+            actual=$(grep -c 'url:' "$merged")
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::Merging the two macOS manifests gave $actual files, expected $expected. The yq expression above is what to look at."
+              exit 1
+            fi
+
             rm "$intel" "$arm"
-            echo "Merged both Macs into $channel-mac.yml"
+            echo "Merged both Macs into $CHANNEL-mac.yml ($expected files)"
+          elif [ -f "$intel" ] || [ -f "$arm" ]; then
+            echo "::warning::Only one macOS manifest arrived, so the release covers one architecture. Check whether the other Mac's job failed."
           fi
 
           # Windows and Linux wrote one each, and the Macs are already dealt
@@ -330,23 +356,20 @@ jobs:
             exit 1
           fi
 
-          for platform in '' '-mac' '-linux'; do
-            source="$channel$platform.yml"
-            [ -f "$source" ] || continue
-
-            if [ "$channel" = latest ]; then
-              # The newest stable build is also the newest thing anyone on the
-              # pre-release channel should be offered, so it goes into the
-              # release under both names. Without this, a pre-release
-              # subscriber sits on an old beta while stable moves past them.
-              cp -- "$source" "beta$platform.yml"
-            elif [ "$channel" != beta ]; then
-              # rc, dev, alpha: the suffix says how ripe a build is, not who
-              # gets it. There is one pre-release channel and it is called
-              # beta, so the manifest is renamed to match.
-              mv -- "$source" "beta$platform.yml"
-            fi
-          done
+          # A stable release is also the newest thing anyone on the pre-release
+          # channel should be offered, so it goes in under both names. Without
+          # this, whoever chose pre-releases sits on an old beta while stable
+          # moves past them, and the app has no way to notice: an updater only
+          # ever reads the manifest of its own channel.
+          #
+          # The copy works because it stays in the release it describes — the
+          # paths inside a manifest are resolved against wherever it was found.
+          if [ "$CHANNEL" = latest ]; then
+            for platform in '' '-mac' '-linux'; do
+              [ -f "latest$platform.yml" ] || continue
+              cp -- "latest$platform.yml" "beta$platform.yml"
+            done
+          fi
 
           echo "Publishing:"
           ls -1
