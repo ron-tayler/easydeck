@@ -38,7 +38,15 @@ jobs:
           SITE_BASE: /${{ github.event.repository.name }}/
         run: pnpm --filter @easydeck/site build:site
 
+      # Switches Pages on if it is not on already, rather than failing with
+      # "Get Pages site failed. Not Found" — which is what a repository whose
+      # owner has not been through Settings yet answers, and which reads like a
+      # broken workflow instead of a missing checkbox. The token may do this
+      # because of the `pages: write` permission above.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site/dist
