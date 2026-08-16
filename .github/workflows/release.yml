@@ -28,8 +28,15 @@ jobs:
         # no macOS libraries to put inside a .dmg.
         #
         # Two Macs because they are two architectures: macos-latest is Apple
-        # silicon, macos-13 is the last Intel image GitHub offers.
-        os: [ubuntu-latest, windows-latest, macos-latest, macos-13]
+        # silicon, macos-15-intel is x86_64.
+        #
+        # It used to be macos-13, which GitHub retired on 4 December 2025. A
+        # retired label is not an error — nothing rejects the job, no runner
+        # ever claims it, and it sits at "waiting for a runner" until the
+        # six-hour timeout. Worth knowing the shape of, because the next image
+        # will go the same way: Intel on macOS ends when macOS 15 retires in
+        # autumn 2027, and this line is where that lands.
+        os: [ubuntu-latest, windows-latest, macos-latest, macos-15-intel]
 
     steps:
       - uses: actions/checkout@v4
