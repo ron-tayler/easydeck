@@ -8,6 +8,8 @@ import { DeckHost } from './deck-host.js';
 import { assetPath, createTray } from './tray.js';
 import { registerIpc } from './ipc.js';
 import { registerPowerHandlers } from './power.js';
+import { registerUpdateIpc } from './updates/ipc.js';
+import { UpdateService } from './updates/updater.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -26,6 +28,7 @@ let window: BrowserWindow | undefined;
 let quitting = false;
 
 const host = new DeckHost();
+const updates = new UpdateService(host);
 
 function createWindow(): BrowserWindow {
   const created = new BrowserWindow({
@@ -97,12 +100,17 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     createTray({ onShow: showWindow, onQuit: quitApp, host });
     registerIpc(host);
+    registerUpdateIpc(updates);
     registerPowerHandlers(host);
     window = createWindow();
 
     // Starting the deck must not block the window: a missing or busy device is
     // a state to display, not a reason to fail to launch.
     void host.start();
+
+    // Nor does looking for a new version: the first check is half a minute
+    // out, and nothing here waits for it.
+    void updates.start();
   });
 
   // Deliberately does not quit: hiding the last window is how this app goes
@@ -117,6 +125,7 @@ if (!app.requestSingleInstanceLock()) {
   // the last frame and the HID handle stays open until the OS cleans up.
   app.on('before-quit', async (event) => {
     quitting = true;
+    updates.dispose();
     if (!host.running) return;
 
     event.preventDefault();
