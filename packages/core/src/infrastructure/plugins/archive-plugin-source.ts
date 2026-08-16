@@ -1,4 +1,4 @@
-﻿import { extname } from 'node:path';
+import { extname } from 'node:path';
 
 import type { PluginManifest } from '@easydeck/engine';
 
@@ -8,16 +8,23 @@ import { ZipArchive } from '../zip.js';
 /**
  * What every plugin source has in common, which turns out to be most of it.
  *
- * A source is an index and some archives, wherever they happen to live. Only
- * *fetching a named file* differs between a folder on this machine and a
- * GitHub release — so that is the one thing a subclass writes, and listing,
- * downloading, caching and reading pictures out of an archive are written
- * once here.
+ * A source is a shop window and some plugins, wherever they happen to live.
+ * Only *fetching a named file* differs between a folder on this machine and a
+ * GitHub release — so that is the one thing a subclass writes, and everything
+ * else is written once here.
  *
- * The index format is the same for both by construction: it names files, not
- * places. `ed.obs.easydeck` is resolved under `build/` by one and under a
- * release by the other, and moving from the folder to GitHub therefore
- * changes where one file is read from and nothing else.
+ * **The window is one file.** `store.zip` holds the index, every plugin's
+ * manifest and every cover, so opening the store is a single download and
+ * drawing the list costs nothing further. Two things drove that. GitHub
+ * releases are a flat list of assets with no folders, and a file per plugin
+ * per purpose was eleven of them at five plugins and forty-one at twenty. And
+ * covers used to be read out of the plugins' own archives, which meant
+ * drawing a list of five names downloaded 317 KB of plugin — measured, and
+ * the reason the slim index it was meant to pair with bought nothing.
+ *
+ * A plugin's own archive is then fetched for exactly two reasons: installing
+ * it, and showing a screenshot, which stays inside it because screenshots are
+ * large, rare, and only ever wanted by somebody who opened one card.
  */
 
 const TYPES: Readonly<Record<string, string>> = {
@@ -32,37 +39,32 @@ const TYPES: Readonly<Record<string, string>> = {
 /** `plugin:<id>/<path>`, the same reference form a preset's icon uses. */
 const REFERENCE = /^plugin:([A-Za-z0-9][A-Za-z0-9._-]*)\/(.+)$/;
 
-/** Where the index lives, relative to whatever the source's root means. */
+/** The shop window: index, manifests and covers, in one archive. */
+export const STORE_FILE = 'store.zip';
+
+/** Where the index sits inside it. */
 export const INDEX_FILE = 'index.json';
 
 export abstract class ArchivePluginSource implements PluginSource {
   abstract readonly name: string;
 
+  /** The window, read once and kept until somebody asks to look again. */
+  private window?: ZipArchive;
+  private windowRead = false;
+
   /**
-   * Archives already read, by id.
+   * Plugin archives already fetched, by id.
    *
-   * A card asks for several pictures at once and each would otherwise fetch
-   * and reparse the whole zip — over the network, several times, for one
-   * screen.
+   * Only screenshots reach for these now — a card that has one, opened by
+   * somebody who is deciding whether to install it anyway.
    */
   private readonly opened = new Map<string, ZipArchive>();
-  /**
-   * Manifests already fetched, by plugin id.
-   *
-   * Held for as long as the store is open rather than for a span of time:
-   * somebody comparing three plugins goes back and forth between them, and
-   * fetching the same manifest each way round is the cost the split was made
-   * to avoid. `refresh` is what empties it — "look again" is the one moment
-   * the answer could have changed.
-   */
-  private readonly manifests = new Map<string, PluginManifest>();
-  private index?: RawIndex;
 
   /**
    * Fetches one named file, or nothing.
    *
-   * The only difference between sources. `name` is either the index or an
-   * archive the index named — never a path a person typed.
+   * The only difference between sources. `name` is either the window or a
+   * plugin archive the index named — never a path a person typed.
    */
   protected abstract fetch(name: string): Promise<Uint8Array | undefined>;
 
@@ -72,18 +74,12 @@ export abstract class ArchivePluginSource implements PluginSource {
   }
 
   async details(id: string): Promise<PluginManifest | undefined> {
-    const kept = this.manifests.get(id);
-    if (kept) return kept;
-
-    const bytes = await this.fetch(`${id}.json`);
+    const bytes = (await this.openWindow())?.read(`${id}.json`);
     if (!bytes) return undefined;
 
     try {
-      const manifest = JSON.parse(Buffer.from(bytes).toString('utf8')) as PluginManifest;
-      if (typeof manifest?.name !== 'object') return undefined;
-
-      this.manifests.set(id, manifest);
-      return manifest;
+      const manifest = JSON.parse(bytes.toString('utf8')) as PluginManifest;
+      return typeof manifest?.name === 'object' ? manifest : undefined;
     } catch {
       return undefined;
     }
@@ -96,28 +92,57 @@ export abstract class ArchivePluginSource implements PluginSource {
     return this.fetch(listing.file);
   }
 
+  /**
+   * A picture, from the window if it is there and from the plugin if not.
+   *
+   * Covers are in the window, so a list draws itself from one download.
+   * Screenshots are not, and fetching one means fetching the plugin — which
+   * is the bargain: they are big, and only somebody reading one card wants
+   * them.
+   */
   async image(id: string, reference: string): Promise<PluginImage | undefined> {
     const found = REFERENCE.exec(reference);
     if (!found) return undefined;
 
     const [, owner, path] = found as unknown as [string, string, string];
-    // A plugin may point at another's picture — the same latitude a preset's
-    // icon has — so the reference says whose archive to open, not the caller.
-    const archive = await this.open(owner === '' ? id : owner);
-    if (!archive) return undefined;
-
     const type = TYPES[extname(path).toLowerCase()];
-    const bytes = archive.read(path);
-    if (!type || !bytes) return undefined;
+    if (!type) return undefined;
 
-    return { bytes, type };
+    // A plugin may point at another's picture — the same latitude a preset's
+    // icon has — so the reference says whose file this is, not the caller.
+    const whose = owner === '' ? id : owner;
+
+    const fromWindow = (await this.openWindow())?.read(`${whose}/${path}`);
+    if (fromWindow) return { bytes: fromWindow, type };
+
+    const archive = await this.open(whose);
+    const bytes = archive?.read(path);
+    return bytes ? { bytes, type } : undefined;
   }
 
   /** Forgets everything read, for a store that was told to look again. */
   refresh(): void {
     this.opened.clear();
-    this.manifests.clear();
-    this.index = undefined;
+    this.window = undefined;
+    this.windowRead = false;
+  }
+
+  private async openWindow(): Promise<ZipArchive | undefined> {
+    if (this.windowRead) return this.window;
+    this.windowRead = true;
+
+    const bytes = await this.fetch(STORE_FILE);
+    if (!bytes) return undefined;
+
+    try {
+      this.window = new ZipArchive(Buffer.from(bytes));
+    } catch {
+      // A half-written window during a rebuild, or a network that answered a
+      // login page. An empty store beats a store that refuses to open.
+      this.window = undefined;
+    }
+
+    return this.window;
   }
 
   private async open(id: string): Promise<ZipArchive | undefined> {
@@ -133,20 +158,13 @@ export abstract class ArchivePluginSource implements PluginSource {
   }
 
   private async readIndex(): Promise<RawIndex | undefined> {
-    if (this.index) return this.index;
-
-    const bytes = await this.fetch(INDEX_FILE);
+    const bytes = (await this.openWindow())?.read(INDEX_FILE);
     if (!bytes) return undefined;
 
     try {
-      const parsed = JSON.parse(Buffer.from(bytes).toString('utf8')) as RawIndex;
-      if (!Array.isArray(parsed?.plugins)) return undefined;
-
-      this.index = parsed;
-      return parsed;
+      const parsed = JSON.parse(bytes.toString('utf8')) as RawIndex;
+      return Array.isArray(parsed?.plugins) ? parsed : undefined;
     } catch {
-      // A half-written index during a rebuild, or a network that answered a
-      // login page. An empty store beats a store that refuses to open.
       return undefined;
     }
   }

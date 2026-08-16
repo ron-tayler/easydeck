@@ -8,6 +8,8 @@ import { after, describe, it } from 'node:test';
 import { PLUGIN_API_VERSION } from '@easydeck/engine';
 
 import { writeZip } from '../zip-writer.js';
+import type { ZipFile } from '../zip-writer.js';
+import { STORE_FILE } from './archive-plugin-source.js';
 import { choosePluginSource } from './choose-plugin-source.js';
 import {
   DEFAULT_PLUGIN_SOURCE,
@@ -50,6 +52,69 @@ function pluginArchive(
     { name: 'icons/key.svg', bytes: Buffer.from('<svg/>', 'utf8') },
     ...extra,
   ]);
+}
+
+/**
+ * The shop window the build script packs: an index, a manifest, a cover.
+ *
+ * Written here rather than borrowed so the test knows the format rather than
+ * agreeing with whatever the builder happens to do.
+ */
+function storeWindow(sha256: string, bytes: number, extra: readonly ZipFile[] = []): Uint8Array {
+  return writeZip([
+    {
+      name: 'index.json',
+      bytes: Buffer.from(
+        JSON.stringify({
+          plugins: [
+            {
+              id: 'ed.demo',
+              author: 'ed',
+              version: '1.2.3',
+              apiVersion: PLUGIN_API_VERSION,
+              file: 'ed.demo.easydeck',
+              sha256,
+              bytes,
+              name: { en: 'Demo' },
+              cover: 'plugin:ed.demo/assets/cover.svg',
+            },
+          ],
+        }),
+        'utf8',
+      ),
+    },
+    {
+      name: 'ed.demo.json',
+      bytes: Buffer.from(
+        JSON.stringify({
+          name: { en: 'Demo' },
+          version: '1.2.3',
+          apiVersion: PLUGIN_API_VERSION,
+          actions: [{ type: 'ed.demo.poke', label: { en: 'Poke' } }],
+        }),
+        'utf8',
+      ),
+    },
+    // Filed under the plugin the reference names, so `plugin:ed.demo/…`
+    // resolves by looking up `ed.demo/…`.
+    { name: 'ed.demo/assets/cover.svg', bytes: Buffer.from('<svg>cover</svg>', 'utf8') },
+    ...extra,
+  ]);
+}
+
+/** A folder source that says which files it read. */
+class WatchedSource extends FolderPluginSource {
+  constructor(
+    root: string,
+    private readonly asked: string[],
+  ) {
+    super(root);
+  }
+
+  protected override async fetch(name: string): Promise<Uint8Array | undefined> {
+    this.asked.push(name);
+    return super.fetch(name);
+  }
 }
 
 describe('installing a plugin from an archive', () => {
@@ -153,31 +218,11 @@ describe('the plugins repository as a folder', () => {
   async function source(): Promise<{ root: string; sha256: string }> {
     const root = await scratch();
     const bytes = pluginArchive();
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
 
     await mkdir(join(root, 'build'), { recursive: true });
-    await mkdir(join(root, 'registry'), { recursive: true });
     await writeFile(join(root, 'build', 'ed.demo.easydeck'), bytes);
-
-    const sha256 = createHash('sha256').update(bytes).digest('hex');
-    await writeFile(
-      join(root, 'registry', 'index.json'),
-      JSON.stringify({
-        plugins: [
-          {
-            id: 'ed.demo',
-            author: 'ed',
-            version: '1.2.3',
-            apiVersion: PLUGIN_API_VERSION,
-            file: 'ed.demo.easydeck',
-            sha256,
-            bytes: bytes.byteLength,
-            name: { en: 'Demo' },
-            cover: 'plugin:ed.demo/icons/key.svg',
-          },
-        ],
-      }),
-      'utf8',
-    );
+    await writeFile(join(root, 'build', STORE_FILE), storeWindow(sha256, bytes.byteLength));
 
     return { root, sha256 };
   }
@@ -194,14 +239,36 @@ describe('the plugins repository as a folder', () => {
     assert.ok(bytes && looksLikePlugin(bytes));
   });
 
-  it('reads a picture out of the archive, not from beside it', async () => {
-    // Which is what keeps this interchangeable with a source that has only a
-    // zip and a URL.
+  it('draws a whole list without fetching a single plugin', async () => {
+    /*
+     * Regression, and a measured one: covers used to be read out of each
+     * plugin's own archive, so showing five names downloaded 317 KB of code.
+     * They travel in the window now, and a list costs one file.
+     */
     const { root } = await source();
-    const image = await new FolderPluginSource(root).image('ed.demo', 'plugin:ed.demo/icons/key.svg');
+    const asked: string[] = [];
+    const watched = new WatchedSource(root, asked);
+
+    await watched.list();
+    const image = await watched.image('ed.demo', 'plugin:ed.demo/assets/cover.svg');
 
     assert.equal(image?.type, 'image/svg+xml');
-    assert.equal(Buffer.from(image!.bytes).toString('utf8'), '<svg/>');
+    assert.equal(Buffer.from(image!.bytes).toString('utf8'), '<svg>cover</svg>');
+    assert.deepEqual(asked, [STORE_FILE]);
+  });
+
+  it('goes to the plugin for a screenshot, which is not in the window', async () => {
+    // The bargain: covers are small and every row wants one, screenshots are
+    // large and only a card does — and whoever opened that card is usually
+    // about to download the plugin anyway.
+    const { root } = await source();
+    const asked: string[] = [];
+    const watched = new WatchedSource(root, asked);
+
+    const shot = await watched.image('ed.demo', 'plugin:ed.demo/icons/key.svg');
+
+    assert.equal(Buffer.from(shot!.bytes).toString('utf8'), '<svg/>');
+    assert.deepEqual(asked, [STORE_FILE, 'ed.demo.easydeck']);
   });
 
   it('is an empty store rather than an error when there is nothing there', async () => {
@@ -213,22 +280,32 @@ describe('the plugins repository as a folder', () => {
   });
 
   it('never reads a file the index pointed outside the source at', async () => {
-    const { root } = await source();
+    const root = await scratch();
+    await mkdir(join(root, 'build'), { recursive: true });
     await writeFile(
-      join(root, 'registry', 'index.json'),
-      JSON.stringify({
-        plugins: [
-          {
-            id: 'ed.evil',
-            version: '1',
-            apiVersion: PLUGIN_API_VERSION,
-            sha256: 'x',
-            file: '../../../secrets.txt',
-            name: { en: 'Evil' },
-          },
-        ],
-      }),
-      'utf8',
+      join(root, 'build', STORE_FILE),
+      writeZip([
+        {
+          name: 'index.json',
+          bytes: Buffer.from(
+            JSON.stringify({
+              plugins: [
+                {
+                  id: 'ed.evil',
+                  version: '1',
+                  apiVersion: PLUGIN_API_VERSION,
+                  sha256: 'x',
+                  // A name from a file the build wrote is still a name, and a
+                  // name is the thing that must never become a path upwards.
+                  file: '../../../secrets.txt',
+                  name: { en: 'Evil' },
+                },
+              ],
+            }),
+            'utf8',
+          ),
+        },
+      ]),
     );
 
     assert.equal(await new FolderPluginSource(root).download('ed.evil'), undefined);
@@ -239,8 +316,8 @@ describe('which shelf a build reads from', () => {
   /** A built plugins repository: an index where one is expected. */
   async function repository(): Promise<string> {
     const root = await scratch();
-    await mkdir(join(root, 'registry'), { recursive: true });
-    await writeFile(join(root, 'registry', 'index.json'), '{"plugins":[]}', 'utf8');
+    await mkdir(join(root, 'build'), { recursive: true });
+    await writeFile(join(root, 'build', STORE_FILE), storeWindow('x', 0));
     return root;
   }
 
@@ -299,26 +376,10 @@ describe('the published store', () => {
     };
   }
 
-  it('reads the index and the archives from the latest release', async () => {
+  it('reads the window and the archives from the latest release', async () => {
     const archive = pluginArchive();
     const { fetcher, asked } = releaseWith({
-      'index.json': Buffer.from(
-        JSON.stringify({
-          plugins: [
-            {
-              id: 'ed.demo',
-              author: 'ed',
-              version: '1.2.3',
-              apiVersion: PLUGIN_API_VERSION,
-              file: 'ed.demo.easydeck',
-              sha256: 'x',
-              bytes: archive.byteLength,
-              name: { en: 'Demo' },
-            },
-          ],
-        }),
-        'utf8',
-      ),
+      [STORE_FILE]: storeWindow('x', archive.byteLength),
       'ed.demo.easydeck': archive,
     });
 
@@ -329,7 +390,7 @@ describe('the published store', () => {
     assert.ok(await source.download('ed.demo'));
     // "latest/download" is what makes publishing the whole of deployment:
     // the address does not change when a release does.
-    assert.ok(asked[0]?.includes('/releases/latest/download/index.json'));
+    assert.ok(asked[0]?.includes(`/releases/latest/download/${STORE_FILE}`));
   });
 
   it('is an empty shelf before the first release, not an error', async () => {
@@ -359,36 +420,8 @@ describe('a card, fetched apart from the list', () => {
     const reads: string[] = [];
 
     await mkdir(join(root, 'build'), { recursive: true });
-    await mkdir(join(root, 'registry'), { recursive: true });
     await writeFile(join(root, 'build', 'ed.demo.easydeck'), pluginArchive());
-    await writeFile(
-      join(root, 'build', 'ed.demo.json'),
-      JSON.stringify({
-        name: { en: 'Demo' },
-        version: '1.2.3',
-        apiVersion: PLUGIN_API_VERSION,
-        actions: [{ type: 'ed.demo.poke', label: { en: 'Poke' } }],
-      }),
-      'utf8',
-    );
-    await writeFile(
-      join(root, 'registry', 'index.json'),
-      JSON.stringify({
-        plugins: [
-          {
-            id: 'ed.demo',
-            author: 'ed',
-            version: '1.2.3',
-            apiVersion: PLUGIN_API_VERSION,
-            file: 'ed.demo.easydeck',
-            sha256: 'x',
-            bytes: 1,
-            name: { en: 'Demo' },
-          },
-        ],
-      }),
-      'utf8',
-    );
+    await writeFile(join(root, 'build', STORE_FILE), storeWindow('x', 1));
 
     return { root, reads };
   }
@@ -413,8 +446,8 @@ describe('a card, fetched apart from the list', () => {
 
     await source.details('ed.demo');
     // Somebody comparing plugins goes back and forth; the second look costs
-    // nothing. Proven by removing the file underneath and asking again.
-    await rm(join(root, 'build', 'ed.demo.json'));
+    // nothing. Proven by removing the window underneath and asking again.
+    await rm(join(root, 'build', STORE_FILE));
     assert.equal((await source.details('ed.demo'))?.actions[0]?.type, 'ed.demo.poke');
 
     // "Look again" is the one moment the answer could have changed.

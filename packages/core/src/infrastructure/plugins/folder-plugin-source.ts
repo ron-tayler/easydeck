@@ -1,14 +1,14 @@
 ﻿import { readFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 
-import { ArchivePluginSource, INDEX_FILE } from './archive-plugin-source.js';
+import { ArchivePluginSource } from './archive-plugin-source.js';
 
 /**
  * The plugins repository as a folder on this machine.
  *
  * What a developer's store reads: `pnpm build` in the plugins repository
- * leaves the archives in `build/` and the index in `registry/`, and this
- * serves them without any of it having to be pushed, released or downloaded.
+ * leaves the window and the archives in `build/`, and this serves them
+ * without any of it having to be pushed, released or downloaded.
  * The remote source is what a user gets; this is what somebody writing a
  * plugin gets, and the two answer the same questions.
  */
@@ -24,33 +24,26 @@ export class FolderPluginSource extends ArchivePluginSource {
   }
 
   /**
-   * Reads a file the index named, and only from inside the source.
+   * Reads a file the build left, and only from inside the source.
    *
-   * Two places are tried because the build leaves things in two: the index
-   * under `registry/` and the archives under `build/`. Both are checked for
-   * being inside the source — a name is exactly the thing that should never
-   * be able to say `../../../.ssh/id_rsa`, even when it comes from a file
-   * this machine wrote.
+   * Everything published lives in `build/` — the window and one archive per
+   * plugin — so this is one folder rather than the two it was. The path is
+   * still checked for being inside the source: a name is exactly the thing
+   * that should never be able to say `../../../.ssh/id_rsa`, even when it
+   * comes from a file this machine wrote a moment ago.
    */
   protected async fetch(name: string): Promise<Uint8Array | undefined> {
     if (isAbsolute(name)) return undefined;
 
     const inside = resolve(this.root) + sep;
-    const places =
-      name === INDEX_FILE
-        ? [resolve(this.root, 'registry', INDEX_FILE)]
-        : [resolve(this.root, 'build', name)];
+    const path = resolve(this.root, 'build', name);
+    if (!path.startsWith(inside)) return undefined;
 
-    for (const path of places) {
-      if (!path.startsWith(inside)) continue;
-      try {
-        return await readFile(path);
-      } catch {
-        continue;
-      }
+    try {
+      return await readFile(path);
+    } catch {
+      return undefined;
     }
-
-    return undefined;
   }
 }
 

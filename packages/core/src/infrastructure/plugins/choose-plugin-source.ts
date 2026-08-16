@@ -2,6 +2,7 @@
 import { join } from 'node:path';
 
 import type { PluginSource } from '../../application/ports/plugin-source.js';
+import { STORE_FILE } from './archive-plugin-source.js';
 import { FolderPluginSource, pluginSourceCandidates } from './folder-plugin-source.js';
 import { GitHubPluginSource } from './github-plugin-source.js';
 
@@ -55,13 +56,13 @@ export async function choosePluginSource(): Promise<PluginSource> {
 /**
  * Whether a folder is a plugins repository somebody has built.
  *
- * The index rather than the folder: a fresh clone has the sources and no
- * `registry/index.json`, and reading from it would be an empty store with no
+ * The window rather than the folder: a fresh clone has the sources and no
+ * `build/store.zip`, and reading from it would be an empty store with no
  * explanation. Unbuilt means "not a source", and the store goes to GitHub.
  */
 async function built(root: string): Promise<boolean> {
   try {
-    await access(join(root, 'registry', 'index.json'));
+    await access(join(root, 'build', STORE_FILE));
     return true;
   } catch {
     return false;
