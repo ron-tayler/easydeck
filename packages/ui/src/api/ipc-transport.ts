@@ -1,6 +1,7 @@
 import type { EventMessage, RequestMessage, ResponseMessage } from '@easydeck/protocol';
 
 import type { Transport } from './transport.js';
+import type { UpdateBridge } from './updates.js';
 
 /** The bridge the desktop app's preload script exposes. */
 interface EasyDeckBridge {
@@ -8,6 +9,8 @@ interface EasyDeckBridge {
   getStatus(): Promise<unknown>;
   onStatus(listener: (status: unknown) => void): () => void;
   onEvent(listener: (message: EventMessage) => void): () => void;
+  /** Absent in older desktop builds, and in every browser. */
+  updates?: UpdateBridge;
 }
 
 declare global {

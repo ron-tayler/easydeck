@@ -13,6 +13,7 @@ import type {
 import { SUPPORTED_LOCALES, setLocale } from '../i18n/index.js';
 import type { Locale } from '../i18n/index.js';
 import { THEMES, useTheme } from '../composables/useTheme.js';
+import { updatesAvailable, useUpdates } from '../composables/useUpdates.js';
 import IconLibrary from './IconLibrary.vue';
 import PluginStore from './PluginStore.vue';
 import type { Theme } from '../composables/useTheme.js';
@@ -55,7 +56,44 @@ const { theme, setTheme } = useTheme();
 /** Whether the icon collection is open for a look. */
 const browsingIcons = ref(false);
 
-const SECTIONS = ['system', 'network', 'profiles', 'plugins', 'icons', 'core', 'deck', 'about'] as const;
+const ALL_SECTIONS = [
+  'system',
+  'network',
+  'profiles',
+  'plugins',
+  'icons',
+  'core',
+  'deck',
+  'updates',
+  'about',
+] as const;
+
+/**
+ * Updates are left out in a browser.
+ *
+ * The same configurator is served over the network to a tablet acting as a
+ * deck, and that page is not an operator of this computer: it must not be able
+ * to restart it. The bridge that does the updating is absent there, and so is
+ * the tab.
+ */
+const SECTIONS = ALL_SECTIONS.filter((name) => name !== 'updates' || updatesAvailable());
+
+const updates = useUpdates();
+const updateStatus = updates.status;
+
+/** The phase, flattened for the template's benefit. */
+const phase = computed(() => updateStatus.value?.phase);
+
+/** Set only when this installation cannot replace itself, and says why. */
+const cannotSelfUpdate = computed(() => {
+  const ability = updateStatus.value?.ability;
+  return ability && !ability.self ? ability.reason : undefined;
+});
+
+const lastChecked = computed(() => {
+  const at = updateStatus.value?.checkedAt;
+  return at ? new Date(at).toLocaleString(locale.value) : undefined;
+});
 
 /** A plugin worth opening a window for: one with settings or commands. */
 const configurable = (plugin: PluginManifest): boolean =>
@@ -518,6 +556,90 @@ const alsoWaiting = computed(() => Math.max(0, (props.pendingDevices?.length ?? 
           <p v-else class="muted">{{ t('status.noDeck') }}</p>
         </section>
 
+        <section v-else-if="section === 'updates'">
+          <h2>{{ t('settings.updates.title') }}</h2>
+          <p class="muted">{{ t('settings.updates.explanation') }}</p>
+
+          <dl>
+            <dt>{{ t('settings.updates.installed') }}</dt>
+            <dd>{{ updateStatus?.currentVersion ?? '—' }}</dd>
+          </dl>
+
+          <!-- Said before the controls rather than after: on these two
+               platforms the buttons below do something narrower than they
+               look like they do, and finding that out afterwards is worse. -->
+          <p v-if="cannotSelfUpdate" class="muted small">
+            {{ t(`settings.updates.unable.${cannotSelfUpdate}`) }}
+          </p>
+
+          <template v-if="cannotSelfUpdate !== 'development'">
+            <label class="row">
+              <span>{{ t('settings.updates.channel') }}</span>
+              <select
+                :value="updateStatus?.channel"
+                :disabled="updates.busy.value"
+                @change="
+                  updates.setChannel(
+                    ($event.target as HTMLSelectElement).value as 'stable' | 'prerelease',
+                  )
+                "
+              >
+                <option value="stable">{{ t('settings.updates.channels.stable') }}</option>
+                <option value="prerelease">{{ t('settings.updates.channels.prerelease') }}</option>
+              </select>
+            </label>
+            <p class="muted small">{{ t('settings.updates.prereleaseHint') }}</p>
+
+            <p class="state">
+              <template v-if="phase?.name === 'checking'">{{ t('settings.updates.checking') }}</template>
+              <template v-else-if="phase?.name === 'downloading'">
+                {{ t('settings.updates.downloading', { version: phase.version, percent: phase.percent }) }}
+              </template>
+              <template v-else-if="phase?.name === 'ready'">
+                {{ t('settings.updates.ready', { version: phase.version }) }}
+              </template>
+              <template v-else-if="phase?.name === 'available'">
+                {{ t('settings.updates.available', { version: phase.version }) }}
+              </template>
+              <template v-else-if="phase?.name === 'error'">
+                {{ t('settings.updates.failed', { message: phase.message }) }}
+              </template>
+              <template v-else-if="updateStatus?.checkedAt">
+                {{ t('settings.updates.upToDate') }}
+              </template>
+            </p>
+
+            <div class="buttons">
+              <button
+                v-if="phase?.name === 'ready'"
+                type="button"
+                :disabled="updates.busy.value"
+                @click="updates.install()"
+              >
+                {{ t('settings.updates.restart') }}
+              </button>
+              <button
+                v-else-if="phase?.name === 'available'"
+                type="button"
+                @click="updates.openRelease()"
+              >
+                {{ t('settings.updates.openRelease') }}
+              </button>
+              <button
+                type="button"
+                :disabled="updates.busy.value || phase?.name === 'checking'"
+                @click="updates.check()"
+              >
+                {{ t('settings.updates.checkNow') }}
+              </button>
+            </div>
+
+            <p v-if="lastChecked" class="muted small">
+              {{ t('settings.updates.lastChecked', { when: lastChecked }) }}
+            </p>
+          </template>
+        </section>
+
         <section v-else>
           <h2>{{ t('settings.about.title') }}</h2>
           <p>{{ t('settings.about.text') }}</p>
@@ -693,6 +815,19 @@ h2 {
 
 .row.disabled {
   opacity: 0.6;
+}
+
+/* Where the update section says what it is doing. Given a line of its own so
+   that a percentage ticking upwards does not shuffle the buttons below it. */
+.state {
+  min-height: 20px;
+  margin: 12px 0 8px;
+  font-size: 13px;
+}
+
+.buttons {
+  display: flex;
+  gap: 8px;
 }
 
 .row em {

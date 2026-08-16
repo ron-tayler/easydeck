@@ -482,6 +482,35 @@
       keySize: 'Key image',
       brightness: 'Brightness',
     },
+    updates: {
+      title: 'Updates',
+      explanation:
+        'EasyDeck looks for a newer version and fetches it in the background. Installing it waits for you: the deck is not taken away mid-task.',
+      installed: 'Installed',
+      channel: 'Which builds to offer',
+      channels: {
+        stable: 'Finished ones only',
+        prerelease: 'Pre-releases as well',
+      },
+      prereleaseHint:
+        'Builds marked rc, beta or dev. Some weeks ahead and correspondingly more likely to break — you can go back to finished ones at any time.',
+      checkNow: 'Check now',
+      checking: 'Looking…',
+      upToDate: 'This is the latest version',
+      available: '{version} is out',
+      downloading: 'Fetching {version} — {percent}%',
+      ready: '{version} is downloaded and waiting for a restart',
+      restart: 'Restart and update',
+      openRelease: 'Open the release page',
+      lastChecked: 'Last checked: {when}',
+      failed: 'Could not check: {message}',
+      unable: {
+        development: 'Running from source — there is nothing here to update.',
+        'unsigned-macos':
+          'macOS will not accept a build nobody signed, so this cannot install one. You will be told about a new version; fetching it is by hand.',
+        'linux-package': 'A package manager installed this, so it does the updating. You will be told about a new version.',
+      },
+    },
     about: {
       title: 'About',
       text: 'EasyDeck — open control software for the FIFINE AmpliGame D6 and other Stream Dock devices.',
