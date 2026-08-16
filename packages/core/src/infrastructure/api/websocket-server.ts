@@ -330,7 +330,9 @@ export async function startApiServer(options: ApiServerOptions): Promise<Running
     const session = sessions.get(ws);
     if (session?.level !== 'device' || !session.deckId) return;
 
-    await options.service.detachDeck(session.deckId).catch(() => undefined);
+    // Suspended rather than detached: a socket closing says the connection
+    // went, not that the device did. See DeckService.suspendDeck.
+    await options.service.suspendDeck(session.deckId).catch(() => undefined);
   }
 
   /**

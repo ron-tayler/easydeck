@@ -26,8 +26,21 @@ export class NetworkDeck implements PresenterPort {
   constructor(
     readonly layout: { readonly rows: number; readonly cols: number },
     /** Sends a scene to the device. Failures are the transport's business. */
-    private readonly send: (scene: Scene, doublePressKeys: readonly number[]) => void,
+    private send: (scene: Scene, doublePressKeys: readonly number[]) => void,
   ) {}
+
+  /**
+   * Points this deck at a new connection.
+   *
+   * A phone whose screen went off drops its socket and opens another one a
+   * moment later. What comes back is the same deck — the same page, the same
+   * history — reached down a different pipe, and this is the whole of that
+   * difference. Rebuilding the deck instead is what used to send every
+   * reconnecting tablet back to its home page.
+   */
+  retarget(send: (scene: Scene, doublePressKeys: readonly number[]) => void): void {
+    this.send = send;
+  }
 
   onGesture(listener: (key: number, gesture: ButtonEvent) => void): () => void {
     this.listeners.add(listener);

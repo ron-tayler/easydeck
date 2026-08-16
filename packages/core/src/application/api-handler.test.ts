@@ -352,6 +352,10 @@ class FakeDeck implements DeckFacade {
     this.calls.push(`detachDeck:${deckId}`);
   }
 
+  async suspendDeck(deckId: string): Promise<void> {
+    this.calls.push(`suspendDeck:${deckId}`);
+  }
+
   reportGesture(deckId: string, key: number, gesture: string): void {
     this.calls.push(`reportGesture:${deckId}:${key}:${gesture}`);
   }

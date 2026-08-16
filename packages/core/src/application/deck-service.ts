@@ -141,6 +141,16 @@ export interface DeckServiceOptions {
 const RELOAD_DEBOUNCE_MS = 200;
 
 /**
+ * How long a deck outlives the connection that was driving it.
+ *
+ * Long enough to cover a screen going off, a tab in the background and a walk
+ * out of Wi-Fi range — the client reconnects on a two-second timer, so this is
+ * many chances. Short enough that a tablet somebody has actually put away
+ * stops occupying the deck, and the stand-in comes back.
+ */
+const DECK_GRACE_MS = 60_000;
+
+/**
  * The running deck, as everything above it sees it.
  *
  * Owns the pieces `startDeck` assembled and adds what a UI needs on top:
@@ -178,6 +188,16 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
   private watcher?: FSWatcher;
   private reloadTimer?: NodeJS.Timeout;
   private stopped = false;
+  /** Decks whose device has gone quiet, and when to give up on each. */
+  private readonly forgetting = new Map<string, NodeJS.Timeout>();
+  /**
+   * Serializes changes to the set of decks.
+   *
+   * A tablet dropping and reconnecting fires two of these a fraction of a
+   * second apart, and interleaved they can leave two decks where there should
+   * be one, or none at all — both of which the window shows.
+   */
+  private gate: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: DeckServiceOptions) {
     super();
@@ -827,10 +847,36 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
   }): Promise<{ readonly deckId: string }> {
     const deckId = `net-${options.deviceId}`;
     const existing = this.options.decks.get(deckId);
+    const previous = existing?.presenter;
 
-    // A device that reconnects rejoins the deck it had, rather than starting a
-    // second one: its page, its history and its profile are still there.
-    if (existing) await this.options.decks.removeDeck(deckId);
+    /*
+     * A device that reconnects rejoins the deck it had: its page, its history
+     * and its profile are still there.
+     *
+     * This is what the file claimed and did not do. It tore the deck down and
+     * built another, so every dropped socket — a phone whose screen went off,
+     * a tablet that changed room — put the deck back on its home page, and
+     * cost a controller, a profile load and a repaint each time. A grid it
+     * still fits is now handed the new connection and told to say it all
+     * again; only a different grid needs a different deck.
+     */
+    if (previous instanceof NetworkDeck && existing) {
+      if (previous.layout.rows === options.rows && previous.layout.cols === options.cols) {
+        this.keepDeck(deckId);
+        previous.retarget((scene, keys) => options.send(scene, keys));
+        existing.online = true;
+        // The scene it is already showing, to a screen that has just come back
+        // and would otherwise sit empty until something happened to change.
+        previous.resend();
+
+        this.emit('state', await this.state());
+        return { deckId };
+      }
+
+      await this.options.decks.removeDeck(deckId);
+    } else if (existing) {
+      await this.options.decks.removeDeck(deckId);
+    }
 
     const presenter = new NetworkDeck({ rows: options.rows, cols: options.cols }, (scene, keys) =>
       options.send(scene, keys),
@@ -858,9 +904,50 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
   }
 
   async detachDeck(deckId: string): Promise<void> {
+    this.keepDeck(deckId);
     await this.options.decks.removeDeck(deckId);
     // And brings the stand-in back, if that was the last deck there was.
     await this.decksChanged();
+  }
+
+  /**
+   * A deck whose device has gone quiet, kept for a while rather than dropped.
+   *
+   * A socket closing is not the same as a device leaving: a phone locks its
+   * screen, a tablet is carried into the next room, a browser tab is put in
+   * the background — and every one of those comes back within seconds, to the
+   * page it was on if there is still a deck holding it. Dropping the deck the
+   * instant the socket closed is what made a nap look like a factory reset,
+   * and what had the stand-in deck flickering in and out underneath it.
+   *
+   * It shows as offline meanwhile, which is what it is.
+   */
+  async suspendDeck(deckId: string): Promise<void> {
+    const deck = this.options.decks.get(deckId);
+    if (!deck || this.forgetting.has(deckId)) return;
+
+    deck.online = false;
+
+    const timer = setTimeout(() => {
+      this.forgetting.delete(deckId);
+      // Long enough gone to be gone: the deck goes, and the stand-in comes
+      // back if that was the last one.
+      void this.detachDeck(deckId).catch(() => undefined);
+    }, DECK_GRACE_MS);
+    // Nothing should be held open by a deck nobody is using.
+    timer.unref?.();
+    this.forgetting.set(deckId, timer);
+
+    this.emit('state', await this.state());
+  }
+
+  /** Cancels a pending forget, because the device came back. */
+  private keepDeck(deckId: string): void {
+    const timer = this.forgetting.get(deckId);
+    if (!timer) return;
+
+    clearTimeout(timer);
+    this.forgetting.delete(deckId);
   }
 
   reportGesture(deckId: string, key: number, gesture: string): void {
@@ -892,8 +979,17 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
    * tablet joining or leaving. The rule is one sentence — the virtual deck
    * exists exactly while no other deck does — and it lives here because this is
    * the one place that hears about every kind of deck.
+   *
+   * One at a time, because the calls come from wherever a deck came or went:
+   * two of them in flight can decide about the same stand-in from two
+   * different pictures of the world.
    */
   async decksChanged(): Promise<void> {
+    this.gate = this.gate.then(() => this.syncDecks()).catch(() => undefined);
+    return this.gate;
+  }
+
+  private async syncDecks(): Promise<void> {
     const decks = this.options.decks.list();
     const standIn = decks.find((deck) => deck.id === VIRTUAL_DECK_ID);
     const real = decks.some((deck) => deck.id !== VIRTUAL_DECK_ID);
@@ -1061,6 +1157,8 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     await this.options.onStop?.();
 
     if (this.reloadTimer) clearTimeout(this.reloadTimer);
+    for (const timer of this.forgetting.values()) clearTimeout(timer);
+    this.forgetting.clear();
     this.watcher?.close();
 
     // Before the decks: a plugin clears its variables on the way out, and it

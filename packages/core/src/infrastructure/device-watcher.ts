@@ -21,10 +21,26 @@ export interface DeviceWatcher {
 /**
  * Often enough to feel immediate, rarely enough to be invisible.
  *
- * Enumerating the HID bus costs a few milliseconds; a person plugging a panel
- * in is waiting on it, so this is one of the places to be generous.
+ * Enumerating the HID bus costs a few milliseconds on a healthy machine — 33ms
+ * for 42 devices, measured — and a person plugging a panel in is waiting on it,
+ * so this is one of the places to be generous.
  */
 const DEFAULT_INTERVAL_MS = 2000;
+
+/**
+ * How much of the time a sweep may take up.
+ *
+ * The cost is not the same everywhere: Windows opens every HID device to read
+ * its name, and a machine with a lot of them — or one of them slow to answer —
+ * turns a 30ms question into a second-long one. A fixed two-second beat would
+ * then spend half the machine's patience on asking whether a panel appeared.
+ * So the interval follows what the last sweep actually cost: a tenth of the
+ * time, at most, and never faster than the beat above.
+ */
+const DUTY = 10;
+
+/** Beyond this, waiting longer buys nothing and only delays a plugged-in deck. */
+const MAX_INTERVAL_MS = 30_000;
 
 /**
  * Watches the USB bus for panels arriving and leaving.
@@ -39,8 +55,10 @@ const DEFAULT_INTERVAL_MS = 2000;
  */
 export function watchDevices(options: DeviceWatcherOptions): DeviceWatcher {
   const seen = new Set(options.known ?? []);
+  const base = options.intervalMs ?? DEFAULT_INTERVAL_MS;
   let stopped = false;
   let sweeping = false;
+  let timer: NodeJS.Timeout | undefined;
 
   const sweep = async (): Promise<void> => {
     // A slow open must not overlap with the next tick: the second sweep would
@@ -48,6 +66,7 @@ export function watchDevices(options: DeviceWatcherOptions): DeviceWatcher {
     if (stopped || sweeping) return;
     sweeping = true;
 
+    const started = Date.now();
     try {
       const found = new Map<string, DiscoveredDevice>();
       for (const device of await options.manager.list()) {
@@ -80,18 +99,27 @@ export function watchDevices(options: DeviceWatcherOptions): DeviceWatcher {
       options.onError?.(error);
     } finally {
       sweeping = false;
+      // Measured rather than assumed: what the sweep cost decides when the
+      // next one is worth asking for. See DUTY.
+      schedule(Math.min(MAX_INTERVAL_MS, Math.max(base, (Date.now() - started) * DUTY)));
     }
   };
 
-  const timer = setInterval(() => void sweep(), options.intervalMs ?? DEFAULT_INTERVAL_MS);
-  // Nothing should be kept alive by this: a daemon whose only remaining reason
-  // to run is its own watcher is a daemon that will not quit.
-  timer.unref?.();
+  function schedule(delay: number): void {
+    if (stopped) return;
+
+    timer = setTimeout(() => void sweep(), delay);
+    // Nothing should be kept alive by this: a daemon whose only remaining
+    // reason to run is its own watcher is a daemon that will not quit.
+    timer.unref?.();
+  }
+
+  schedule(base);
 
   return {
     stop(): void {
       stopped = true;
-      clearInterval(timer);
+      if (timer) clearTimeout(timer);
     },
   };
 }

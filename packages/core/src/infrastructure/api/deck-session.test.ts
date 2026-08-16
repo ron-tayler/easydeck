@@ -27,6 +27,9 @@ function fakeService() {
     pageView: async () => [],
     attachNetworkDeck: async () => ({ deckId: 'net-1' }),
     detachDeck: async () => undefined,
+    // A closing socket suspends the deck rather than dropping it; see
+    // DeckService.suspendDeck.
+    suspendDeck: async () => undefined,
     reportGesture: (deckId: string, key: number, gesture: string) =>
       GESTURES.push(`${deckId}:${key}:${gesture}`),
     reportPressed: () => undefined,

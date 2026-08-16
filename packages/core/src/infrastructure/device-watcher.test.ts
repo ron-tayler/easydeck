@@ -123,6 +123,36 @@ describe('watching the USB bus', () => {
     assert.equal(failures.length, 1);
   });
 
+  it('asks less often when asking is expensive', async () => {
+    // A bus that takes 50ms to enumerate — a Windows machine with a lot of HID
+    // devices, or one slow to answer. Polling that every 10ms would spend the
+    // machine on the question rather than on the program.
+    let sweeps = 0;
+    const slow = {
+      list: async () => {
+        sweeps += 1;
+        await delay(50);
+        return [];
+      },
+    } as unknown as DeviceManager;
+
+    const watcher = watchDevices({
+      manager: slow,
+      identify,
+      onArrived: async () => undefined,
+      onGone: async () => undefined,
+      intervalMs: 10,
+    });
+
+    await delay(1000);
+    watcher.stop();
+
+    // A tenth of the time, so 50ms of work buys 500ms of quiet: two or three
+    // sweeps in a second rather than the twenty a fixed beat would take.
+    assert.ok(sweeps <= 4, `swept ${sweeps} times in a second despite each sweep costing 50ms`);
+    assert.ok(sweeps >= 1, 'never swept at all');
+  });
+
   it('stops sweeping once it is stopped', async () => {
     const { manager, set } = bus();
     const arrived: string[] = [];

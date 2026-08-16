@@ -276,8 +276,17 @@ export interface DeckFacade {
     readonly send: (scene: unknown, doublePressKeys: readonly number[]) => void;
   }): Promise<{ readonly deckId: string }>;
 
-  /** Removes a network deck, for a device that went away. */
+  /** Removes a network deck, for a device that went away for good. */
   detachDeck(deckId: string): Promise<void>;
+
+  /**
+   * Marks a deck offline and keeps it, for a device that merely went quiet.
+   *
+   * What a closing socket means: a phone locking its screen, a tab put in the
+   * background, a walk out of range. The deck waits with its page and history
+   * intact, and is dropped only if nothing comes back for it.
+   */
+  suspendDeck(deckId: string): Promise<void>;
 
   /** A gesture the device recognised for itself. */
   reportGesture(deckId: string, key: number, gesture: string): void;

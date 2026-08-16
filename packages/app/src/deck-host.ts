@@ -414,6 +414,15 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     return this.require().detachDeck(deckId);
   }
 
+  /*
+   * Nothing rather than a failure while the deck is released: a tablet whose
+   * socket closes over a locked workstation has no deck to suspend, and that
+   * is not an error anyone can act on.
+   */
+  async suspendDeck(deckId: string): Promise<void> {
+    await this.deck?.suspendDeck(deckId);
+  }
+
   reportGesture(deckId: string, key: number, gesture: string): void {
     this.require().reportGesture(deckId, key, gesture);
   }
