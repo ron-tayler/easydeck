@@ -122,6 +122,15 @@ export class ApiHandler {
         return { plugins: await this.deck.storePlugins({ refresh: params['refresh'] === true }) };
 
       /*
+       * One plugin in full, for its card.
+       *
+       * The list carries a row's worth each; this is the rest, asked for when
+       * somebody opens one — see the facade for why they are apart.
+       */
+      case 'getStorePlugin':
+        return { manifest: await this.deck.storePlugin(text(params, 'pluginId')) };
+
+      /*
        * One picture, asked for by reference.
        *
        * Apart from the list on purpose: a cover is small and a screenshot is

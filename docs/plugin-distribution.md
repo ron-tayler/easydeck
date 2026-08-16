@@ -91,9 +91,22 @@ updating or deleting a plugin never touches what the user configured.
 ## The registry and the store
 
 CI walks the repository, builds each plugin, zips it, computes its sha256,
-attaches the zip to a GitHub Release and regenerates `registry/index.json`:
-id, author, version, `apiVersion`, platforms, the manifest for the storefront,
-the download URL and the hash.
+and writes two things beside the archive: `registry/index.json` and one
+`<id>.json` per plugin.
+
+**The index is a list of rows, not of plugins.** Each entry has the id, the
+author, the version, `apiVersion`, the size, the hash, the file to fetch — and
+a name, a line of description and one cover reference. That is what a row
+draws, and it is all it carries.
+
+**The manifest is a file of its own.** It used to ride inside the index and it
+was 97 to 99 per cent of every entry: four plugins made a hundred-kilobyte
+index of which one and a half kilobytes was ever drawn, and fifty plugins
+would have made a megabyte. Now the index is two kilobytes and the manifest is
+fetched for the one plugin somebody opened — and kept for as long as the store
+is open, because comparing three plugins means going back and forth between
+them. "Look again" is what empties it: that is the one moment the answer could
+have changed.
 
 The store lives in the app's settings. The daemon fetches `index.json` — the
 daemon rather than the browser window, so there is no CORS and no token in a

@@ -171,7 +171,8 @@ describe('the plugins repository as a folder', () => {
             file: 'ed.demo.easydeck',
             sha256,
             bytes: bytes.byteLength,
-            manifest: { name: { en: 'Demo' }, version: '1.2.3', cover: 'plugin:ed.demo/icons/key.svg' },
+            name: { en: 'Demo' },
+            cover: 'plugin:ed.demo/icons/key.svg',
           },
         ],
       }),
@@ -223,7 +224,7 @@ describe('the plugins repository as a folder', () => {
             apiVersion: PLUGIN_API_VERSION,
             sha256: 'x',
             file: '../../../secrets.txt',
-            manifest: { name: { en: 'Evil' } },
+            name: { en: 'Evil' },
           },
         ],
       }),
@@ -312,7 +313,7 @@ describe('the published store', () => {
               file: 'ed.demo.easydeck',
               sha256: 'x',
               bytes: archive.byteLength,
-              manifest: { name: { en: 'Demo' } },
+              name: { en: 'Demo' },
             },
           ],
         }),
@@ -348,5 +349,76 @@ describe('the published store', () => {
     // names from a file: one with a slash addresses another release entirely.
     await source.image('../../../other', 'plugin:x/y.png');
     assert.ok(!asked.some((url) => url.includes('..')));
+  });
+});
+
+describe('a card, fetched apart from the list', () => {
+  /** A source with a manifest beside its index, as the build now leaves one. */
+  async function withDetails(): Promise<{ root: string; reads: string[] }> {
+    const root = await scratch();
+    const reads: string[] = [];
+
+    await mkdir(join(root, 'build'), { recursive: true });
+    await mkdir(join(root, 'registry'), { recursive: true });
+    await writeFile(join(root, 'build', 'ed.demo.easydeck'), pluginArchive());
+    await writeFile(
+      join(root, 'build', 'ed.demo.json'),
+      JSON.stringify({
+        name: { en: 'Demo' },
+        version: '1.2.3',
+        apiVersion: PLUGIN_API_VERSION,
+        actions: [{ type: 'ed.demo.poke', label: { en: 'Poke' } }],
+      }),
+      'utf8',
+    );
+    await writeFile(
+      join(root, 'registry', 'index.json'),
+      JSON.stringify({
+        plugins: [
+          {
+            id: 'ed.demo',
+            author: 'ed',
+            version: '1.2.3',
+            apiVersion: PLUGIN_API_VERSION,
+            file: 'ed.demo.easydeck',
+            sha256: 'x',
+            bytes: 1,
+            name: { en: 'Demo' },
+          },
+        ],
+      }),
+      'utf8',
+    );
+
+    return { root, reads };
+  }
+
+  it('is not in the list, and is there when asked for', async () => {
+    const { root } = await withDetails();
+    const source = new FolderPluginSource(root);
+
+    const listing = (await source.list())[0]!;
+    // A row carries what it takes to decide whether to look closer. The
+    // manifest was 97 to 99 per cent of an entry when it rode along.
+    assert.equal(listing.name.en, 'Demo');
+    assert.ok(!('manifest' in listing));
+
+    const manifest = await source.details('ed.demo');
+    assert.equal(manifest?.actions[0]?.type, 'ed.demo.poke');
+  });
+
+  it('is remembered until the store is told to look again', async () => {
+    const { root } = await withDetails();
+    const source = new FolderPluginSource(root);
+
+    await source.details('ed.demo');
+    // Somebody comparing plugins goes back and forth; the second look costs
+    // nothing. Proven by removing the file underneath and asking again.
+    await rm(join(root, 'build', 'ed.demo.json'));
+    assert.equal((await source.details('ed.demo'))?.actions[0]?.type, 'ed.demo.poke');
+
+    // "Look again" is the one moment the answer could have changed.
+    source.refresh();
+    assert.equal(await source.details('ed.demo'), undefined);
   });
 });

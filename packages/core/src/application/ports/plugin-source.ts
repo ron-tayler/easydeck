@@ -1,4 +1,4 @@
-import type { PluginManifest } from '@easydeck/engine';
+﻿import type { LocalizedText, PluginManifest } from '@easydeck/engine';
 
 /**
  * Where installable plugins come from.
@@ -18,8 +18,18 @@ export interface PluginSource {
   /** What this source is, for a window that may one day show several. */
   readonly name: string;
 
-  /** Everything on offer. Empty when the source cannot be reached. */
+  /** Everything on offer, one row's worth each. Empty when unreachable. */
   list(): Promise<readonly PluginListing[]>;
+
+  /**
+   * Everything about one plugin, for its card.
+   *
+   * Apart from the list because it is most of the weight: a manifest was 97
+   * to 99 per cent of every index entry, so four plugins made a hundred
+   * kilobytes of index to draw four names. A list is what somebody scrolls
+   * and a card is what they chose to wait for.
+   */
+  details(id: string): Promise<PluginManifest | undefined>;
 
   /** The archive for one plugin, or nothing if it is not there any more. */
   download(id: string): Promise<Uint8Array | undefined>;
@@ -35,7 +45,13 @@ export interface PluginSource {
   image(id: string, reference: string): Promise<PluginImage | undefined>;
 }
 
-/** A plugin as a store shows it, before anybody has installed anything. */
+/**
+ * One row of a store: what it takes to decide whether to look closer.
+ *
+ * Deliberately small. Everything a *card* shows — the actions, the variables,
+ * the settings, the screenshots — is in the manifest, and the manifest is
+ * fetched for the one plugin somebody opened rather than for all of them.
+ */
 export interface PluginListing {
   readonly id: string;
   /** The author's slug — the first half of the id. */
@@ -45,14 +61,12 @@ export interface PluginListing {
   readonly apiVersion: number;
   readonly bytes: number;
   readonly sha256: string;
-  /**
-   * Everything a card shows, and it is the plugin's own manifest.
-   *
-   * Which means a store page needs nothing invented for it: the actions, the
-   * variables and the settings a plugin declares are what it does, described
-   * by the plugin rather than by a description of the plugin.
-   */
-  readonly manifest: PluginManifest;
+  readonly name: LocalizedText;
+  readonly description?: LocalizedText;
+  /** What the author is called, as opposed to their slug. */
+  readonly by?: LocalizedText;
+  /** The one picture a row shows; a `plugin:<id>/<path>` reference. */
+  readonly cover?: string;
 }
 
 export interface PluginImage {

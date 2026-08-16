@@ -146,17 +146,22 @@ class FakeDeck implements DeckFacade {
         version: '1.0.0',
         apiVersion: 1,
         bytes: 2048,
-        manifest: {
-          id: 'ed.demo',
-          name: { en: 'Demo' },
-          version: '1.0.0',
-          apiVersion: 1,
-          actions: [],
-          cover: 'plugin:ed.demo/cover.png',
-        },
+        name: { en: 'Demo' },
+        cover: 'plugin:ed.demo/cover.png',
         compatible: true,
       },
     ];
+  }
+
+  async storePlugin(pluginId: string): Promise<PluginManifest | undefined> {
+    this.calls.push(`storePlugin:${pluginId}`);
+    return {
+      id: pluginId,
+      name: { en: 'Demo' },
+      version: '1.0.0',
+      apiVersion: 1,
+      actions: [{ type: 'ed.demo.poke', label: { en: 'Poke' } }],
+    };
   }
 
   async storeImage(pluginId: string, reference: string): Promise<string | undefined> {
@@ -573,6 +578,25 @@ describe('the store, over the protocol', () => {
     // first re-reads the source, the second may answer from what it kept.
     await handler.handle(request('getStorePlugins', { refresh: true }));
     assert.deepEqual(deck.calls, ['storePlugins:false', 'storePlugins:true']);
+  });
+
+  it('sends a row in the list and the manifest only when a card is opened', async () => {
+    const deck = new FakeDeck();
+    const handler = new ApiHandler(deck);
+
+    const listed = await handler.handle(request('getStorePlugins'));
+    const row = (listed.result as { plugins: StorePlugin[] }).plugins[0]!;
+
+    // The row is what it takes to decide whether to look closer, and the
+    // manifest — 97 to 99 per cent of the weight — is not part of it.
+    assert.equal(row.name.en, 'Demo');
+    assert.ok(!('manifest' in row));
+
+    const opened = await handler.handle(request('getStorePlugin', { pluginId: 'ed.demo' }));
+    const manifest = (opened.result as { manifest: PluginManifest }).manifest;
+
+    assert.equal(manifest.actions[0]?.type, 'ed.demo.poke');
+    assert.deepEqual(deck.calls, ['storePlugins:false', 'storePlugin:ed.demo']);
   });
 
   it('fetches one picture at a time, by reference', async () => {

@@ -1,7 +1,7 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { LocalizedText, StorePlugin } from '@easydeck/core';
+import type { LocalizedText, PluginManifest, StorePlugin } from '@easydeck/core';
 
 import { useDeck } from '../composables/useDeck.js';
 import { confirmAction } from '../composables/useConfirm.js';
@@ -19,9 +19,16 @@ import { confirmAction } from '../composables/useConfirm.js';
  * and nothing else in the window has any use for it; KioskDeck does the same
  * for the same reason.
  *
- * Pictures are fetched one at a time and only when they are about to be
- * shown: a cover is small and a screenshot is not, and the list is the one
- * view that must open at once.
+ * The list is deliberately cheap: a row carries a name, a line and one small
+ * picture, and nothing else. What a card shows — the actions, the variables,
+ * the screenshots — is fetched for the plugin somebody opened, because a
+ * manifest was 97 to 99 per cent of every index entry and the shelf should
+ * not cost that to draw.
+ *
+ * Both manifests and pictures are then kept for as long as the store is open,
+ * rather than for a span of time: somebody comparing three plugins goes back
+ * and forth between them, and "look again" is the one moment the answers
+ * could have changed.
  */
 
 const { t, locale } = useI18n();
@@ -48,6 +55,13 @@ const shown = computed(() => plugins.value.find((plugin) => plugin.id === opened
  */
 const images = ref<Record<string, string>>({});
 
+/** Manifests already fetched, by plugin id. Emptied only by "look again". */
+const details = ref<Record<string, PluginManifest>>({});
+/** The card is waiting for its manifest, which is a moment on a slow link. */
+const opening = ref(false);
+
+const card = computed(() => (opened.value ? details.value[opened.value] : undefined));
+
 async function fetchImage(pluginId: string, reference: string): Promise<void> {
   if (images.value[reference] !== undefined) return;
 
@@ -59,6 +73,13 @@ async function load(refresh = false): Promise<void> {
   loading.value = true;
   note.value = undefined;
 
+  if (refresh) {
+    // Everything kept is an answer from the shelf that was there a moment
+    // ago. Asking to look again is asking for all of it afresh.
+    details.value = {};
+    images.value = {};
+  }
+
   try {
     plugins.value = await deck.listStorePlugins(refresh);
   } catch (error) {
@@ -69,19 +90,36 @@ async function load(refresh = false): Promise<void> {
   }
 }
 
+/** Opens a card, fetching what it shows unless it was fetched already. */
+async function open(plugin: StorePlugin): Promise<void> {
+  opened.value = plugin.id;
+  if (details.value[plugin.id]) return;
+
+  opening.value = true;
+  try {
+    const manifest = await deck.storePlugin(plugin.id);
+    if (manifest) details.value = { ...details.value, [plugin.id]: manifest };
+  } catch (error) {
+    note.value = (error as Error).message;
+  } finally {
+    opening.value = false;
+  }
+}
+
 onMounted(() => void load());
 
 /** Covers for the rows on screen, asked for as the list arrives. */
 watch(plugins, (list) => {
   for (const plugin of list) {
-    if (plugin.manifest.cover) void fetchImage(plugin.id, plugin.manifest.cover);
+    if (plugin.cover) void fetchImage(plugin.id, plugin.cover);
   }
 });
 
-/** A card's screenshots, asked for when the card opens and not before. */
-watch(shown, (plugin) => {
-  if (!plugin) return;
-  for (const shot of plugin.manifest.screenshots ?? []) void fetchImage(plugin.id, shot);
+/** A card's screenshots, asked for once its manifest names them. */
+watch(card, (manifest) => {
+  const id = opened.value;
+  if (!manifest || !id) return;
+  for (const shot of manifest.screenshots ?? []) void fetchImage(id, shot);
 });
 
 /**
@@ -152,7 +190,7 @@ const named = (text: LocalizedText | undefined, fallback: string): string => say
   <div class="store">
     <header>
       <button v-if="opened" type="button" @click="opened = undefined">← {{ t('store.back') }}</button>
-      <h3>{{ opened ? say(shown?.manifest.name) : t('store.title') }}</h3>
+      <h3>{{ opened ? say(shown?.name) : t('store.title') }}</h3>
       <span class="spacer" />
       <button v-if="!opened" type="button" :disabled="loading" @click="load(true)">
         {{ t('store.refresh') }}
@@ -171,23 +209,22 @@ const named = (text: LocalizedText | undefined, fallback: string): string => say
         :key="plugin.id"
         type="button"
         class="row"
-        @click="opened = plugin.id"
+        @click="open(plugin)"
       >
         <img
-          v-if="plugin.manifest.cover && images[plugin.manifest.cover]"
+          v-if="plugin.cover && images[plugin.cover]"
           class="cover"
-          :src="images[plugin.manifest.cover]"
+          :src="images[plugin.cover]"
           alt=""
         />
         <span v-else class="cover blank" />
 
         <span class="about">
-          <span class="name">{{ say(plugin.manifest.name) }}</span>
+          <span class="name">{{ say(plugin.name) }}</span>
           <span class="muted small">
-            {{ say(plugin.manifest.author) || plugin.author }} · {{ plugin.version }} ·
-            {{ size(plugin.bytes) }}
+            {{ say(plugin.by) || plugin.author }} · {{ plugin.version }} · {{ size(plugin.bytes) }}
           </span>
-          <span class="muted small desc">{{ say(plugin.manifest.description) }}</span>
+          <span class="muted small desc">{{ say(plugin.description) }}</span>
         </span>
 
         <span class="state" :class="stateOf(plugin)">{{ t(`store.state.${stateOf(plugin)}`) }}</span>
@@ -196,9 +233,11 @@ const named = (text: LocalizedText | undefined, fallback: string): string => say
 
     <!-- One plugin, in full. -->
     <template v-else-if="shown">
-      <div v-if="(shown.manifest.screenshots ?? []).length > 0" class="shots">
+      <p v-if="opening" class="muted">{{ t('store.loading') }}</p>
+
+      <div v-if="(card?.screenshots ?? []).length > 0" class="shots">
         <img
-          v-for="shot in shown.manifest.screenshots ?? []"
+          v-for="shot in card?.screenshots ?? []"
           :key="shot"
           :src="images[shot]"
           class="shot"
@@ -206,11 +245,11 @@ const named = (text: LocalizedText | undefined, fallback: string): string => say
         />
       </div>
 
-      <p>{{ say(shown.manifest.description) }}</p>
+      <p>{{ say(card?.description ?? shown.description) }}</p>
 
       <dl class="facts">
         <dt>{{ t('store.author') }}</dt>
-        <dd>{{ say(shown.manifest.author) || shown.author }}</dd>
+        <dd>{{ say(card?.author ?? shown.by) || shown.author }}</dd>
         <dt>{{ t('store.version') }}</dt>
         <dd>
           {{ shown.version }}
@@ -225,20 +264,20 @@ const named = (text: LocalizedText | undefined, fallback: string): string => say
       <!-- What it actually does, taken from the manifest rather than from a
            description of it: these are the very actions the key editor will
            offer once it is installed. -->
-      <template v-if="shown.manifest.actions.length > 0">
+      <template v-if="(card?.actions ?? []).length > 0">
         <h4>{{ t('store.actions') }}</h4>
         <ul class="what">
-          <li v-for="action in shown.manifest.actions" :key="action.type">
+          <li v-for="action in card?.actions ?? []" :key="action.type">
             <b>{{ named(action.label, action.type) }}</b>
             <span v-if="action.description" class="muted small">{{ say(action.description) }}</span>
           </li>
         </ul>
       </template>
 
-      <template v-if="(shown.manifest.variables ?? []).length > 0">
+      <template v-if="(card?.variables ?? []).length > 0">
         <h4>{{ t('store.variables') }}</h4>
         <ul class="what">
-          <li v-for="variable in shown.manifest.variables ?? []" :key="variable.name">
+          <li v-for="variable in card?.variables ?? []" :key="variable.name">
             <b>{{ named(variable.label, variable.name) }}</b>
             <span class="muted small"><code>{{ variable.name }}</code></span>
           </li>

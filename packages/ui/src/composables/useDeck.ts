@@ -434,6 +434,12 @@ export function useDeck() {
       const result = await client.call<{ plugins: StorePlugin[] }>('getStorePlugins', { refresh });
       return result.plugins;
     },
+    storePlugin: async (pluginId: string): Promise<PluginManifest | undefined> => {
+      const result = await client.call<{ manifest?: PluginManifest }>('getStorePlugin', {
+        pluginId,
+      });
+      return result.manifest;
+    },
     storeImage: async (pluginId: string, reference: string): Promise<string | undefined> => {
       const result = await client.call<{ image?: string }>('getStoreImage', {
         pluginId,

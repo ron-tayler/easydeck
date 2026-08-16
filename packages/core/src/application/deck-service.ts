@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+﻿import { EventEmitter } from 'node:events';
 import { watch } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import type { FSWatcher } from 'node:fs';
@@ -556,11 +556,18 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
         version: listing.version,
         apiVersion: listing.apiVersion,
         bytes: listing.bytes,
-        manifest: listing.manifest,
+        name: listing.name,
+        ...(listing.description ? { description: listing.description } : {}),
+        ...(listing.by ? { by: listing.by } : {}),
+        ...(listing.cover ? { cover: listing.cover } : {}),
         ...(version ? { installedVersion: version } : {}),
         compatible: listing.apiVersion === PLUGIN_API_VERSION,
       };
     });
+  }
+
+  storePlugin(pluginId: string): Promise<PluginManifest | undefined> {
+    return this.options.pluginSource?.details(pluginId) ?? Promise.resolve(undefined);
   }
 
   async storeImage(pluginId: string, reference: string): Promise<string | undefined> {

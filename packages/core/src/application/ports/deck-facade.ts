@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   KeyView,
   LocalizedText,
   ParamDefinition,
@@ -50,11 +50,11 @@ export interface InstalledPluginSummary {
 }
 
 /**
- * A plugin as the store shows it: what it is, and where the user stands.
+ * A row of the store: what it is, and where the user stands.
  *
- * The listing and the installed state together, because every row of a store
- * draws both — the name and the picture from one, the button's word from the
- * other.
+ * The listing and the installed state together, because every row draws both
+ * — the name and the picture from one, the button's word from the other. What
+ * it deliberately does *not* carry is the manifest; see `storePlugin`.
  */
 export interface StorePlugin {
   readonly id: string;
@@ -63,8 +63,12 @@ export interface StorePlugin {
   readonly apiVersion: number;
   /** How large the download is, for a row that says so before it starts. */
   readonly bytes: number;
-  /** Everything a card shows, and it is the plugin's own manifest. */
-  readonly manifest: PluginManifest;
+  readonly name: LocalizedText;
+  readonly description?: LocalizedText;
+  /** What the author is called, as opposed to their slug. */
+  readonly by?: LocalizedText;
+  /** The one picture a row shows; a `plugin:<id>/<path>` reference. */
+  readonly cover?: string;
   /** The version already on this machine, absent when there is none. */
   readonly installedVersion?: string;
   /** Whether this build can run it at all. See PLUGIN_API_VERSION. */
@@ -104,6 +108,16 @@ export interface DeckFacade {
    * on something already installed.
    */
   storePlugins(options?: { readonly refresh?: boolean }): Promise<readonly StorePlugin[]>;
+
+  /**
+   * Everything about one plugin, for its card.
+   *
+   * Apart from the list because it is nearly all of the weight: the manifest
+   * was 97 to 99 per cent of every index entry, so four plugins cost a
+   * hundred kilobytes to draw four names. Fetched for the one somebody
+   * opened, and remembered for as long as the store is open.
+   */
+  storePlugin(pluginId: string): Promise<PluginManifest | undefined>;
 
   /**
    * One of a store listing's pictures, as a data URL.

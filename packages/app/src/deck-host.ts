@@ -269,6 +269,10 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
     return this.require().storePlugins(options);
   }
 
+  storePlugin(pluginId: string): Promise<PluginManifest | undefined> {
+    return this.require().storePlugin(pluginId);
+  }
+
   storeImage(pluginId: string, reference: string): Promise<string | undefined> {
     return this.require().storeImage(pluginId, reference);
   }

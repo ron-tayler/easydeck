@@ -1,4 +1,4 @@
-import { extname } from 'node:path';
+﻿import { extname } from 'node:path';
 
 import type { PluginManifest } from '@easydeck/engine';
 
@@ -46,6 +46,16 @@ export abstract class ArchivePluginSource implements PluginSource {
    * screen.
    */
   private readonly opened = new Map<string, ZipArchive>();
+  /**
+   * Manifests already fetched, by plugin id.
+   *
+   * Held for as long as the store is open rather than for a span of time:
+   * somebody comparing three plugins goes back and forth between them, and
+   * fetching the same manifest each way round is the cost the split was made
+   * to avoid. `refresh` is what empties it — "look again" is the one moment
+   * the answer could have changed.
+   */
+  private readonly manifests = new Map<string, PluginManifest>();
   private index?: RawIndex;
 
   /**
@@ -59,6 +69,24 @@ export abstract class ArchivePluginSource implements PluginSource {
   async list(): Promise<readonly PluginListing[]> {
     const index = await this.readIndex();
     return (index?.plugins ?? []).filter(isListing);
+  }
+
+  async details(id: string): Promise<PluginManifest | undefined> {
+    const kept = this.manifests.get(id);
+    if (kept) return kept;
+
+    const bytes = await this.fetch(`${id}.json`);
+    if (!bytes) return undefined;
+
+    try {
+      const manifest = JSON.parse(Buffer.from(bytes).toString('utf8')) as PluginManifest;
+      if (typeof manifest?.name !== 'object') return undefined;
+
+      this.manifests.set(id, manifest);
+      return manifest;
+    } catch {
+      return undefined;
+    }
   }
 
   async download(id: string): Promise<Uint8Array | undefined> {
@@ -88,6 +116,7 @@ export abstract class ArchivePluginSource implements PluginSource {
   /** Forgets everything read, for a store that was told to look again. */
   refresh(): void {
     this.opened.clear();
+    this.manifests.clear();
     this.index = undefined;
   }
 
@@ -136,6 +165,6 @@ export function isListing(
     typeof entry.version === 'string' &&
     typeof entry.sha256 === 'string' &&
     typeof entry.apiVersion === 'number' &&
-    typeof (entry.manifest as PluginManifest | undefined)?.name === 'object'
+    typeof entry.name === 'object'
   );
 }
