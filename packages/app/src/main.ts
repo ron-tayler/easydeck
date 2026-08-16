@@ -2,6 +2,8 @@ import { app, BrowserWindow } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
+import { findUiDirectory } from '@easydeck/core';
+
 import { DeckHost } from './deck-host.js';
 import { assetPath, createTray } from './tray.js';
 import { registerIpc } from './ipc.js';
@@ -58,8 +60,16 @@ function createWindow(): BrowserWindow {
   // A dev server URL wins when set, so the UI can be iterated on with hot
   // reload; otherwise the built configurator is loaded straight off disk.
   const devServer = process.env['EASYDECK_UI_URL'];
-  if (devServer) void created.loadURL(devServer);
-  else void created.loadFile(join(here, '..', '..', 'ui', 'dist', 'index.html'));
+  if (devServer) {
+    void created.loadURL(devServer);
+  } else {
+    // Resolved through the package, the same way the API server finds it, and
+    // not by walking up from here: in a packaged build the zones sit in
+    // node_modules rather than side by side, and the walk would land nowhere.
+    const ui = findUiDirectory();
+    if (ui) void created.loadFile(join(ui, 'index.html'));
+    else console.error('EasyDeck: интерфейс не собран; выполни pnpm --filter @easydeck/ui build');
+  }
 
   return created;
 }

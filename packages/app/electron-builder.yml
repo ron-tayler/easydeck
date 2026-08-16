@@ -1,0 +1,94 @@
+# How EasyDeck becomes something a person can install.
+#
+# The app root is packages/app, so every other zone arrives as a dependency
+# under node_modules — which is why nothing here reaches for a sibling folder.
+#
+# One config, three platforms, but each release job builds only its own host's
+# targets: the native zones (HID, canvas, libjpeg-turbo, sharp) install
+# per-platform binaries, so a Linux runner has nothing to put inside a .dmg.
+
+appId: io.github.ron-tayler.easydeck
+productName: EasyDeck
+copyright: Copyright (c) EasyDeck contributors
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - renderer/**/*
+  - assets/**/*
+  - package.json
+  - '!**/*.tsbuildinfo'
+  # The zones ship as their build output. Their sources are in the repository
+  # for anyone who wants them and are dead weight inside an installer.
+  - '!node_modules/@easydeck/*/src/**'
+  - '!node_modules/@easydeck/*/tsconfig*.json'
+  - '!node_modules/@easydeck/ui/{public,index.html,vite.config.ts,env.d.ts}'
+
+# Native addons have to stay real files on disk: the loaders behind them open a
+# path, and a path inside an asar archive is not one the OS can dlopen.
+asarUnpack:
+  - '**/*.node'
+  - '**/node_modules/sharp/**'
+  - '**/node_modules/@img/**'
+  - '**/node_modules/node-hid/**'
+  - '**/node_modules/koffi/**'
+  - '**/node_modules/@napi-rs/**'
+  - '**/node_modules/@julusian/**'
+  - '**/node_modules/@nut-tree-fork/**'
+
+# Every native zone is N-API, so the binaries the install step fetched load in
+# Electron unchanged. Rebuilding them would only invite a C++ toolchain onto
+# the runner for no gain.
+npmRebuild: false
+
+# No target names an architecture: each build takes the runner's own, because
+# the native binaries in node_modules are the ones this machine installed.
+win:
+  icon: assets/icon-512.png
+  target:
+    - nsis
+
+nsis:
+  # A one-click installer decides for the user where a program that talks to
+  # their hardware ends up. This one asks.
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${productName}-${version}-windows-${arch}-setup.${ext}
+
+mac:
+  icon: assets/icon-512.png
+  category: public.app-category.utilities
+  target:
+    - dmg
+    - zip
+  artifactName: ${productName}-${version}-macos-${arch}.${ext}
+
+linux:
+  icon: assets/icon-512.png
+  category: Utility
+  maintainer: Ron Tayler <max.urs@yandex.ru>
+  description: Control software for the FIFINE AmpliGame D6 and other Stream Dock devices
+  target:
+    - AppImage
+    - deb
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}
+
+deb:
+  depends:
+    - libudev1
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libsecret-1-0
+
+# Releases are published by the workflow, from the artifacts every platform
+# uploaded, so the packager itself never talks to GitHub.
+publish: null

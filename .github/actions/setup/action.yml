@@ -1,0 +1,35 @@
+name: Set up EasyDeck
+description: Node, pnpm and an installed workspace — the three lines every job here would otherwise repeat
+
+runs:
+  using: composite
+  steps:
+    # node-hid ships prebuilt binaries, but if a runner image ever lacks one it
+    # falls back to compiling, and compiling it without the udev headers fails
+    # with an error that reads like a broken lockfile. One package buys silence.
+    - name: Linux headers for the HID zone
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes --no-install-recommends libudev-dev
+
+    # Reads the version out of packageManager in package.json, so the pnpm that
+    # runs here is the pnpm the lockfile was written by.
+    - name: pnpm
+      uses: pnpm/action-setup@v4
+
+    - name: Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: pnpm
+
+    - name: Install
+      shell: bash
+      env:
+        # Nothing in CI launches Electron from node_modules: the checks never
+        # start the app, and the packager fetches its own copy of the runtime.
+        # Skipping the postinstall download saves a hundred megabytes a job.
+        ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      run: pnpm install --frozen-lockfile

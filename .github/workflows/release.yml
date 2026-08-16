@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  # A dispatch run packages everything and stops short of publishing, which
+  # makes it a rehearsal: the installers appear as run artifacts, no release
+  # and no tag to take back.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each runner packages its own platform and nothing else. The native
+        # zones — HID, canvas, libjpeg-turbo, sharp — install binaries picked
+        # for the machine doing the installing, so a Linux runner simply has
+        # no macOS libraries to put inside a .dmg.
+        #
+        # Two Macs because they are two architectures: macos-latest is Apple
+        # silicon, macos-13 is the last Intel image GitHub offers.
+        os: [ubuntu-latest, windows-latest, macos-latest, macos-13]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+
+      # The tag is the version. Nothing in the repository is edited to match
+      # it — the packager is told what to stamp — so a release can never
+      # disagree with the commit it was cut from.
+      - name: Version
+        id: version
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(node -p "require('./packages/app/package.json').version")-dev.$GITHUB_RUN_NUMBER"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Packaging $version"
+
+      - name: Build
+        run: pnpm build
+
+      - name: Package
+        shell: bash
+        env:
+          # There is no Developer ID in this repository. Saying so outright
+          # beats letting the packager hunt the keychain and fail late.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: >
+          pnpm --filter @easydeck/app exec electron-builder
+          --config.extraMetadata.version=${{ steps.version.outputs.version }}
+
+      # Patterns that match nothing on a given platform are fine; a job where
+      # none of them matched is not, and that is what the error setting catches.
+      - name: Keep the installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            packages/app/release/*.exe
+            packages/app/release/*.dmg
+            packages/app/release/*.zip
+            packages/app/release/*.AppImage
+            packages/app/release/*.deb
+
+  publish:
+    name: Publish
+    # Only a tag becomes a release. This is the line that makes a dispatch run
+    # a rehearsal rather than an accident.
+    if: github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Collect every platform's installers
+        uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          cd installers
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+
+          # A version carrying a suffix — 0.2.0-beta.1 — is not a finished
+          # release, and GitHub should say so on the tin.
+          prerelease=''
+          case "$version" in *-*) prerelease='--prerelease' ;; esac
+
+          # How to install comes first, because that is what someone arriving
+          # at the page is here for; the commit list GitHub generates follows.
+          {
+            cat <<'END'
+          Built by CI from the tag, one package per platform.
+
+          - **Windows** — the `-windows-x64-setup.exe`. Unsigned, so SmartScreen
+            will object: "More info" then "Run anyway".
+          - **macOS** — the `.dmg` for your machine, `arm64` for Apple silicon or
+            `x64` for Intel. Unsigned and unnotarised, so after copying it to
+            Applications:
+            `xattr -dr com.apple.quarantine /Applications/EasyDeck.app`
+          - **Linux** — the `.AppImage` or the `.deb`, x64. The deck is a USB HID
+            device: without a udev rule granting your session access to it,
+            EasyDeck starts and finds nothing.
+
+          `SHA256SUMS.txt` covers every file here.
+
+          EasyDeck is in early development. The README says plainly what works
+          and what does not.
+
+          END
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+              -f tag_name="$GITHUB_REF_NAME" --jq .body
+          } > notes.md
+
+          # Word splitting on $prerelease is deliberate: empty means the flag
+          # is absent, and quoting it would pass an empty argument instead.
+          # shellcheck disable=SC2086
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "EasyDeck $version" \
+            --notes-file notes.md \
+            $prerelease \
+            installers/*

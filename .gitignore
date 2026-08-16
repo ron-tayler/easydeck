@@ -1,6 +1,9 @@
 node_modules/
 dist/
 *.tsbuildinfo
+
+# installers and app bundles the packager writes
+release/
 .DS_Store
 Thumbs.db
 

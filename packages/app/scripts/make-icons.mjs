@@ -70,9 +70,11 @@ function draw(size) {
 
 await mkdir(OUT, { recursive: true });
 
-// 16 and 32 are the tray at 100% and 200% scaling; 256 is the window and the
-// installer, where the same mark has room to breathe.
-for (const size of [16, 32, 256]) {
+// 16 and 32 are the tray at 100% and 200% scaling; 256 is the window, where the
+// same mark has room to breathe. 512 is the installers': macOS refuses to build
+// an .icns from anything smaller, and every other packager scales down cleanly
+// from it.
+for (const size of [16, 32, 256, 512]) {
   const file = join(OUT, `icon-${size}.png`);
   await writeFile(file, draw(size));
   console.log(`wrote ${file}`);

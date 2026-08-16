@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A branch only needs its newest commit checked; the runs behind it are already
+# answering a question nobody is asking any more.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    # All three platforms report, even when one of them is red: "does this fail
+    # everywhere or only on macOS" is the first thing worth knowing.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+
+      # Every zone's build is a type-checking `tsc`, and the UI's starts with
+      # `vue-tsc --noEmit`, so a separate typecheck pass would be the same work
+      # a second time. The build has to come first regardless: the zones see
+      # each other through the .d.ts files it emits.
+      - name: Build
+        run: pnpm build
+
+      - name: Test
+        run: pnpm test

@@ -1,5 +1,7 @@
 # EasyDeck
 
+[![CI](https://github.com/ron-tayler/easydeck/actions/workflows/ci.yml/badge.svg)](https://github.com/ron-tayler/easydeck/actions/workflows/ci.yml)
+
 Cross-platform (Windows / Linux / macOS), community-driven control software for the
 **FIFINE AmpliGame D6** stream controller and other Stream Dock family devices
 (Mirabox 293, Ajazz AKP153 and friends).
@@ -68,6 +70,30 @@ Edit the JSON and restart to see changes — live reload comes with the API.
 
 **Profiles are executable content.** A profile can launch programs, so importing
 one from someone else is as consequential as running their script.
+
+## Releases
+
+The tag is the release. Push one and CI packages the app on Windows, Linux and
+both Macs, then opens a GitHub release holding the installers and a
+`SHA256SUMS.txt` for them:
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+A tag carrying a suffix — `v0.2.0-beta.1` — is published as a pre-release.
+Nothing in the repository is edited to match the tag; the packager is told which
+version to stamp, so a release cannot disagree with the commit it was cut from.
+To rehearse, run the Release workflow by hand: it builds the same installers,
+attaches them to the run and stops short of publishing.
+
+Every platform builds its own installers on its own runner, because the native
+zones install binaries chosen for the machine that installed them. Locally,
+`pnpm --filter @easydeck/app package` does the same for the machine you are on,
+and `package:dir` skips the installer when you only want the unpacked app.
+
+Nothing is code-signed, so Windows SmartScreen and macOS Gatekeeper will each
+have something to say on first launch.
 
 ## Known issues
 

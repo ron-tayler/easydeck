@@ -5,12 +5,19 @@
   "license": "MIT",
   "private": true,
   "type": "module",
+  "author": "Ron Tayler <max.urs@yandex.ru>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ron-tayler/easydeck.git"
+  },
   "main": "./dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "icons": "node scripts/make-icons.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "rebuild-native": "electron-rebuild -f",
+    "package": "electron-builder",
+    "package:dir": "electron-builder --dir",
     "start": "pnpm --filter @easydeck/ui build && tsc -p tsconfig.json && electron .",
     "dev": "pnpm --filter @easydeck/ui build && tsc -p tsconfig.json && node scripts/dev.mjs"
   },
@@ -23,6 +30,7 @@
     "@napi-rs/canvas": "^0.1.68",
     "@types/node": "^24.13.3",
     "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
     "typescript": "~5.9.3"
   }
 }
