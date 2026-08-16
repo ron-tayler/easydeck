@@ -30,6 +30,7 @@ import type { DeviceDirectory } from './application/device-directory.js';
 import type { SecretVault } from './application/ports/secret-vault.js';
 import { deckIdFor } from './infrastructure/deck-id.js';
 import { createPhysicalDeck } from './infrastructure/physical-deck.js';
+import type { LogFile } from './infrastructure/log-file.js';
 
 export interface StartDeckOptions {
   /** Profile to run. Omit to take it from storage. */
@@ -56,6 +57,14 @@ export interface StartDeckOptions {
    * one they are written as they are, and the file says so.
    */
   readonly secrets?: SecretVault;
+  /**
+   * Where to write what happened.
+   *
+   * Supplied by whoever owns the process — the desktop app starts one before
+   * anything else, so a failure during startup is written down too. Without
+   * one nothing is logged, which is what a test wants.
+   */
+  readonly log?: LogFile;
 }
 
 /**
@@ -195,6 +204,7 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
         registry?.setWidgetParam(buttonId, name, value, pluginId),
       redraw: () => registry?.redraw(),
       log: (pluginId, level, message) => {
+        options.log?.write(level, `${pluginId}: ${message}`);
         if (level === 'error') warnings.push(`${pluginId}: ${message}`);
       },
     });
@@ -223,8 +233,10 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
 
     const code = await loadCodePlugins(pluginsDir(), actions, plugins);
     for (const problem of code.problems) {
+      options.log?.error(`Plugin '${problem.id}' could not be loaded`, problem.problem);
       warnings.push(`plugin ${problem.id}: ${problem.problem}`);
     }
+    if (code.loaded.length > 0) options.log?.info(`Plugins loaded: ${code.loaded.join(', ')}`);
 
     const watchDirectory =
       options.watchProfiles !== false && profiles instanceof FileProfileRepository
@@ -239,6 +251,7 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
        * that gets to decide. See choose-plugin-source.ts for the rule.
        */
       pluginSource,
+      ...(options.log ? { log: options.log } : {}),
       decks: registry,
       ...(options.devices ? { devices: options.devices } : {}),
       ...(options.applyNetwork ? { applyNetwork: options.applyNetwork } : {}),

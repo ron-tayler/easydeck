@@ -76,7 +76,7 @@ export interface StorePlugin {
 }
 
 /** The folders a configurator may ask to have opened. */
-export type AppFolder = 'config' | 'profiles' | 'plugins' | 'icons';
+export type AppFolder = 'config' | 'profiles' | 'plugins' | 'icons' | 'logs';
 
 export interface DeckFacade {
   state(): Promise<DeckState>;

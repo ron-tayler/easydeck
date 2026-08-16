@@ -464,6 +464,10 @@
         'EasyDeck serves the same protocol over a local WebSocket, so external tools and plugins can drive the deck.',
       transport: 'This window uses',
       protocol: 'Protocol version',
+      logs: 'Logs',
+      logsHint:
+        'What happened, including why a key failed. One file per run, five kept, beside your profiles.',
+      openLogs: 'Open the log folder',
     },
     deck: {
       title: 'Deck',

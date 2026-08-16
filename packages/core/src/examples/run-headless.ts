@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The daemon as a user would actually run it.
  *
  * Run with:  pnpm --filter @easydeck/core start
@@ -17,6 +17,7 @@ import { configDir } from '../infrastructure/config-paths.js';
 import { FileProfileRepository } from '../infrastructure/file-profile-repository.js';
 import { FileSettingsRepository } from '../infrastructure/file-settings-repository.js';
 import { startDeck } from '../start-deck.js';
+import { LogFile } from '../infrastructure/log-file.js';
 import { createStarterProfile } from '../starter-profile.js';
 
 /**
@@ -88,7 +89,17 @@ async function main(): Promise<void> {
     return { port: api.port, networkAccess: true };
   };
 
-  const deck = await startDeck({ profiles, settings, devices, applyNetwork });
+  /*
+   * A log, echoed to the terminal that started this.
+   *
+   * The file is what the desktop app relies on, because it has no terminal;
+   * here there is one and watching it is the point, so both.
+   */
+  const log = new LogFile({ echo: true });
+  log.start(`EasyDeck headless — ${process.platform}, node ${process.versions.node}`);
+  console.log(`Логи: ${log.path}`);
+
+  const deck = await startDeck({ profiles, settings, devices, applyNetwork, log });
   service = deck;
   const state = await deck.state();
 

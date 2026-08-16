@@ -23,7 +23,7 @@ import type {
 
 import type { DeckState, NetworkState } from '../domain/api-messages.js';
 import { NoProfilesError, ProfileNotFoundError } from '../domain/errors.js';
-import { configDir, iconsDir, pluginsDir, profilesDir } from '../infrastructure/config-paths.js';
+import { configDir, iconsDir, logsDir, pluginsDir, profilesDir } from '../infrastructure/config-paths.js';
 import { readLibrary } from '../infrastructure/icon-library.js';
 import { readInstalledPlugins } from '../infrastructure/plugins/installed-plugins.js';
 import { PluginAssets } from '../infrastructure/plugins/plugin-assets.js';
@@ -47,6 +47,7 @@ import type {
   StorePlugin,
 } from './ports/deck-facade.js';
 import type { PluginSource } from './ports/plugin-source.js';
+import type { LogFile } from '../infrastructure/log-file.js';
 import { installPluginArchive, looksLikePlugin, uninstallPlugin } from '../infrastructure/plugins/install-plugin.js';
 import type { ProfileRepository, ProfileSummary, SettingsRepository } from './ports/repositories.js';
 
@@ -117,6 +118,14 @@ export interface DeckServiceOptions {
    * and empty.
    */
   readonly pluginSource?: PluginSource;
+  /**
+   * Where anything worth keeping is written down.
+   *
+   * Optional so a test can build a service without touching a disk, and
+   * absent means the events still reach the window — the log adds a place to
+   * read them later, it does not replace the one that shows them now.
+   */
+  readonly log?: LogFile;
 }
 
 /** Debounce for filesystem events: editors save in several bursts. */
@@ -180,7 +189,19 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
      */
     options.decks.on('added', (deck) => this.follow(deck));
 
-    options.decks.on('error', (error) => this.emit('actionError', error.message));
+    /*
+     * A key that failed, written down as well as shown.
+     *
+     * The banner in the window says a key failed and goes away; the log says
+     * *why* it failed and does not. `describe` is what makes that worth
+     * reading — an action failure names the action and the button and keeps
+     * the real reason as its cause, so "Action 'ed.discord.mute' on button
+     * 'b3' failed" alone is a sentence that helps nobody.
+     */
+    options.decks.on('error', (error) => {
+      options.log?.error('Key failed', error);
+      this.emit('actionError', error.message);
+    });
     // What the profiles read, told to the plugins that publish it — now and
     // after every change, since a key added to a profile is a key somebody
     // expects to start working without restarting anything.
@@ -193,7 +214,10 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     );
     // A plugin that fails is worth the same line in the log as a failed
     // action, and nothing more: its status already says so on its own gear.
-    options.plugins?.on('error', (error) => this.emit('actionError', error.message));
+    options.plugins?.on('error', (error) => {
+      options.log?.error('Plugin failed', error);
+      this.emit('actionError', error.message);
+    });
     options.devices?.on('changed', () => this.emit('devicesChanged'));
     options.decks.variables.onChange(() =>
       this.emit('variablesChanged', options.decks.variables.snapshot()),
@@ -890,6 +914,7 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
       profiles: profilesDir,
       plugins: pluginsDir,
       icons: iconsDir,
+      logs: logsDir,
     }[folder]();
 
     await mkdir(directory, { recursive: true });
@@ -1147,6 +1172,7 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     } catch (error) {
       // A half-saved or broken file must not take the running deck down —
       // keep showing the last good profile and say what is wrong.
+      this.options.log?.error('Reloading the profile failed', error);
       this.emit('actionError', `Reload failed: ${(error as Error).message}`);
     }
   }

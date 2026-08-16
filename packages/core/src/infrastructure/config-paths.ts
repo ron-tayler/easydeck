@@ -1,4 +1,4 @@
-import { homedir } from 'node:os';
+﻿import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const APP_NAME = 'EasyDeck';
@@ -33,6 +33,18 @@ export function profilesDir(): string {
 
 export function pluginsDir(): string {
   return join(configDir(), 'plugins');
+}
+
+/**
+ * Where the log files go: beside the profiles and the plugin settings.
+ *
+ * Not in a temp folder and not beside the program, because the whole point is
+ * that somebody can find them — "the same place as your profiles" is a
+ * sentence that works over a chat window, and the settings dialog can offer
+ * to open it.
+ */
+export function logsDir(): string {
+  return join(configDir(), 'logs');
 }
 
 /**

@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type {
+  AppFolder,
   DeckState,
   InstalledPluginInfo,
   LibraryImage,
@@ -42,7 +43,7 @@ const emit = defineEmits<{
   configurePlugin: [pluginId: string];
   exportProfile: [profileId: string];
   importProfile: [];
-  openFolder: [folder: 'config' | 'profiles' | 'plugins' | 'icons'];
+  openFolder: [folder: AppFolder];
   network: [patch: Record<string, unknown>];
   approveDevice: [deviceId: string];
   revokeDevice: [deviceId: string];
@@ -491,6 +492,14 @@ const alsoWaiting = computed(() => Math.max(0, (props.pendingDevices?.length ?? 
             <dt>{{ t('settings.core.protocol') }}</dt>
             <dd>{{ state?.protocolVersion ?? '—' }}</dd>
           </dl>
+
+          <!-- Where to look when a key did nothing and said nothing. The
+               banner in the window is gone by the time anybody asks why. -->
+          <h3>{{ t('settings.core.logs') }}</h3>
+          <p class="muted desc">{{ t('settings.core.logsHint') }}</p>
+          <button type="button" @click="emit('openFolder', 'logs')">
+            {{ t('settings.core.openLogs') }}
+          </button>
         </section>
 
         <section v-else-if="section === 'deck'">

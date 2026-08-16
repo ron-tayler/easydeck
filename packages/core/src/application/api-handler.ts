@@ -30,7 +30,7 @@ export interface ApiHandlerOptions {
 }
 
 /** Checked here as well as typed: the name arrives as a string off a socket. */
-const APP_FOLDERS: readonly AppFolder[] = ['config', 'profiles', 'plugins', 'icons'];
+const APP_FOLDERS: readonly AppFolder[] = ['config', 'profiles', 'plugins', 'icons', 'logs'];
 
 export class ApiHandler {
   private readonly assets?: AssetLinker;

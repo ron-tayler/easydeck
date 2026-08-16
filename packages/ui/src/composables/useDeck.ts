@@ -1,5 +1,6 @@
 ﻿import { computed, onScopeDispose, readonly, ref, shallowRef } from 'vue';
 import type {
+  AppFolder,
   DeckState,
   InstalledPluginInfo,
   InstalledPluginSummary,
@@ -364,7 +365,7 @@ export function useDeck() {
     },
     openFolder: (folderId: string) => client.call('openFolder', { folderId, ...deckParam() }),
     /** Shows one of EasyDeck's own folders in the system file manager. */
-    openAppFolder: (folder: 'config' | 'profiles' | 'plugins' | 'icons') =>
+    openAppFolder: (folder: AppFolder) =>
       client.call('openAppFolder', { folder }),
     goToPage: (pageId: string) => client.call('goToPage', { pageId, ...deckParam() }),
     goUp: () => client.call('goUp', deckParam()),

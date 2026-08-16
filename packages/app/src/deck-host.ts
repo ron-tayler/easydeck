@@ -12,6 +12,7 @@ import {
   startApiServer,
 } from '@easydeck/core';
 import { electronSecretVault } from './secret-vault.js';
+import { LogFile } from '@easydeck/core';
 import type { ApiSource, AppFolder, DeckEvents, DeckService, DeckState, InstalledPluginSummary, KeyView, Library, LibraryImage, ParamDefinition, PluginManifest, ProfileDefinition, ProfileSummary, RunningApiServer, StorePlugin, SurfaceFrame, SurfaceRequest, VariableValue } from '@easydeck/core';
 
 export type HostStatus =
@@ -42,6 +43,15 @@ export interface DeckHostEvents extends DeckEvents {
  * is current, which is also why `main.ts` can stay about windows.
  */
 export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource {
+  /**
+   * The log, opened before anything else and kept across restarts of the deck.
+   *
+   * Before, because a device that refuses to open is exactly the failure
+   * somebody has no window to read about. Across, because the deck is rebuilt
+   * when the machine locks and unlocks, and a log that started over each time
+   * would lose the reason it was rebuilt.
+   */
+  private readonly log = new LogFile();
   private deck?: DeckService;
   private api?: RunningApiServer;
   /** What the API server ended up on, for the window's network section. */
@@ -90,6 +100,11 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
   }
 
   async start(): Promise<void> {
+    // A new file per run, and the previous run pushed down a number. Done
+    // here rather than in the constructor so that building a host does not
+    // rotate somebody's logs.
+    this.log.start(`EasyDeck starting — ${process.platform}, node ${process.versions.node}`);
+
     this.gate = this.gate.then(() => this.openDeck()).catch(() => undefined);
     await this.gate;
 
@@ -432,6 +447,7 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
         devices: this.devices,
         applyNetwork: this.applyNetwork,
         secrets: electronSecretVault(),
+        log: this.log,
       });
       this.deck = deck;
       this.forward(deck);
@@ -456,7 +472,9 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
       this.emit('state', state);
     } catch (error) {
       // No device, a busy device, a broken profile — all are states to show,
-      // never reasons for the app to fail to open.
+      // never reasons for the app to fail to open. Written down as well:
+      // this is the failure with no window to read it in.
+      this.log.error('The deck could not be opened', error);
       this.setStatus({ state: 'error', message: describe(error) });
     }
   }
