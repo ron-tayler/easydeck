@@ -128,9 +128,18 @@ jobs:
           - **Windows** — the `-windows-x64-setup.exe`. Unsigned, so SmartScreen
             will object: "More info" then "Run anyway".
           - **macOS** — the `.dmg` for your machine, `arm64` for Apple silicon or
-            `x64` for Intel. Unsigned and unnotarised, so after copying it to
-            Applications:
-            `xattr -dr com.apple.quarantine /Applications/EasyDeck.app`
+            `x64` for Intel. There is no Apple Developer ID behind this build, so
+            macOS will refuse it on the first try — "Apple could not verify
+            EasyDeck is free of malware", with nothing but Move to Bin and Done.
+            That dialog is expected and says nothing about the file.
+
+            Copy the app to Applications first, then either:
+
+            - `xattr -dr com.apple.quarantine /Applications/EasyDeck.app`, or
+            - open it once, let it be refused, then **System Settings → Privacy
+              & Security → Open Anyway**. On macOS 15 and later this is the only
+              route through the window itself; Control-clicking Open no longer
+              gets past it.
           - **Linux** — the `.AppImage` or the `.deb`, x64. The deck is a USB HID
             device: without a udev rule granting your session access to it,
             EasyDeck starts and finds nothing.
