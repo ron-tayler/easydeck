@@ -14,7 +14,7 @@ import type {
   SurfaceSpec,
   VariableDeclaration,
   VariableType,
-} from '@easydeck/core';
+} from '@easydeck/protocol';
 
 import { backgroundBase, backgroundCss, withBase } from '@easydeck/engine/background';
 import { isStateRange } from '@easydeck/engine/profile';

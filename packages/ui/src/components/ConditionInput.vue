@@ -9,7 +9,7 @@ import type {
   LocalizedText,
   ParamDefinition,
   VariableDeclaration,
-} from '@easydeck/core';
+} from '@easydeck/protocol';
 
 import ColorPicker from './ColorPicker.vue';
 import VariableSelect from './VariableSelect.vue';

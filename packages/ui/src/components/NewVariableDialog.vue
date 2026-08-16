@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { VariableDeclaration, VariableType, VariableValue } from '@easydeck/core';
+import type { VariableDeclaration, VariableType, VariableValue } from '@easydeck/protocol';
 
 import { VARIABLE_NAME } from '../composables/useProfileEditor.js';
 

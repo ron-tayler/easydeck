@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FolderDefinition } from '@easydeck/core';
+import type { FolderDefinition } from '@easydeck/protocol';
 
 import { useFolderDrag } from '../composables/useFolderDrag.js';
 import { useKeyDrag } from '../composables/useKeyDrag.js';

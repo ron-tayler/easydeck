@@ -12,7 +12,7 @@ import type {
   VariableValue,
 } from '@easydeck/engine';
 
-import type { DeckState } from '../domain/api-messages.js';
+import type { DeckState } from '@easydeck/protocol';
 import type { Library, LibraryImage } from '../infrastructure/icon-library.js';
 import type { InstalledPluginSummary, StorePlugin } from './ports/deck-facade.js';
 import { ApiHandler } from './api-handler.js';

@@ -71,8 +71,8 @@ export type {
   ApiEvent,
   DeckState,
   DeckSummary,
-} from './domain/api-messages.js';
-export { API_PROTOCOL_VERSION, isRequestMessage } from './domain/api-messages.js';
+} from '@easydeck/protocol';
+export { API_PROTOCOL_VERSION, isRequestMessage } from '@easydeck/protocol';
 
 export type {
   ProfileRepository,

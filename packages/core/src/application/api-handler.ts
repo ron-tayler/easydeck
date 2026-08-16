@@ -1,8 +1,8 @@
 ﻿import { validateProfile } from '@easydeck/engine';
 import type { ProfileDefinition, VariableValue } from '@easydeck/engine';
 
-import type { RequestMessage, ResponseMessage } from '../domain/api-messages.js';
-import { isRequestMessage } from '../domain/api-messages.js';
+import type { RequestMessage, ResponseMessage } from '@easydeck/protocol';
+import { isRequestMessage } from '@easydeck/protocol';
 import { linkViews } from './link-views.js';
 import type { AssetLinker } from './link-views.js';
 import type { AppFolder, DeckFacade } from './ports/deck-facade.js';

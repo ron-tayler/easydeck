@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import type { LabelSpec } from '@easydeck/core';
+import type { LabelSpec } from '@easydeck/protocol';
 import { layoutLabel } from '@easydeck/engine/label';
 
 import { measureKeyText } from '../icons/measure-text.js';

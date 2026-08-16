@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { KeyView } from '@easydeck/core';
+import type { KeyView } from '@easydeck/protocol';
 
 import { backgroundCss } from '@easydeck/engine/background';
 import { drawableIcon } from '@easydeck/engine/icons';

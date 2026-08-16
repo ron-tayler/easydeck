@@ -1,5 +1,5 @@
 import { ref } from 'vue';
-import type { FolderDefinition } from '@easydeck/core';
+import type { FolderDefinition } from '@easydeck/protocol';
 
 import type { FolderDrop } from './useProfileEditor.js';
 

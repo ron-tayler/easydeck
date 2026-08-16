@@ -7,7 +7,7 @@ import type {
   VariableArgument,
   VariableDeclaration,
   VariableValue,
-} from '@easydeck/core';
+} from '@easydeck/protocol';
 
 import VariableMenu from './VariableMenu.vue';
 

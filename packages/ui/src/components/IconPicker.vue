@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { IconSpec, LibraryImage, LocalizedText } from '@easydeck/core';
+import type { IconSpec, LibraryImage, LocalizedText } from '@easydeck/protocol';
 import type { BackgroundSpec } from '@easydeck/engine/background';
 import type { IconColorSlot } from '@easydeck/engine/icons';
 import { drawableIcon, readIconPalette, svgTextOf, usesCurrentColor } from '@easydeck/engine/icons';

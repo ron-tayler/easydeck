@@ -7,7 +7,7 @@ import type {
   LocalizedText,
   PluginManifest,
   VariableValue,
-} from '@easydeck/core';
+} from '@easydeck/protocol';
 import { backgroundCss } from '@easydeck/engine/background';
 import { renderTemplate } from '@easydeck/engine/template';
 import { CORE_DELAY, CORE_FOR, CORE_IF } from '@easydeck/engine/actions';

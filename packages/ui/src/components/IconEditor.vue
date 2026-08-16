@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { IconSpec, LibraryImage } from '@easydeck/core';
+import type { IconSpec, LibraryImage } from '@easydeck/protocol';
 import { backgroundCss } from '@easydeck/engine/background';
 import type { BackgroundSpec } from '@easydeck/engine/background';
 import {

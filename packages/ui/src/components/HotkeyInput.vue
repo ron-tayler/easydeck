@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { KeyGroup, KeyboardKey, LocalizedText } from '@easydeck/core';
+import type { KeyGroup, KeyboardKey, LocalizedText } from '@easydeck/protocol';
 import {
   KEYBOARD_KEYS,
   MAX_HOTKEY_KEYS,

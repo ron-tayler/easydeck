@@ -1,7 +1,7 @@
 import { inject, provide } from 'vue';
 import type { InjectionKey, Ref } from 'vue';
 import { parseVariableKey } from '@easydeck/engine/variables';
-import type { LocalizedText, VariableDeclaration, VariableType, VariableValue } from '@easydeck/core';
+import type { LocalizedText, VariableDeclaration, VariableType, VariableValue } from '@easydeck/protocol';
 
 /**
  * Variables sorted into who they belong to.

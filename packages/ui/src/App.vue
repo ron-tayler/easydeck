@@ -10,7 +10,7 @@ import type {
   ProfileDefinition,
   VariableDeclaration,
   VariableValue,
-} from '@easydeck/core';
+} from '@easydeck/protocol';
 /*
  * From the engine's own entry point, not from core.
  *

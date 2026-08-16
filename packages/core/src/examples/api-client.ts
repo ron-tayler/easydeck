@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import WebSocket from 'ws';
 
 import { configDir } from '../infrastructure/config-paths.js';
-import type { RequestMessage, ServerMessage } from '../domain/api-messages.js';
+import type { RequestMessage, ServerMessage } from '@easydeck/protocol';
 
 const PORT = Number(process.env['EASYDECK_PORT'] ?? 8317);
 

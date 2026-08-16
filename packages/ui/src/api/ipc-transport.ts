@@ -1,4 +1,4 @@
-import type { EventMessage, RequestMessage, ResponseMessage } from '@easydeck/core';
+import type { EventMessage, RequestMessage, ResponseMessage } from '@easydeck/protocol';
 
 import type { Transport } from './transport.js';
 

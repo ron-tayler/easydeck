@@ -21,7 +21,7 @@ import type {
   VariableValue,
 } from '@easydeck/engine';
 
-import type { DeckState, NetworkState } from '../domain/api-messages.js';
+import type { DeckState, NetworkState } from '@easydeck/protocol';
 import { NoProfilesError, ProfileNotFoundError } from '../domain/errors.js';
 import { configDir, iconsDir, logsDir, pluginsDir, profilesDir } from '../infrastructure/config-paths.js';
 import { readLibrary } from '../infrastructure/icon-library.js';

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { IconBinding, IconParam, LocalizedText, VariableDeclaration } from '@easydeck/core';
+import type { IconBinding, IconParam, LocalizedText, VariableDeclaration } from '@easydeck/protocol';
 import { iconPaletteProblem, iconParamsProblem, readIconParams, svgTextOf } from '@easydeck/engine/icons';
 
 import ColorPicker from './ColorPicker.vue';

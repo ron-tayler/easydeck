@@ -11,10 +11,25 @@
   VariableValue,
 } from '@easydeck/engine';
 
-import type { DeckState } from '../../domain/api-messages.js';
-import type { Library, LibraryImage } from '../../infrastructure/icon-library.js';
+import type {
+  AppFolder,
+  DeckState,
+  InstalledPluginInfo,
+  InstalledPluginSummary,
+  ProfileSummary,
+  StorePlugin,
+} from '@easydeck/protocol';
+// Re-exported so the daemon's own modules go on importing them from the
+// port they are used by, rather than each reaching for the contract.
+export type {
+  AppFolder,
+  InstalledPluginInfo,
+  InstalledPluginSummary,
+  ProfileSummary,
+  StorePlugin,
+};
+import type { Library } from '../../infrastructure/icon-library.js';
 import type { DeckEvents } from './deck-events.js';
-import type { ProfileSummary } from './repositories.js';
 
 /**
  * Everything the API is allowed to do, as one interface.
@@ -24,60 +39,10 @@ import type { ProfileSummary } from './repositories.js';
  * no renderer, no sockets.
  */
 /** One installed plugin, as a window needs to describe it. */
-export interface InstalledPluginInfo {
-  readonly id: string;
-  readonly name: string;
-  readonly version?: string;
-  readonly description?: string;
-  readonly kind: 'easydeck' | 'stream-deck-icons';
-  /** How many pictures it contributes, which is most of what a pack is. */
-  readonly icons: number;
-  /** Locale codes it translates, so the window can say what it covers. */
-  readonly locales: readonly string[];
-}
 
-export interface InstalledPluginSummary {
-  readonly plugins: readonly InstalledPluginInfo[];
-  /** Plugins that could not be read, named so the user can find them. */
-  readonly broken: readonly { readonly id: string; readonly problem: string }[];
-  /**
-   * Translations to lay over the built-in text, by locale code.
-   *
-   * Sent with the list rather than fetched separately: the window needs them
-   * before it draws anything a plugin named.
-   */
-  readonly messages: Readonly<Record<string, unknown>>;
-}
 
-/**
- * A row of the store: what it is, and where the user stands.
- *
- * The listing and the installed state together, because every row draws both
- * — the name and the picture from one, the button's word from the other. What
- * it deliberately does *not* carry is the manifest; see `storePlugin`.
- */
-export interface StorePlugin {
-  readonly id: string;
-  readonly author: string;
-  readonly version: string;
-  readonly apiVersion: number;
-  /** How large the download is, for a row that says so before it starts. */
-  readonly bytes: number;
-  readonly name: LocalizedText;
-  readonly description?: LocalizedText;
-  /** What the author is called, as opposed to their slug. */
-  readonly by?: LocalizedText;
-  /** The one picture a row shows; a `plugin:<id>/<path>` reference. */
-  readonly cover?: string;
-  /** The version already on this machine, absent when there is none. */
-  readonly installedVersion?: string;
-  /** Whether this build can run it at all. See PLUGIN_API_VERSION. */
-  readonly compatible: boolean;
-}
 
 /** The folders a configurator may ask to have opened. */
-export type AppFolder = 'config' | 'profiles' | 'plugins' | 'icons' | 'logs';
-
 export interface DeckFacade {
   state(): Promise<DeckState>;
   /** The current page, resolved — what each key is showing right now. */

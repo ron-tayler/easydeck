@@ -9,11 +9,11 @@ import type {
   PluginManifest,
   VariableDeclaration,
   VariableValue,
-} from '@easydeck/core';
+} from '@easydeck/protocol';
 
 import { insertStep, moveStep, removeStep, stepAt, updateStep } from '@easydeck/engine/script';
 import { CORE_ON } from '@easydeck/engine/actions';
-import type { StepPath } from '@easydeck/core';
+import type { StepPath } from '@easydeck/protocol';
 
 import ScriptSteps from './ScriptSteps.vue';
 

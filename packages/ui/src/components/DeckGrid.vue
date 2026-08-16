@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue';
-import type { DeckSummary, KeyView } from '@easydeck/core';
+import type { DeckSummary, KeyView } from '@easydeck/protocol';
 
 import DeckKey from './DeckKey.vue';
 

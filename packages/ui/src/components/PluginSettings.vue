@@ -7,7 +7,7 @@ import type {
   PluginCommand,
   PluginManifest,
   VariableValue,
-} from '@easydeck/core';
+} from '@easydeck/protocol';
 
 import NameList from './NameList.vue';
 import { confirmAction } from '../composables/useConfirm.js';

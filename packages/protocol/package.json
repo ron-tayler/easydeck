@@ -1,0 +1,28 @@
+{
+  "name": "@easydeck/protocol",
+  "version": "0.1.0",
+  "description": "Protocol zone: what travels between the daemon and its clients. The only thing a window, a tablet or a script needs to know about the API — no sockets, no disk, no Node",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@easydeck/engine": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}

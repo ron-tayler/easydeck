@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { VariableDeclaration, VariableValue } from '@easydeck/core';
+import type { VariableDeclaration, VariableValue } from '@easydeck/protocol';
 
 import VariableMenu from './VariableMenu.vue';
 

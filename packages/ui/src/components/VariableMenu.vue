@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { VariableDeclaration, VariableValue } from '@easydeck/core';
+import type { VariableDeclaration, VariableValue } from '@easydeck/protocol';
 
 import {
   allRows,

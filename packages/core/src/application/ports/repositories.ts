@@ -1,12 +1,11 @@
+import type { ProfileSummary } from '@easydeck/protocol';
+
+export type { ProfileSummary };
+
 import type { ProfileDefinition } from '@easydeck/engine';
 
 import type { DaemonSettings } from '../../domain/settings.js';
 
-export interface ProfileSummary {
-  /** Where it is filed. Derived from the name; never inside the document. */
-  readonly id: string;
-  readonly name: string;
-}
 
 /**
  * Outbound port for stored profiles.

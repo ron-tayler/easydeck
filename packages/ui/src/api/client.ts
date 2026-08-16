@@ -1,4 +1,4 @@
-import type { ApiEvent, EventMessage } from '@easydeck/core';
+import type { ApiEvent, EventMessage } from '@easydeck/protocol';
 
 import { createIpcTransport, isRunningInApp } from './ipc-transport.js';
 import { createWebSocketTransport } from './websocket-transport.js';

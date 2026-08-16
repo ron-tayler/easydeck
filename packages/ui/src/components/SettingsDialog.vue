@@ -8,7 +8,7 @@ import type {
   LibraryImage,
   LocalizedText,
   PluginManifest,
-} from '@easydeck/core';
+} from '@easydeck/protocol';
 
 import { SUPPORTED_LOCALES, setLocale } from '../i18n/index.js';
 import type { Locale } from '../i18n/index.js';

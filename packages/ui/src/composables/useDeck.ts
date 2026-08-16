@@ -13,7 +13,7 @@ import type {
   ProfileDefinition,
   ProfileSummary,
   VariableValue,
-} from '@easydeck/core';
+} from '@easydeck/protocol';
 
 import { applyPluginMessages } from '../i18n/index.js';
 import { createClient } from '../api/client.js';

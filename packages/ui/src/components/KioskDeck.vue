@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { GestureRecognizer } from '@easydeck/engine';
 import type { ButtonEvent } from '@easydeck/engine';
-import type { KeyView } from '@easydeck/core';
+import type { KeyView } from '@easydeck/protocol';
 
 import DeckKey from './DeckKey.vue';
 import { lastError } from '../composables/useDeck.js';

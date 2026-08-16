@@ -10,7 +10,7 @@ import type {
   StepPath,
   VariableDeclaration,
   VariableValue,
-} from '@easydeck/core';
+} from '@easydeck/protocol';
 // Through the sub-path, not the package index: the index pulls in the deck
 // controller and its Node imports, which a browser cannot load.
 import { CORE_DELAY, CORE_FOR, CORE_IF, CORE_ON } from '@easydeck/engine/actions';

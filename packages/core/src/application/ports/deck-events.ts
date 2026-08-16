@@ -6,7 +6,7 @@ import type {
   VariableValue,
 } from '@easydeck/engine';
 
-import type { DeckState } from '../../domain/api-messages.js';
+import type { DeckState } from '@easydeck/protocol';
 
 /**
  * Everything a running deck reports about itself.

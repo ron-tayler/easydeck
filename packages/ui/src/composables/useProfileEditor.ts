@@ -6,7 +6,7 @@ import type {
   PresetButton,
   ProfileDefinition,
   VariableDeclaration,
-} from '@easydeck/core';
+} from '@easydeck/protocol';
 
 /**
  * Edits a profile as a document.

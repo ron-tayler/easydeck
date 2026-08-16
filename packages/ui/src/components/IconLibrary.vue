@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { IconSpec, LibraryImage } from '@easydeck/core';
+import type { IconSpec, LibraryImage } from '@easydeck/protocol';
 
 import { ICON_LIBRARY, iconSvg } from '../icons/library.js';
 import type { LibraryIcon } from '../icons/library.js';

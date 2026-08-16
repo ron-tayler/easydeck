@@ -1,6 +1,8 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { extname, join, posix } from 'node:path';
 
+import type { LibraryImage } from '@easydeck/protocol';
+
 import { readIconPack } from './icon-pack.js';
 
 /**
@@ -17,18 +19,6 @@ import { readIconPack } from './icon-pack.js';
  * of several hundred pictures with nothing but a filename to sort it by. The
  * path is reported as the group, and the picker builds its tree from that.
  */
-
-export interface LibraryImage {
-  /** File name without its extension: what the user sees under the picture. */
-  readonly name: string;
-  readonly source: string;
-  readonly bytes: number;
-  /**
-   * Which folder it came from, relative to the library root, with `/` as the
-   * separator. Empty for a picture lying loose at the top.
-   */
-  readonly group: string;
-}
 
 const TYPES: Readonly<Record<string, string>> = {
   '.png': 'image/png',
@@ -168,3 +158,6 @@ async function walk(
     }
   }
 }
+
+// Re-exported so nothing that already imports it from here has to move.
+export type { LibraryImage };

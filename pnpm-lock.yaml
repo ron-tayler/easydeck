@@ -56,6 +56,9 @@ importers:
       '@easydeck/engine':
         specifier: workspace:*
         version: link:../engine
+      '@easydeck/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@easydeck/renderer':
         specifier: workspace:*
         version: link:../renderer
@@ -108,6 +111,16 @@ importers:
         specifier: ~5.9.3
         version: 5.9.3
 
+  packages/protocol:
+    dependencies:
+      '@easydeck/engine':
+        specifier: workspace:*
+        version: link:../engine
+    devDependencies:
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
   packages/renderer:
     dependencies:
       '@easydeck/engine':
@@ -150,6 +163,9 @@ importers:
       '@easydeck/engine':
         specifier: workspace:*
         version: link:../engine
+      '@easydeck/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       dejavu-fonts-ttf:
         specifier: ^2.37.3
         version: 2.37.3
@@ -160,9 +176,6 @@ importers:
         specifier: ^11.4.8
         version: 11.4.8(vue@3.5.40(typescript@5.9.3))
     devDependencies:
-      '@easydeck/core':
-        specifier: workspace:*
-        version: link:../core
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
