@@ -3,10 +3,18 @@ name: Release
 on:
   push:
     tags: ['v*']
-  # A dispatch run packages everything and stops short of publishing, which
-  # makes it a rehearsal: the installers appear as run artifacts, no release
-  # and no tag to take back.
+  # A dispatch run does one of two things, depending on whether it is given a
+  # tag. With one, it cuts the release: the tag is created here and everything
+  # downstream is packaged and published from it — which is the whole point,
+  # because GitHub's own interface has no way to make a tag. Without one, it is
+  # a rehearsal: the installers appear as run artifacts, no release and no tag
+  # to take back.
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to cut, e.g. v0.2.0 — created on the branch chosen above. Leave empty to rehearse: packages everything, publishes nothing.'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -16,8 +24,116 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # What this run is about, decided once and answered to by every job below.
+  #
+  # Before, each job worked it out from the ref, which was fine while a release
+  # could only start from a tag that already existed. Making the tag here means
+  # there is a moment when the ref says "branch" and the run is nonetheless a
+  # release, so the answer has to be computed rather than read.
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    permissions:
+      # The one job that writes: it pushes the tag.
+      contents: write
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
+      publish: ${{ steps.plan.outputs.publish }}
+      sha: ${{ steps.plan.outputs.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: What this run is
+        id: plan
+        shell: bash
+        env:
+          WANTED: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag=''
+          create=false
+
+          # Trimmed, because a name typed into a web form arrives with whatever
+          # came with it, and " v0.2.0" is not a different intention.
+          wanted="$(printf '%s' "$WANTED" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            # The tag arrived on its own; nothing to create.
+            tag="$GITHUB_REF_NAME"
+          elif [ -n "$wanted" ]; then
+            tag="$wanted"
+            create=true
+          elif [ "$GITHUB_REF_TYPE" = tag ]; then
+            # Dispatched from a tag with no name given: re-cutting a release
+            # whose first attempt failed, which is worth being able to do.
+            tag="$GITHUB_REF_NAME"
+          fi
+
+          if [ -n "$tag" ]; then
+            # The shape the rest of the file relies on: the push trigger only
+            # listens for v*, the version is this minus the v, and a suffix is
+            # what marks a pre-release. A name that does not fit is caught here
+            # rather than three jobs and twenty minutes later.
+            if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+              echo "::error::'$tag' is not a release tag. Expected v<major>.<minor>.<patch>, optionally with a suffix — v0.2.0, v0.2.0-beta.1."
+              exit 1
+            fi
+
+            version="${tag#v}"
+            publish=true
+          else
+            version="$(node -p "require('./packages/app/package.json').version")-dev.$GITHUB_RUN_NUMBER"
+            publish=false
+          fi
+
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "publish=$publish"
+            echo "create=$create"
+            # Every job packages this exact commit rather than whatever the
+            # branch has come to mean since: a push landing mid-run must not
+            # end up in a release the tag says is something else.
+            echo "sha=$GITHUB_SHA"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Packaging $version${tag:+ as $tag} from ${GITHUB_SHA:0:7}"
+
+      - name: Create the tag
+        if: steps.plan.outputs.create == 'true'
+        shell: bash
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          # A tag that exists already is not re-pointed. It may be what an
+          # earlier release was built from, and moving it would leave that
+          # release describing a commit it was never cut from — so this stops
+          # and says which tag, rather than forcing anything.
+          if [ -n "$(git ls-remote --tags origin "refs/tags/$TAG")" ]; then
+            echo "::error::The tag $TAG already exists. Pick another name, or dispatch this workflow from that tag to cut its release again."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Annotated, so the tag carries who made it and when.
+          git tag -a "$TAG" -m "EasyDeck ${TAG#v}"
+          git push origin "refs/tags/$TAG"
+
+          echo "::notice::Created $TAG at ${GITHUB_SHA:0:7}"
+
+          # Nothing else starts because of this. A tag pushed with the run's own
+          # GITHUB_TOKEN does not set workflows going — deliberately, so a
+          # workflow cannot trigger itself for ever — which is exactly why this
+          # run goes on to package and publish rather than handing over.
+
   package:
     name: ${{ matrix.os }}
+    needs: plan
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -40,23 +156,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The commit the tag was put on, not the branch as it stands now.
+          ref: ${{ needs.plan.outputs.sha }}
 
       - uses: ./.github/actions/setup
-
-      # The tag is the version. Nothing in the repository is edited to match
-      # it — the packager is told what to stamp — so a release can never
-      # disagree with the commit it was cut from.
-      - name: Version
-        id: version
-        shell: bash
-        run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
-            version="${GITHUB_REF_NAME#v}"
-          else
-            version="$(node -p "require('./packages/app/package.json').version")-dev.$GITHUB_RUN_NUMBER"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Packaging $version"
 
       - name: Build
         run: pnpm build
@@ -77,6 +181,9 @@ jobs:
             echo "::warning::macOS will refuse this build on first run: Gatekeeper wants both a Developer ID signature and Apple's notarisation, and this build has $([ "$certificate" = true ] && echo 'only the first' || echo 'neither')."
           fi
 
+      # The tag is the version. Nothing in the repository is edited to match
+      # it — the packager is told what to stamp — so a release can never
+      # disagree with the commit it was cut from.
       - name: Package
         shell: bash
         env:
@@ -101,7 +208,7 @@ jobs:
           APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
         run: >
           pnpm --filter @easydeck/app exec electron-builder
-          --config.extraMetadata.version=${{ steps.version.outputs.version }}
+          --config.extraMetadata.version=${{ needs.plan.outputs.version }}
 
       # Patterns that match nothing on a given platform are fine; a job where
       # none of them matched is not, and that is what the error setting catches.
@@ -119,10 +226,10 @@ jobs:
 
   publish:
     name: Publish
-    # Only a tag becomes a release. This is the line that makes a dispatch run
-    # a rehearsal rather than an accident.
-    if: github.ref_type == 'tag'
-    needs: package
+    # Only a run with a tag becomes a release. This is the line that makes a
+    # dispatch with no tag a rehearsal rather than an accident.
+    if: needs.plan.outputs.publish == 'true'
+    needs: [plan, package]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -143,13 +250,13 @@ jobs:
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
-
           # A version carrying a suffix — 0.2.0-beta.1 — is not a finished
           # release, and GitHub should say so on the tin.
           prerelease=''
-          case "$version" in *-*) prerelease='--prerelease' ;; esac
+          case "$VERSION" in *-*) prerelease='--prerelease' ;; esac
 
           # How to install comes first, because that is what someone arriving
           # at the page is here for; the commit list GitHub generates follows.
@@ -183,15 +290,15 @@ jobs:
 
           END
             gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
-              -f tag_name="$GITHUB_REF_NAME" --jq .body
+              -f tag_name="$TAG" --jq .body
           } > notes.md
 
           # Word splitting on $prerelease is deliberate: empty means the flag
           # is absent, and quoting it would pass an empty argument instead.
           # shellcheck disable=SC2086
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "EasyDeck $version" \
+            --title "EasyDeck $VERSION" \
             --notes-file notes.md \
             $prerelease \
             installers/*

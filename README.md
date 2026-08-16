@@ -168,8 +168,14 @@ git tag v0.2.0 && git push origin v0.2.0
 A tag carrying a suffix — `v0.2.0-beta.1` — is published as a pre-release.
 Nothing in the repository is edited to match the tag: the packager is told which
 version to stamp, so a release cannot disagree with the commit it was cut from.
-To rehearse, run the Release workflow by hand — it builds the same installers,
-attaches them to the run and stops short of publishing.
+
+There is no need for a terminal, either. Run the **Release** workflow by hand,
+pick the branch and type the tag into the box: the workflow creates the tag on
+that branch and cuts the release from it, all in the one run — which is what
+GitHub's own interface cannot do. Leave the box empty and it rehearses instead:
+the same installers, attached to the run, no tag and no release. Dispatching it
+from an existing tag with the box empty releases that tag again, for when a run
+failed after the tag was made.
 
 Every platform builds its own installers on its own runner, because the native
 zones install binaries chosen for the machine that installed them. Locally,
