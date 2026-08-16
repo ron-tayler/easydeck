@@ -56,7 +56,7 @@ function get(name) {
 function set(name, value) {
   if (values.get(name) === value) return;
   values.set(name, value);
-  for (const listen of listeners) listen();
+  for (const listen of listeners) listen(name);
 }
 
 /** `{{name}}`, the same placeholder the program's labels use. */
@@ -121,7 +121,7 @@ const PAGES = {
       press: () => set('volume', Math.min(100, get('volume') + 10)),
       title: 'Громкость громче',
     },
-    { widget: 'meter', title: 'Виджет: уровень звука' },
+    { widget: 'meter', reads: ['volume'], title: 'Виджет: уровень звука' },
     {
       label: 'Discord',
       icon: 'chat',
@@ -130,7 +130,7 @@ const PAGES = {
       title: 'Папка Discord',
       folder: true,
     },
-    { widget: 'clock', title: 'Виджет: часы' },
+    { widget: 'clock', reads: ['clock', 'date'], title: 'Виджет: часы' },
 
     {
       label: 'Смех',
@@ -192,7 +192,7 @@ const PAGES = {
     { label: 'Игровой\n2 чел.', tone: 'plain', press: (key) => flash(key) },
     { label: 'Тише\nСосед', icon: 'quieter', tone: 'plain', press: (key) => flash(key) },
     { label: 'Выйти', icon: 'cross', tone: 'plain', press: (key) => flash(key) },
-    { widget: 'clock' },
+    { widget: 'clock', reads: ['clock', 'date'] },
 
     { empty: true },
     { empty: true },
@@ -260,34 +260,79 @@ const WIDGETS = {
 
 const root = document.getElementById('panel');
 
+/**
+ * Every variable this key's appearance depends on.
+ *
+ * The same three sources the program looks at — the variable a state is bound
+ * to, the templates in every state's label, and what a widget says it reads —
+ * and worked out once per key rather than on every tick.
+ */
+function readsOf(spec) {
+  if (spec.reading) return spec.reading;
+
+  const names = new Set(spec.reads ?? []);
+  if (spec.stateFrom) names.add(spec.stateFrom);
+  for (const state of spec.states ?? [spec]) {
+    for (const found of String(state.label ?? '').matchAll(/\{\{([^}]+)\}\}/g)) {
+      names.add(found[1].trim());
+    }
+  }
+
+  spec.reading = names;
+  return names;
+}
+
+function html(spec, index) {
+  if (spec.empty) return '<div class="key empty" aria-hidden="true"></div>';
+
+  const look = appearanceOf(spec);
+  const widget = spec.widget ? WIDGETS[spec.widget]() : '';
+  const label = fill(look.label ?? '').replace('\n', '<br>');
+  const pressed = spec.stateFrom !== undefined ? ` aria-pressed="${Boolean(get(spec.stateFrom))}"` : '';
+
+  const classes = `key ${look.tone ?? 'plain'}${look.beat ? ' beat' : ''}${spec.widget ? ' widget' : ''}${spec.wide ? ' wide' : ''}${spec.folder ? ' folder' : ''}`;
+  const face = `${widget}${look.icon ? ICONS[look.icon] : ''}${label ? `<span class="lab">${label}</span>` : ''}`;
+
+  /*
+   * A key is a button only when pressing it does something.
+   *
+   * A widget is a picture; as a `<button>` it would take a stop on the way
+   * through with the keyboard and then do nothing when pressed, which is the
+   * sort of thing that makes a page tiring to use with one.
+   */
+  return spec.press
+    ? `<button class="${classes}" type="button" data-key="${index}"${pressed} title="${spec.title ?? ''}">${face}</button>`
+    : `<div class="${classes}" title="${spec.title ?? ''}">${face}</div>`;
+}
+
+/** The whole page, for a page that has just been opened. */
 function draw() {
+  if (!root) return;
+  root.innerHTML = PAGES[page].map(html).join('');
+}
+
+/**
+ * One variable moved, so the keys that read it are drawn again — and only
+ * those.
+ *
+ * The demo had the bug the program itself was cured of a week ago: any change
+ * redrew all fifteen keys. Starting the recording timer therefore rebuilt the
+ * album art and the faces once a second, which restarted their animations from
+ * the beginning — the record jumped back to the top of every turn and never
+ * finished one.
+ */
+function update(changed) {
   if (!root) return;
 
   const keys = PAGES[page];
-  root.innerHTML = keys
-    .map((spec, index) => {
-      if (spec.empty) return '<div class="key empty" aria-hidden="true"></div>';
+  const scratch = document.createElement('div');
 
-      const look = appearanceOf(spec);
-      const widget = spec.widget ? WIDGETS[spec.widget]() : '';
-      const label = fill(look.label ?? '').replace('\n', '<br>');
-      const pressed = spec.stateFrom !== undefined ? ` aria-pressed="${Boolean(get(spec.stateFrom))}"` : '';
+  keys.forEach((spec, index) => {
+    if (changed !== undefined && !readsOf(spec).has(changed)) return;
 
-      const classes = `key ${look.tone ?? 'plain'}${look.beat ? ' beat' : ''}${spec.widget ? ' widget' : ''}${spec.wide ? ' wide' : ''}${spec.folder ? ' folder' : ''}`;
-      const face = `${widget}${look.icon ? ICONS[look.icon] : ''}${label ? `<span class="lab">${label}</span>` : ''}`;
-
-      /*
-       * A key is a button only when pressing it does something.
-       *
-       * A widget is a picture; as a `<button>` it would take a stop on the way
-       * through with the keyboard and then do nothing when pressed, which is
-       * the sort of thing that makes a page tiring to use with one.
-       */
-      return spec.press
-        ? `<button class="${classes}" type="button" data-key="${index}"${pressed} title="${spec.title ?? ''}">${face}</button>`
-        : `<div class="${classes}" title="${spec.title ?? ''}">${face}</div>`;
-    })
-    .join('');
+    scratch.innerHTML = html(spec, index);
+    root.children[index]?.replaceWith(scratch.firstElementChild);
+  });
 }
 
 root?.addEventListener('click', (event) => {
@@ -298,7 +343,7 @@ root?.addEventListener('click', (event) => {
   spec?.press?.(button);
 });
 
-listeners.add(draw);
+listeners.add(update);
 
 /* --- the two things that genuinely tick ------------------------------------- */
 
