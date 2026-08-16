@@ -1,0 +1,192 @@
+/*
+ * The panel on the landing page.
+ *
+ * Loaded only there, because it is the only page with a panel on it and the
+ * documentation should not download a level meter to show a paragraph.
+ *
+ * The keys are drawn the way the device looks rather than the way a web button
+ * looks: square, dark, lit from inside, with the picture filling the face and
+ * the label sitting on top of it.
+ */
+
+.panel {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 9px;
+  padding: 16px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #1b1f27, #12151b);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow), inset 0 1px 0 #ffffff0f;
+}
+
+@media (prefers-color-scheme: light) {
+  .panel { background: linear-gradient(180deg, #2a2f3a, #1b1f27); }
+}
+
+.panel .key {
+  position: relative;
+  aspect-ratio: 1;
+  border: 1px solid #262c36;
+  border-radius: 11px;
+  background: #12161d;
+  color: #cbd3e0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 3px;
+  padding: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1.15;
+  text-align: center;
+  transition: transform 90ms ease, filter 120ms ease, box-shadow 120ms ease;
+}
+
+.panel button.key:hover { filter: brightness(1.25); }
+.panel button.key:active,
+.panel button.key.hit { transform: scale(0.86); }
+.panel button.key:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.panel .key.empty { background: #0e1117; border-style: dashed; border-color: #1d222b; cursor: default; }
+
+/*
+ * A picture stretched over two keys, which the program calls a merged key.
+ *
+ * One element across two cells rather than two elements showing halves: the
+ * seam is what a merge is meant to remove, and drawing it twice would put it
+ * back.
+ */
+.panel .key.wide { grid-column: span 2; aspect-ratio: auto; }
+
+.panel .ic { width: 22px; height: 22px; }
+.panel .lab { font-weight: 600; letter-spacing: -0.01em; }
+
+/* --- the colours a state can ask for -------------------------------------- */
+
+.panel .good { background: linear-gradient(165deg, #2f6f4f, #1d4633); border-color: #37855f; color: #e9fff4; }
+.panel .bad { background: linear-gradient(165deg, #6f3535, #481f1f); border-color: #8c4444; color: #ffeaea; }
+.panel .cool { background: linear-gradient(165deg, #2b4a7a, #1a2b48); border-color: #35578c; color: #e9f1ff; }
+.panel .warm { background: linear-gradient(165deg, #8a6a1e, #533f13); border-color: #a98426; color: #fff5dd; }
+
+.panel .folder::after {
+  content: '';
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 0;
+  height: 0;
+  border: 4px solid transparent;
+  border-right-color: currentColor;
+  border-bottom-color: currentColor;
+  opacity: 0.5;
+}
+
+/* The recording key breathes, because a red dot that does not move reads as a
+   picture of recording rather than as recording. */
+.panel .beat .ic { animation: beat 1.6s ease-in-out infinite; }
+@keyframes beat {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* --- widgets --------------------------------------------------------------- */
+
+.panel .key.widget { padding: 0; cursor: default; }
+.panel .w { position: absolute; inset: 0; }
+
+/* A level meter, its height following the volume the keys beside it set. */
+.panel .meter {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  padding: 9px;
+  background: #0f1319;
+}
+.panel .meter i {
+  flex: 1;
+  border-radius: 2px;
+  background: linear-gradient(0deg, #3fb950, #d29922 72%, #f85149);
+  transform-origin: bottom;
+  height: 100%;
+  transform: scaleY(calc((var(--level) / 100) * 0.9 + 0.06));
+  animation: bar 900ms ease-in-out infinite alternate;
+  animation-delay: calc(var(--n) * -170ms);
+}
+@keyframes bar {
+  from { transform: scaleY(calc((var(--level) / 100) * 0.35 + 0.05)); }
+  to { transform: scaleY(calc((var(--level) / 100) * 0.95 + 0.08)); }
+}
+
+/* Album art, of a record nobody has to license. */
+.panel .cover { display: grid; grid-template-rows: 1fr auto; background: #0f1319; }
+.panel .cover .art {
+  background:
+    radial-gradient(circle at 50% 50%, #0f1319 12%, transparent 13%),
+    conic-gradient(from 0deg, #4f8cff, #b451ff, #ff5f8f, #ffb457, #4f8cff);
+  border-radius: 50%;
+  width: 62%;
+  aspect-ratio: 1;
+  justify-self: center;
+  align-self: center;
+  animation: spin 7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(1turn); } }
+.panel .cover .track {
+  display: grid;
+  padding: 0 4px 5px;
+  font-size: 9px;
+  line-height: 1.2;
+}
+.panel .cover .track b { color: #eef3fb; font-weight: 650; }
+.panel .cover .track span { color: #93a0b4; }
+
+/* Two people in a call, taking turns to talk. */
+.panel .faces { display: flex; }
+.panel .face {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 650;
+  color: #fff;
+}
+.panel .face.a { background: linear-gradient(160deg, #5865f2, #38409e); }
+.panel .face.b { background: linear-gradient(160deg, #3ba55d, #23663a); }
+.panel .face { animation: talk 2.6s ease-in-out infinite; }
+.panel .face.b { animation-delay: -1.3s; }
+@keyframes talk {
+  0%, 40%, 100% { filter: brightness(0.55); }
+  15%, 25% { filter: brightness(1.15); }
+}
+
+.panel .clock {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 1px;
+  background: #0f1319;
+}
+.panel .clock b { font-size: 17px; font-weight: 650; color: #eef3fb; font-variant-numeric: tabular-nums; }
+.panel .clock span { font-size: 9px; color: #93a0b4; }
+
+/* Nothing moves for somebody who asked for nothing to move. The pictures stay
+   readable — a still meter is a meter, a still record is a record. */
+@media (prefers-reduced-motion: reduce) {
+  .panel .meter i,
+  .panel .cover .art,
+  .panel .face,
+  .panel .beat .ic { animation: none; }
+  .panel .face { filter: none; }
+}
+
+/* --- the caption under it --------------------------------------------------- */
+
+.paneltip {
+  margin: 12px 2px 0;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}

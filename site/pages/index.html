@@ -16,26 +16,29 @@
   </div>
 
   <!--
-    The panel as it looks on a desk: fifteen keys, three by five, which is the
-    layout of the device this was written for. Drawn rather than photographed
-    so the page stays honest when the interface changes.
+    A working panel rather than a picture of one: fifteen keys, three by five,
+    which is the layout of the device this was written for. The keys before the
+    script arrives are the ones it starts from, so nothing jumps and a reader
+    without JavaScript still sees a deck.
   -->
-  <div class="panel" aria-hidden="true">
-    <div class="key lit">Микрофон</div>
-    <div class="key">Сцена</div>
-    <div class="key cool">Пауза</div>
-    <div class="key">🔉 40%</div>
-    <div class="key hot">Запись</div>
-    <div class="key">Discord</div>
-    <div class="key cool">Общий<br>4 чел.</div>
-    <div class="key">Свет</div>
-    <div class="key">OBS</div>
-    <div class="key">Папка</div>
-    <div class="key">Звук 1</div>
-    <div class="key">Звук 2</div>
-    <div class="key lit">Алиса</div>
-    <div class="key">Steam</div>
-    <div class="key">Назад</div>
+  <div>
+    <div class="panel" id="panel">
+      <div class="key good">Микрофон</div>
+      <div class="key cool">Игра</div>
+      <div class="key">Запись</div>
+      <div class="key widget wide"></div>
+      <div class="key">Тише</div>
+      <div class="key">60%</div>
+      <div class="key widget"></div>
+      <div class="key cool">Discord</div>
+      <div class="key widget"></div>
+      <div class="key">Смех</div>
+      <div class="key">Фанфары</div>
+      <div class="key">Свет</div>
+      <div class="key cool">Алиса</div>
+      <div class="key">Звук</div>
+    </div>
+    <p class="paneltip">Потыкайте: клавиши переключаются, папка открывается, виджеты живут сами.</p>
   </div>
 </section>
 
@@ -136,4 +139,6 @@
   </div>
 </section>
 
+<link rel="stylesheet" href="{{base}}panel.css">
 <script src="{{base}}download.js" data-repo="{{repo}}" defer></script>
+<script src="{{base}}panel.js" defer></script>
