@@ -3,6 +3,7 @@ import type {
   DeckState,
   InstalledPluginInfo,
   InstalledPluginSummary,
+  StorePlugin,
   KeyView,
   LibraryImage,
   LocalizedText,
@@ -422,6 +423,34 @@ export function useDeck() {
       const result = await client.call<{ icons: LibraryImage[]; omitted?: number }>('listIcons');
       return { images: result.icons, omitted: result.omitted ?? 0 };
     },
+    /*
+     * The store, fetched when it is opened rather than kept in state.
+     *
+     * A shelf nobody is looking at is a list of downloads waiting to go
+     * stale — and unlike the profile or the plugins, nothing else in the
+     * window needs to know what is on it.
+     */
+    listStorePlugins: async (refresh = false): Promise<readonly StorePlugin[]> => {
+      const result = await client.call<{ plugins: StorePlugin[] }>('getStorePlugins', { refresh });
+      return result.plugins;
+    },
+    storeImage: async (pluginId: string, reference: string): Promise<string | undefined> => {
+      const result = await client.call<{ image?: string }>('getStoreImage', {
+        pluginId,
+        reference,
+      });
+      return result.image;
+    },
+    installPlugin: (pluginId: string, replace = false) =>
+      client.call('installPlugin', { pluginId, replace }),
+    installPluginArchive: async (base64: string, replace = false): Promise<string> => {
+      const result = await client.call<{ pluginId: string }>('installPluginArchive', {
+        base64,
+        replace,
+      });
+      return result.pluginId;
+    },
+    removePlugin: (pluginId: string) => client.call('removePlugin', { pluginId }),
     setBrightness: (percent: number) => client.call('setBrightness', { percent }),
     setVariable: (name: string, value: string | number | boolean) =>
       client.call('setVariable', { name, value }),

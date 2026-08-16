@@ -49,6 +49,28 @@ export interface InstalledPluginSummary {
   readonly messages: Readonly<Record<string, unknown>>;
 }
 
+/**
+ * A plugin as the store shows it: what it is, and where the user stands.
+ *
+ * The listing and the installed state together, because every row of a store
+ * draws both — the name and the picture from one, the button's word from the
+ * other.
+ */
+export interface StorePlugin {
+  readonly id: string;
+  readonly author: string;
+  readonly version: string;
+  readonly apiVersion: number;
+  /** How large the download is, for a row that says so before it starts. */
+  readonly bytes: number;
+  /** Everything a card shows, and it is the plugin's own manifest. */
+  readonly manifest: PluginManifest;
+  /** The version already on this machine, absent when there is none. */
+  readonly installedVersion?: string;
+  /** Whether this build can run it at all. See PLUGIN_API_VERSION. */
+  readonly compatible: boolean;
+}
+
 /** The folders a configurator may ask to have opened. */
 export type AppFolder = 'config' | 'profiles' | 'plugins' | 'icons';
 
@@ -72,6 +94,48 @@ export interface DeckFacade {
    * expects to see listed, and expects to be able to remove.
    */
   installedPlugins(): Promise<InstalledPluginSummary>;
+
+  /**
+   * What can be installed, and which of it already is.
+   *
+   * The store, in one call. `installed` is answered here rather than left for
+   * the window to work out by comparing two lists — the comparison needs the
+   * version as well as the id, and getting it slightly wrong shows "Install"
+   * on something already installed.
+   */
+  storePlugins(options?: { readonly refresh?: boolean }): Promise<readonly StorePlugin[]>;
+
+  /**
+   * One of a store listing's pictures, as a data URL.
+   *
+   * Asked for by reference rather than sent with the list: the cover of every
+   * plugin is small and the screenshots are not, and a store that fetched
+   * every screenshot to draw a list of names would be slow on the one screen
+   * that must not be.
+   */
+  storeImage(pluginId: string, reference: string): Promise<string | undefined>;
+
+  /**
+   * Fetches a plugin and unpacks it into the plugins folder.
+   *
+   * Replacing an installed plugin is refused unless asked for, because two
+   * plugins with one id may be one plugin updated or two authors' plugins
+   * colliding, and only the person in front of the window can say which.
+   */
+  installPlugin(pluginId: string, options?: { readonly replace?: boolean }): Promise<void>;
+
+  /** Removes an installed plugin. Its settings and tokens stay behind. */
+  removePlugin(pluginId: string): Promise<void>;
+
+  /**
+   * Installs a plugin from bytes somebody supplied rather than from a store.
+   *
+   * Base64 for the same reason an exported profile is: one protocol, and a
+   * second binary channel for one button is not worth having. The archive is
+   * checked for being a plugin at all — the extension it arrives under is the
+   * same one a profile uses.
+   */
+  installPluginArchive(base64: string, options?: { readonly replace?: boolean }): Promise<string>;
 
   /**
    * One frame of a widget, for a window rather than for the panel.

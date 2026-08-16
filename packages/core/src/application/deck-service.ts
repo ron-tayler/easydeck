@@ -4,7 +4,7 @@ import { mkdir } from 'node:fs/promises';
 import type { FSWatcher } from 'node:fs';
 
 import type { Surface } from '@easydeck/device';
-import { DeckController } from '@easydeck/engine';
+import { DeckController, PLUGIN_API_VERSION } from '@easydeck/engine';
 import type {
   ActionRegistry,
   ButtonEvent,
@@ -40,7 +40,15 @@ import type { PluginRuntime } from './plugin-runtime.js';
 import { openTarget } from '../infrastructure/actions/system-actions.js';
 import type { DeviceDirectory } from './device-directory.js';
 import type { DeckEvents } from './ports/deck-events.js';
-import type { AppFolder, DeckFacade, InstalledPluginSummary } from './ports/deck-facade.js';
+import type {
+  AppFolder,
+  DeckFacade,
+  InstalledPluginSummary,
+  StorePlugin,
+} from './ports/deck-facade.js';
+import type { PluginSource } from './ports/plugin-source.js';
+import { FolderPluginSource } from '../infrastructure/plugins/folder-plugin-source.js';
+import { installPluginArchive, looksLikePlugin, uninstallPlugin } from '../infrastructure/plugins/install-plugin.js';
 import type { ProfileRepository, ProfileSummary, SettingsRepository } from './ports/repositories.js';
 
 /** Alias kept for readability at the call sites; see DeckEvents. */
@@ -101,6 +109,15 @@ export interface DeckServiceOptions {
    * person configures has it.
    */
   readonly buttonSecrets?: ButtonSecretStore;
+  /**
+   * Where installable plugins come from.
+   *
+   * Optional, and absent means a store with nothing in it rather than a
+   * missing feature: a build with no source configured shows an empty shelf
+   * and says why, which is the same thing it shows when the source is there
+   * and empty.
+   */
+  readonly pluginSource?: PluginSource;
 }
 
 /** Debounce for filesystem events: editors save in several bursts. */
@@ -506,6 +523,88 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
       broken,
       messages,
     };
+  }
+
+  // --- the store ------------------------------------------------------------
+
+  /**
+   * What can be installed, and where the user stands with each.
+   *
+   * The installed side is read from the plugins folder rather than from the
+   * running plugins: a plugin that is installed but refused to start is still
+   * installed, and offering to install it again would be the store lying
+   * about what is on the machine.
+   */
+  async storePlugins(options: { readonly refresh?: boolean } = {}): Promise<readonly StorePlugin[]> {
+    const source = this.options.pluginSource;
+    if (!source) return [];
+
+    if (options.refresh === true && source instanceof FolderPluginSource) source.refresh();
+
+    const [listings, installed] = await Promise.all([
+      source.list(),
+      readInstalledPlugins(pluginsDir()),
+    ]);
+
+    const versions = new Map(installed.plugins.map((plugin) => [plugin.id, plugin.version]));
+
+    return listings.map((listing) => {
+      const version = versions.get(listing.id);
+      return {
+        id: listing.id,
+        author: listing.author,
+        version: listing.version,
+        apiVersion: listing.apiVersion,
+        bytes: listing.bytes,
+        manifest: listing.manifest,
+        ...(version ? { installedVersion: version } : {}),
+        compatible: listing.apiVersion === PLUGIN_API_VERSION,
+      };
+    });
+  }
+
+  async storeImage(pluginId: string, reference: string): Promise<string | undefined> {
+    const image = await this.options.pluginSource?.image(pluginId, reference);
+    if (!image) return undefined;
+
+    return `data:${image.type};base64,${Buffer.from(image.bytes).toString('base64')}`;
+  }
+
+  async installPlugin(pluginId: string, options: { readonly replace?: boolean } = {}): Promise<void> {
+    const source = this.options.pluginSource;
+    if (!source) throw new Error('There is no plugin source configured');
+
+    const listing = (await source.list()).find((entry) => entry.id === pluginId);
+    if (!listing) throw new Error(`The store has no '${pluginId}'`);
+
+    const bytes = await source.download(pluginId);
+    if (!bytes) throw new Error(`'${pluginId}' could not be downloaded`);
+
+    await installPluginArchive(bytes, {
+      sha256: listing.sha256,
+      ...(options.replace === true ? { replace: true } : {}),
+    });
+  }
+
+  async installPluginArchive(
+    base64: string,
+    options: { readonly replace?: boolean } = {},
+  ): Promise<string> {
+    const bytes = Buffer.from(base64, 'base64');
+    if (!looksLikePlugin(bytes)) {
+      // The same extension carries profiles, so this is a likely mistake
+      // rather than an attack, and saying which it looks like is the help.
+      throw new Error('That file is not a plugin — it may be a profile');
+    }
+
+    const installed = await installPluginArchive(bytes, {
+      ...(options.replace === true ? { replace: true } : {}),
+    });
+    return installed.id;
+  }
+
+  async removePlugin(pluginId: string): Promise<void> {
+    await uninstallPlugin(pluginId);
   }
 
   listProfiles(): Promise<ProfileSummary[]> {

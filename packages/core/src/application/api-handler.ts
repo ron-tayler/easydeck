@@ -116,6 +116,40 @@ export class ApiHandler {
       case 'getInstalledPlugins':
         return this.deck.installedPlugins();
 
+      // --- the store ------------------------------------------------------
+
+      case 'getStorePlugins':
+        return { plugins: await this.deck.storePlugins({ refresh: params['refresh'] === true }) };
+
+      /*
+       * One picture, asked for by reference.
+       *
+       * Apart from the list on purpose: a cover is small and a screenshot is
+       * not, and a store that sent every picture of every plugin to draw a
+       * list of names would be slow on the one screen that must not be.
+       */
+      case 'getStoreImage':
+        return {
+          image: await this.deck.storeImage(text(params, 'pluginId'), text(params, 'reference')),
+        };
+
+      case 'installPlugin':
+        await this.deck.installPlugin(text(params, 'pluginId'), {
+          replace: params['replace'] === true,
+        });
+        return { ok: true };
+
+      case 'installPluginArchive':
+        return {
+          pluginId: await this.deck.installPluginArchive(text(params, 'base64'), {
+            replace: params['replace'] === true,
+          }),
+        };
+
+      case 'removePlugin':
+        await this.deck.removePlugin(text(params, 'pluginId'));
+        return { ok: true };
+
       /*
        * One frame of a widget, for the editor to show while it is being set up.
        *

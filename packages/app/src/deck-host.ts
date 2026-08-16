@@ -12,7 +12,7 @@ import {
   startApiServer,
 } from '@easydeck/core';
 import { electronSecretVault } from './secret-vault.js';
-import type { ApiSource, AppFolder, DeckEvents, DeckService, DeckState, InstalledPluginSummary, KeyView, Library, LibraryImage, ParamDefinition, PluginManifest, ProfileDefinition, ProfileSummary, RunningApiServer, SurfaceFrame, SurfaceRequest, VariableValue } from '@easydeck/core';
+import type { ApiSource, AppFolder, DeckEvents, DeckService, DeckState, InstalledPluginSummary, KeyView, Library, LibraryImage, ParamDefinition, PluginManifest, ProfileDefinition, ProfileSummary, RunningApiServer, StorePlugin, SurfaceFrame, SurfaceRequest, VariableValue } from '@easydeck/core';
 
 export type HostStatus =
   | { readonly state: 'starting' }
@@ -261,6 +261,28 @@ export class DeckHost extends EventEmitter<DeckHostEvents> implements ApiSource 
 
   installedPlugins(): Promise<InstalledPluginSummary> {
     return this.require().installedPlugins();
+  }
+
+  // --- the store ------------------------------------------------------------
+
+  storePlugins(options?: { readonly refresh?: boolean }): Promise<readonly StorePlugin[]> {
+    return this.require().storePlugins(options);
+  }
+
+  storeImage(pluginId: string, reference: string): Promise<string | undefined> {
+    return this.require().storeImage(pluginId, reference);
+  }
+
+  installPlugin(pluginId: string, options?: { readonly replace?: boolean }): Promise<void> {
+    return this.require().installPlugin(pluginId, options);
+  }
+
+  installPluginArchive(base64: string, options?: { readonly replace?: boolean }): Promise<string> {
+    return this.require().installPluginArchive(base64, options);
+  }
+
+  removePlugin(pluginId: string): Promise<void> {
+    return this.require().removePlugin(pluginId);
   }
 
   /**

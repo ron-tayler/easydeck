@@ -14,7 +14,7 @@ import type {
 
 import type { DeckState } from '../domain/api-messages.js';
 import type { Library, LibraryImage } from '../infrastructure/icon-library.js';
-import type { InstalledPluginSummary } from './ports/deck-facade.js';
+import type { InstalledPluginSummary, StorePlugin } from './ports/deck-facade.js';
 import { ApiHandler } from './api-handler.js';
 import type { DeckFacade } from './ports/deck-facade.js';
 import type { ProfileSummary } from './ports/repositories.js';
@@ -133,6 +133,51 @@ class FakeDeck implements DeckFacade {
       broken: [],
       messages: { ru: { sim: { start: 'Старт' } } },
     };
+  }
+
+  // --- the store ------------------------------------------------------------
+
+  async storePlugins(options: { readonly refresh?: boolean } = {}): Promise<readonly StorePlugin[]> {
+    this.calls.push(`storePlugins:${options.refresh === true}`);
+    return [
+      {
+        id: 'ed.demo',
+        author: 'ed',
+        version: '1.0.0',
+        apiVersion: 1,
+        bytes: 2048,
+        manifest: {
+          id: 'ed.demo',
+          name: { en: 'Demo' },
+          version: '1.0.0',
+          apiVersion: 1,
+          actions: [],
+          cover: 'plugin:ed.demo/cover.png',
+        },
+        compatible: true,
+      },
+    ];
+  }
+
+  async storeImage(pluginId: string, reference: string): Promise<string | undefined> {
+    this.calls.push(`storeImage:${pluginId}:${reference}`);
+    return 'data:image/png;base64,AA==';
+  }
+
+  async installPlugin(pluginId: string, options: { readonly replace?: boolean } = {}): Promise<void> {
+    this.calls.push(`installPlugin:${pluginId}:${options.replace === true}`);
+  }
+
+  async installPluginArchive(
+    base64: string,
+    options: { readonly replace?: boolean } = {},
+  ): Promise<string> {
+    this.calls.push(`installPluginArchive:${base64.length}:${options.replace === true}`);
+    return 'ed.dropped';
+  }
+
+  async removePlugin(pluginId: string): Promise<void> {
+    this.calls.push(`removePlugin:${pluginId}`);
   }
 
   async paramShape(
@@ -510,5 +555,60 @@ describe('ApiHandler', () => {
 
     assert.equal(response.ok, false);
     assert.match(response.error!.message, /outer <- the real reason/);
+  });
+});
+
+describe('the store, over the protocol', () => {
+  it('lists what can be installed, and passes a refresh through', async () => {
+    const deck = new FakeDeck();
+    const handler = new ApiHandler(deck);
+
+    const response = await handler.handle(request('getStorePlugins'));
+    const plugins = (response.result as { plugins: StorePlugin[] }).plugins;
+
+    assert.equal(plugins.length, 1);
+    assert.equal(plugins[0]?.id, 'ed.demo');
+
+    // "Look again" is a different question from "what have you got": the
+    // first re-reads the source, the second may answer from what it kept.
+    await handler.handle(request('getStorePlugins', { refresh: true }));
+    assert.deepEqual(deck.calls, ['storePlugins:false', 'storePlugins:true']);
+  });
+
+  it('fetches one picture at a time, by reference', async () => {
+    const deck = new FakeDeck();
+    const response = await new ApiHandler(deck).handle(
+      request('getStoreImage', { pluginId: 'ed.demo', reference: 'plugin:ed.demo/cover.png' }),
+    );
+
+    assert.match((response.result as { image: string }).image, /^data:image\/png;base64,/);
+    assert.deepEqual(deck.calls, ['storeImage:ed.demo:plugin:ed.demo/cover.png']);
+  });
+
+  it('installs, replaces and removes', async () => {
+    const deck = new FakeDeck();
+    const handler = new ApiHandler(deck);
+
+    await handler.handle(request('installPlugin', { pluginId: 'ed.demo' }));
+    await handler.handle(request('installPlugin', { pluginId: 'ed.demo', replace: true }));
+    await handler.handle(request('removePlugin', { pluginId: 'ed.demo' }));
+
+    // Replacing is only ever explicit: two plugins with one id may be one
+    // plugin updated or two authors colliding, and only a person can say.
+    assert.deepEqual(deck.calls, [
+      'installPlugin:ed.demo:false',
+      'installPlugin:ed.demo:true',
+      'removePlugin:ed.demo',
+    ]);
+  });
+
+  it('takes a plugin somebody supplied as bytes', async () => {
+    const deck = new FakeDeck();
+    const response = await new ApiHandler(deck).handle(
+      request('installPluginArchive', { base64: 'UEsDBA==' }),
+    );
+
+    assert.equal((response.result as { pluginId: string }).pluginId, 'ed.dropped');
+    assert.deepEqual(deck.calls, ['installPluginArchive:8:false']);
   });
 });

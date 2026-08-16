@@ -24,6 +24,7 @@ import { registerClockPlugin } from './infrastructure/plugins/clock/clock-plugin
 import { registerHardwarePlugin } from './infrastructure/plugins/hardware-plugin.js';
 import { loadCodePlugins } from './infrastructure/plugins/code-plugins.js';
 import { pluginsDir } from './infrastructure/config-paths.js';
+import { FolderPluginSource } from './infrastructure/plugins/folder-plugin-source.js';
 import { openTarget } from './infrastructure/actions/system-actions.js';
 import type { DeviceDirectory } from './application/device-directory.js';
 import type { SecretVault } from './application/ports/secret-vault.js';
@@ -229,6 +230,14 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
         : undefined;
 
     service = new DeckService({
+      /*
+       * The store's shelf.
+       *
+       * A folder beside the checkout today; a GitHub release the day there is
+       * one. Constructed here because this is the composition root and the
+       * only place that gets to decide which source a build has.
+       */
+      pluginSource: new FolderPluginSource(),
       decks: registry,
       ...(options.devices ? { devices: options.devices } : {}),
       ...(options.applyNetwork ? { applyNetwork: options.applyNetwork } : {}),

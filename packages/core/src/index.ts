@@ -85,6 +85,7 @@ export type {
   ApiSource,
   InstalledPluginInfo,
   InstalledPluginSummary,
+  StorePlugin,
 } from './application/ports/deck-facade.js';
 export type { DeckEvents } from './application/ports/deck-events.js';
 export { ApiHandler } from './application/api-handler.js';
