@@ -43,6 +43,18 @@ export interface PluginSource {
    * list somebody may scroll past.
    */
   image(id: string, reference: string): Promise<PluginImage | undefined>;
+
+  /**
+   * Forgets whatever was kept, because somebody asked to look again.
+   *
+   * Part of the interface rather than of one implementation: a source caches
+   * for as long as the store is open — that is the whole point of the window
+   * being one file — and "look again" is the only thing that may empty it. It
+   * used to be called through an `instanceof` check against the folder
+   * source, which meant the published store cached its shelf for the life of
+   * the process and the button did nothing at all.
+   */
+  refresh?(): void;
 }
 
 /**

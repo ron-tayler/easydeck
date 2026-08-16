@@ -60,7 +60,12 @@ function pluginArchive(
  * Written here rather than borrowed so the test knows the format rather than
  * agreeing with whatever the builder happens to do.
  */
-function storeWindow(sha256: string, bytes: number, extra: readonly ZipFile[] = []): Uint8Array {
+function storeWindow(
+  sha256: string,
+  bytes: number,
+  extra: readonly ZipFile[] = [],
+  version = '1.2.3',
+): Uint8Array {
   return writeZip([
     {
       name: 'index.json',
@@ -70,7 +75,7 @@ function storeWindow(sha256: string, bytes: number, extra: readonly ZipFile[] = 
             {
               id: 'ed.demo',
               author: 'ed',
-              version: '1.2.3',
+              version,
               apiVersion: PLUGIN_API_VERSION,
               file: 'ed.demo.easydeck',
               sha256,
@@ -453,5 +458,33 @@ describe('a card, fetched apart from the list', () => {
     // "Look again" is the one moment the answer could have changed.
     source.refresh();
     assert.equal(await source.details('ed.demo'), undefined);
+  });
+});
+
+describe('looking again', () => {
+  it('empties what the published store kept, not just the folder one', async () => {
+    /*
+     * Regression: the service asked for a fresh look through an `instanceof`
+     * check against the folder source, so the GitHub one kept its window for
+     * the life of the process and the button did nothing.
+     */
+    const first = storeWindow('x', 1);
+    let served = first;
+
+    const source = new GitHubPluginSource({
+      owner: 'o',
+      repo: 'r',
+      fetcher: (async () => new Response(Buffer.from(served), { status: 200 })) as typeof fetch,
+    });
+
+    assert.equal((await source.list())[0]?.version, '1.2.3');
+
+    // The shelf moves on. Without being told, a source is right to keep what
+    // it had — it was told the store was open.
+    served = storeWindow('x', 1, [], '2.0.0');
+    assert.equal((await source.list())[0]?.version, '1.2.3');
+
+    source.refresh();
+    assert.equal((await source.list())[0]?.version, '2.0.0');
   });
 });

@@ -47,7 +47,6 @@ import type {
   StorePlugin,
 } from './ports/deck-facade.js';
 import type { PluginSource } from './ports/plugin-source.js';
-import { FolderPluginSource } from '../infrastructure/plugins/folder-plugin-source.js';
 import { installPluginArchive, looksLikePlugin, uninstallPlugin } from '../infrastructure/plugins/install-plugin.js';
 import type { ProfileRepository, ProfileSummary, SettingsRepository } from './ports/repositories.js';
 
@@ -539,7 +538,7 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     const source = this.options.pluginSource;
     if (!source) return [];
 
-    if (options.refresh === true && source instanceof FolderPluginSource) source.refresh();
+    if (options.refresh === true) source.refresh?.();
 
     const [listings, installed] = await Promise.all([
       source.list(),
