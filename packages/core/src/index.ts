@@ -114,6 +114,25 @@ export {
   registerHardwarePlugin,
   HARDWARE_PLUGIN_ID,
 } from './infrastructure/plugins/hardware-plugin.js';
+export type {
+  PluginImage,
+  PluginListing,
+  PluginSource,
+} from './application/ports/plugin-source.js';
+export {
+  FolderPluginSource,
+  DEFAULT_PLUGIN_SOURCE,
+  defaultSourceRoot,
+} from './infrastructure/plugins/folder-plugin-source.js';
+export {
+  installPluginArchive,
+  looksLikePlugin,
+  uninstallPlugin,
+} from './infrastructure/plugins/install-plugin.js';
+export type {
+  InstalledPlugin as InstalledPluginResult,
+  InstallOptions,
+} from './infrastructure/plugins/install-plugin.js';
 export { loadCodePlugins } from './infrastructure/plugins/code-plugins.js';
 export type { CodePluginProblem, LoadedCodePlugins } from './infrastructure/plugins/code-plugins.js';
 export { plainSecretVault } from './application/ports/secret-vault.js';

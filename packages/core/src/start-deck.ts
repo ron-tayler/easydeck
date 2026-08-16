@@ -14,7 +14,7 @@ import { registerKeyboardActions } from './infrastructure/actions/keyboard-actio
 import { ButtonSecretStore } from './infrastructure/button-secrets.js';
 import { mediaManifest, registerMediaActions } from './infrastructure/actions/media-actions.js';
 import { registerAudioActions } from './infrastructure/actions/audio-actions.js';
-import { registerSystemActions } from './infrastructure/actions/system-actions.js';
+import { registerSystemActions, registerSystemPlugin } from './infrastructure/actions/system-actions.js';
 import { FileProfileRepository } from './infrastructure/file-profile-repository.js';
 import { FileSettingsRepository } from './infrastructure/file-settings-repository.js';
 import { DeckRegistry } from './application/deck-registry.js';
@@ -199,6 +199,11 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
     });
 
     if (builtIn) {
+      // The system plugin's actions were registered long before the runtime
+      // existed; this gives it the one thing that needs one — the list of
+      // installed programs behind "Run program".
+      await registerSystemPlugin(plugins);
+
       // Sound devices ride with the media plugin, and only where Windows has
       // the interfaces they need.
       const audio = await registerAudioActions(actions, plugins, mediaManifest);

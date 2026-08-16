@@ -267,6 +267,7 @@
     iconNone: 'Nothing found',
     optional: 'optional',
     choose: 'Choose…',
+    customPath: 'Another path…',
     ownScript: 'Own script',
     ownScriptHint: 'currently running the script of state “{state}”',
     blocks: {

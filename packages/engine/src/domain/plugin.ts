@@ -280,6 +280,30 @@ export interface PluginManifest {
   readonly apiVersion: number;
   /** Ships in the box and cannot be uninstalled. */
   readonly builtIn?: boolean;
+  /**
+   * Who wrote it, for a store that lists several plugins doing one job.
+   *
+   * The author is also the first half of the id — `ed.obs` is `obs` by `ed` —
+   * but a slug is not a name: this is what a person reads.
+   */
+  readonly author?: LocalizedText;
+  /**
+   * The one picture beside the plugin's name in a list.
+   *
+   * A `plugin:<id>/<path>` reference, resolved the way a preset's icon is.
+   * Absent is ordinary and draws whatever the store draws for a plugin with
+   * no picture — this is a shop window, not a requirement.
+   */
+  readonly cover?: string;
+  /**
+   * Pictures of the plugin at work, for its own page in the store.
+   *
+   * Deliberately apart from `cover`: a list wants one small picture per row
+   * and a card wants several large ones, and a store that had to load every
+   * screenshot of every plugin to draw a list would be a store nobody opens
+   * twice. Same reference form.
+   */
+  readonly screenshots?: readonly string[];
   readonly actions: readonly ActionDefinition[];
   /**
    * Variables the plugin publishes, declared up front.

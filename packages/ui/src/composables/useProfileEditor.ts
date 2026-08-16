@@ -338,7 +338,15 @@ export function addActionToKey(
         states: [
           {
             id: 'default',
-            visual: { background: '#2a2f38', label: { text: label, fontSize: 14 } },
+            // The position is written down rather than left to the fallback.
+            // Absent, it means "the middle on a plain key, the bottom over a
+            // picture" — which is a good rule and a poor default to store: the
+            // editor's own buttons show the middle as chosen, and adding an
+            // icon later would move the text without anybody asking for it.
+            visual: {
+              background: '#2a2f38',
+              label: { text: label, fontSize: 14, position: 'center' },
+            },
             actions: { press: [action] },
           },
         ],
@@ -553,17 +561,19 @@ export function removeKey(
 }
 
 /**
- * A button with nothing on it: no colour, no label, no behaviour.
+ * A button with nothing on it: no colour, no text, no behaviour.
  *
  * Deliberately blank rather than pre-filled — it exists so the editor has
  * something to open, and anything we invented here would only have to be
- * cleared again.
+ * cleared again. The one exception is where the text will sit, which is
+ * written down for the reason above: unwritten, it is a rule rather than a
+ * value, and the editor cannot show a rule as a pressed button.
  */
 export function createEmptyButton(profile: ProfileDefinition, key: number): ButtonDefinition {
   return {
     id: freshId('button', allButtonIds(profile.root)),
     key,
-    states: [{ id: 'default', visual: {} }],
+    states: [{ id: 'default', visual: { label: { text: '', position: 'center' } } }],
   };
 }
 

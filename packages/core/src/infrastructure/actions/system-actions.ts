@@ -1,7 +1,11 @@
 import { spawn } from 'node:child_process';
+import { extname } from 'node:path';
 
 import { PLUGIN_API_VERSION, numberParam, stringParam } from '@easydeck/engine';
 import type { ActionRegistry, PluginManifest } from '@easydeck/engine';
+
+import type { PluginRuntime } from '../../application/plugin-runtime.js';
+import { listInstalledPrograms } from './installed-programs.js';
 
 /**
  * Actions that reach outside the process.
@@ -18,8 +22,33 @@ import type { ActionRegistry, PluginManifest } from '@easydeck/engine';
  * in extra commands of its own.
  */
 
-const OPENABLE_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'file:']);
 const DEFAULT_HTTP_TIMEOUT_MS = 10_000;
+
+/**
+ * There used to be a whitelist here — http, https, mailto, file — and it is a
+ * blacklist now, which is the opposite trade and the right one.
+ *
+ * Half of what anybody puts on a launcher key is `steam://rungameid/…` or
+ * `com.epicgames.launcher://…`, and a whitelist of schemes is a list of the
+ * launchers somebody happened to have installed the day it was written: every
+ * new one is a bug report. Turned around, the list is short, stable and about
+ * something real — these are not protocols any launcher uses, they are ways of
+ * saying "run this code", and a key that wants to run code has
+ * `system.run-program` two lines up in the same manifest.
+ */
+const REFUSED_SCHEMES = new Set(['javascript:', 'data:', 'vbscript:']);
+
+/**
+ * The shape of a scheme, which is checked as well as the name.
+ *
+ * Keeps what reaches the shell a URL rather than a sentence — and it is the
+ * *shape* that is enforced rather than membership of a list, so a launcher
+ * nobody here has heard of works on the day it is installed.
+ */
+const URL_SCHEME = /^[a-z][a-z0-9+.-]*:$/i;
+
+/** What a shortcut is, to the two places that must not `spawn` one. */
+const SHELL_HANDLED = new Set(['.lnk', '.url']);
 
 export const systemManifest: PluginManifest = {
   id: 'system',
@@ -37,7 +66,18 @@ export const systemManifest: PluginManifest = {
       icon: 'app',
       label: { en: 'Run program', ru: 'Запустить программу' },
       params: [
-        { name: 'command', type: 'file', label: { en: 'Program', ru: 'Программа' } },
+        {
+          name: 'command',
+          type: 'file',
+          label: { en: 'Program', ru: 'Программа' },
+          // The Start menu, offered by name. The field stays a field: a path
+          // to any executable may still be typed or pasted into it.
+          optionsFrom: 'programs',
+          description: {
+            en: 'Pick an installed program, or give a path to any executable',
+            ru: 'Выберите установленную программу или укажите путь к любому исполняемому файлу',
+          },
+        },
         {
           name: 'args',
           type: 'text',
@@ -62,7 +102,11 @@ export const systemManifest: PluginManifest = {
           name: 'target',
           type: 'string',
           label: { en: 'Target', ru: 'Что открыть' },
-          placeholder: { en: 'https://… or a path', ru: 'https://… или путь' },
+          placeholder: { en: 'https://…, steam://…, or a path', ru: 'https://…, steam://… или путь' },
+          description: {
+            en: 'Any link Windows knows how to open, launcher deep links included',
+            ru: 'Любая ссылка, которую умеет открывать Windows, включая ссылки лаунчеров',
+          },
         },
       ],
     },
@@ -130,6 +174,20 @@ export function registerSystemActions(registry: ActionRegistry): ActionRegistry 
       const args = toStringArray(params['args']);
       const cwd = typeof params['cwd'] === 'string' && params['cwd'].length > 0 ? params['cwd'] : undefined;
 
+      /*
+       * A shortcut is not a program, and `spawn` cannot start one.
+       *
+       * The list of installed programs offers `.lnk` files because that is
+       * what the Start menu is made of — and because the shortcut carries the
+       * working folder and the arguments the vendor decided their program
+       * needs. Handing it to the shell honours all of that; spawning it fails
+       * with a message about a bad executable format.
+       */
+      if (SHELL_HANDLED.has(extname(command).toLowerCase())) {
+        openTarget(command, cwd, args);
+        return;
+      }
+
       // Detached and unref'd: the deck must not hold the program open, nor die
       // with it. shell:false keeps parameters from being reinterpreted.
       const child = spawn(command, args, { cwd, detached: true, stdio: 'ignore', shell: false });
@@ -171,10 +229,32 @@ export function registerSystemActions(registry: ActionRegistry): ActionRegistry 
   return registry;
 }
 
+/**
+ * Gives the system plugin a life, which it needs for exactly one thing.
+ *
+ * Its actions are registered without a runtime — they hold nothing open and
+ * never did. But "which programs are installed" is a list that only exists at
+ * run time, and `optionsFrom` is answered by the runtime, so the plugin has
+ * to be known to it. There is no `stop`: nothing was started.
+ *
+ * Called separately from `registerSystemActions` because the runtime does not
+ * exist yet when the actions are registered.
+ */
+export async function registerSystemPlugin(runtime: PluginRuntime): Promise<void> {
+  await runtime.install(systemManifest, {
+    start(host) {
+      host.provideOptions('programs', async () => listInstalledPrograms());
+      // Nothing to connect to, and a plugin that says nothing shows a lamp
+      // that means nothing. Ready is the truth: its actions work.
+      host.setStatus('ready');
+    },
+  });
+}
+
 /** Hands a URL or path to whatever the platform uses to open it. */
-export function openTarget(target: string): void {
-  const [command, args] = openCommand(target, parseScheme(target) !== undefined);
-  const child = spawn(command, args, { detached: true, stdio: 'ignore', shell: false });
+export function openTarget(target: string, cwd?: string, args: readonly string[] = []): void {
+  const [command, spawnArgs] = openCommand(target, parseScheme(target) !== undefined, args);
+  const child = spawn(command, spawnArgs, { cwd, detached: true, stdio: 'ignore', shell: false });
   child.unref();
 }
 
@@ -182,9 +262,16 @@ export function assertOpenable(target: string): void {
   if (target.trim().length === 0) throw new Error("Parameter 'target' is empty");
 
   const scheme = parseScheme(target);
-  if (scheme && !OPENABLE_SCHEMES.has(scheme)) {
+  if (scheme === undefined) return; // a filesystem path
+
+  if (REFUSED_SCHEMES.has(scheme.toLowerCase())) {
     throw new Error(`Refusing to open '${scheme}' targets`);
   }
+
+  // Anything else that is shaped like a scheme goes through. One nothing is
+  // registered for is Windows' to complain about, and it names the scheme —
+  // a better message than any list here could produce.
+  if (!URL_SCHEME.test(scheme)) throw new Error(`'${target}' is not a link this can open`);
 }
 
 function assertHttp(url: string): void {
@@ -220,21 +307,36 @@ export function parseScheme(value: string): string | undefined {
 /**
  * The platform's "open this with whatever handles it" incantation.
  *
- * Windows needs two of them. `start` is a cmd built-in whose parsing depends
- * on quoting — its first quoted argument is the window title, and a bare
- * filesystem path reaches the shell handler in a form it reports as an
- * inaccessible *file*. `explorer.exe` opens files and folders reliably, so
- * paths go there and `start` is left to do what it is good at: URLs.
+ * On Windows everything goes to `explorer.exe`, files, folders and links
+ * alike — and the reason is an ampersand.
+ *
+ * URLs used to go through `cmd /c start`, and cmd parses what it is handed
+ * however it was quoted. A launcher deep link is full of the characters cmd
+ * reserves, and `&` is the one that matters:
+ *
+ * ```
+ * com.epicgames.launcher://apps/x?action=launch&silent=true
+ * ```
+ *
+ * reaches `start` as `…?action=launch`, and `silent=true` is run as a second
+ * command — measured, not feared. Every escape for this is a rule about
+ * quoting inside a shell that has several, so the fix is to have no shell:
+ * `explorer.exe` hands its argument to the same handler `start` would, and
+ * nothing reinterprets it on the way.
+ *
+ * Arguments are only for a shortcut being launched as a program; a link has
+ * its own inside it.
  */
-export function openCommand(target: string, isUrl: boolean): [string, string[]] {
-  if (process.platform === 'win32') {
-    if (!isUrl) return ['explorer.exe', [target]];
-    // The empty string is `start`'s title argument; without it a quoted
-    // target would be taken as the window title instead of the thing to open.
-    return ['cmd', ['/c', 'start', '', target]];
-  }
+export function openCommand(
+  target: string,
+  isUrl: boolean,
+  args: readonly string[] = [],
+): [string, string[]] {
+  if (process.platform === 'win32') return ['explorer.exe', [target, ...args]];
 
-  if (process.platform === 'darwin') return ['open', [target]];
+  if (process.platform === 'darwin') {
+    return args.length > 0 ? ['open', [target, '--args', ...args]] : ['open', [target]];
+  }
   return ['xdg-open', [target]];
 }
 

@@ -266,6 +266,7 @@
     iconNone: 'Ничего не найдено',
     optional: 'необязательно',
     choose: 'Выберите…',
+    customPath: 'Другой путь…',
     ownScript: 'Особый скрипт',
     ownScriptHint: 'сейчас выполняется скрипт состояния «{state}»',
     blocks: {

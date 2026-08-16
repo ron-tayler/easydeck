@@ -26,6 +26,7 @@ import {
   resolveIconParams,
   svgTextOf,
 } from '@easydeck/engine/icons';
+import { defaultLabelPosition } from '@easydeck/engine/label';
 import { parseVariableKey } from '@easydeck/engine/variables';
 import { renderTemplate } from '@easydeck/engine/template';
 
@@ -181,9 +182,32 @@ function setOwnScript(own: boolean): void {
   });
 }
 
+/**
+ * Changes one thing about the label, and keeps the rest.
+ *
+ * Emptying the text used to throw the whole label away, taking the size, the
+ * colour and the position with it — so somebody who cleared the text to
+ * retype it lost the font they had just chosen, and got no warning that they
+ * had. What is set here is what somebody set on purpose, and an empty label
+ * draws nothing anyway: there is no picture to be tidy about.
+ */
+/**
+ * Which position button looks pressed.
+ *
+ * Not always the middle. A key made before positions were written down has
+ * none stored, and the renderer then puts the text in the middle of a plain
+ * key and at the foot of one with a picture — so showing the middle as chosen
+ * on a key with an icon was the editor stating something untrue about what
+ * the deck was drawing.
+ */
+const shownPosition = computed(
+  () =>
+    state.value.visual.label?.position ??
+    defaultLabelPosition(Boolean(state.value.visual.icon ?? state.value.visual.surface)),
+);
+
 function patchLabel(change: Record<string, unknown>): void {
-  const label = { text: '', ...state.value.visual.label, ...change };
-  patchVisual({ label: label.text === '' && !change['text'] ? undefined : label });
+  patchVisual({ label: { text: '', ...state.value.visual.label, ...change } });
 }
 
 // --- states ---------------------------------------------------------------
@@ -1008,7 +1032,7 @@ const previewIcon = computed(() => {
                 :key="place"
                 type="button"
                 class="position"
-                :class="{ current: (state.visual.label?.position ?? 'center') === place }"
+                :class="{ current: shownPosition === place }"
                 :title="t(`editor.positions.${place}`)"
                 :aria-label="t(`editor.positions.${place}`)"
                 @click="patchLabel({ position: place })"

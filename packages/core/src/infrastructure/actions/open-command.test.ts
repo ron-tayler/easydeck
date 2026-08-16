@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { openCommand } from './system-actions.js';
+import { assertOpenable, openCommand } from './system-actions.js';
+
+/** The Epic Games deep link, which is where the ampersand rule came from. */
+const EPIC =
+  'com.epicgames.launcher://apps/14d53b5d3fcb4526a69d59f35c9dd28f%3A6838c695288a4fcea4486285edebcfdf%3Abcd55b0d87c245dd867f5b1bd496f1df?action=launch&silent=true';
 
 describe('openCommand', () => {
   if (process.platform === 'win32') {
@@ -14,12 +18,23 @@ describe('openCommand', () => {
       assert.deepEqual(args, ['C:\\Users\\me\\AppData\\Roaming\\EasyDeck']);
     });
 
-    it('sends URLs to cmd start, with the empty title argument', () => {
-      const [command, args] = openCommand('https://github.com', true);
-      assert.equal(command, 'cmd');
-      // The empty string is start's window title; without it a quoted URL
-      // would be taken as the title instead of the thing to open.
-      assert.deepEqual(args, ['/c', 'start', '', 'https://github.com']);
+    /*
+     * Regression, and measured rather than feared: handed to `cmd /c start`,
+     * this link arrives as `…?action=launch` and `silent=true` is run as a
+     * separate command. No shell, no splitting.
+     */
+    it('never lets a shell see a link, so an ampersand survives', () => {
+      const [command, args] = openCommand(EPIC, true);
+
+      assert.equal(command, 'explorer.exe');
+      assert.deepEqual(args, [EPIC]);
+      assert.ok(args[0]!.includes('&silent=true'));
+    });
+
+    it('passes a shortcut its arguments', () => {
+      const [command, args] = openCommand('C:\\Menu\\Game.lnk', false, ['-windowed']);
+      assert.equal(command, 'explorer.exe');
+      assert.deepEqual(args, ['C:\\Menu\\Game.lnk', '-windowed']);
     });
   } else {
     it('uses the platform opener for both paths and URLs', () => {
@@ -29,4 +44,33 @@ describe('openCommand', () => {
       assert.deepEqual(openCommand('https://github.com', true), [expected, ['https://github.com']]);
     });
   }
+});
+
+describe('what may be opened', () => {
+  it('accepts a launcher deep link, whatever the launcher is called', () => {
+    // The old whitelist — http, https, mailto, file — turned every one of
+    // these into "Refusing to open 'steam:' targets".
+    assertOpenable(EPIC);
+    assertOpenable('steam://rungameid/1905180');
+    assertOpenable('ms-settings:display');
+    assertOpenable('obsidian://open?vault=notes');
+  });
+
+  it('still accepts the ordinary things', () => {
+    assertOpenable('https://github.com');
+    assertOpenable('C:\\Users\\me\\notes.txt');
+    assertOpenable('/home/me/notes.txt');
+    assertOpenable('\\\\server\\share\\file.txt');
+  });
+
+  it('refuses an empty target', () => {
+    assert.throws(() => assertOpenable('   '), /empty/);
+  });
+
+  it('still refuses the schemes that only ever mean "run this code"', () => {
+    // The whitelist became a blacklist, not nothing: no launcher speaks
+    // these, and a key that wants to run code has an action for that.
+    assert.throws(() => assertOpenable('javascript:alert(1)'), /Refusing to open/);
+    assert.throws(() => assertOpenable('data:text/html,<script>'), /Refusing to open/);
+  });
 });
