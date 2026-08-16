@@ -441,6 +441,7 @@
       unavailable: 'The server is not running, so there is nothing to show.',
     },
     plugins: {
+      tabs: { installed: 'Installed', store: 'Store' },
       title: 'Plugins',
       summary: '{count} actions available',
       openFolder: 'Open plugins folder',

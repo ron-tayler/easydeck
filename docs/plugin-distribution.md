@@ -190,3 +190,43 @@ The workflow the SDK owes its authors, in order of need:
    one test against the fake host;
 3. a watch mode that reloads the plugin on rebuild — which arrives with the
    process-per-plugin phase, because that is when reload becomes possible.
+
+## How it is published, and where a store reads from
+
+Two shelves, one format.
+
+**GitHub** is what a user gets. A workflow on every push to `main` builds
+every plugin, runs their tests, and attaches the archives *and*
+`index.json` to a single release tagged `plugins`, replacing the previous
+one. The store fetches
+`https://github.com/<owner>/<repo>/releases/latest/download/<name>`, an
+address GitHub resolves to the newest release by itself — so publishing is
+the whole of deployment. Nothing is committed back, no URL is stored
+anywhere, and a public repository needs no token, no API and has no rate
+limit, because these are plain file downloads.
+
+**A folder** is what somebody writing a plugin gets: `pnpm build` leaves the
+archives in `build/` and the index in `registry/`, and the store reads them
+where they lie — no push, no tag, no release.
+
+The two are interchangeable because the index names *files* rather than
+places: `ed.obs.easydeck` is resolved under `build/` by one and under a
+release by the other. Everything else — listing, downloading, caching,
+reading a picture out of an archive — is written once, in
+`ArchivePluginSource`.
+
+Which one a build uses is decided in one place, `choosePluginSource`:
+
+1. `EASYDECK_PLUGIN_SOURCE=github` — the published store, whatever else is on
+   the machine. For seeing what a user will see.
+2. `EASYDECK_PLUGIN_SOURCE=<path>` — that folder.
+3. A built plugins repository beside any folder on the way up from the working
+   directory. Every level is tried because the program is started from
+   different places — the repository root by hand, `packages/app` by its own
+   dev script, the install folder in production.
+4. GitHub.
+
+It is deliberately not a fallback at run time. A store that quietly changed
+shelves when a build went stale would answer a different question each time it
+was opened, and "why is my plugin not in the list" would have two possible
+causes instead of one.

@@ -1,4 +1,4 @@
-import { DeviceNotFoundError, createDeviceManager } from '@easydeck/device';
+﻿import { DeviceNotFoundError, createDeviceManager } from '@easydeck/device';
 import type { Surface } from '@easydeck/device';
 import { ActionRegistry, createActionRegistry } from '@easydeck/engine';
 import type { ProfileDefinition, SurfaceProvider } from '@easydeck/engine';
@@ -24,7 +24,7 @@ import { registerClockPlugin } from './infrastructure/plugins/clock/clock-plugin
 import { registerHardwarePlugin } from './infrastructure/plugins/hardware-plugin.js';
 import { loadCodePlugins } from './infrastructure/plugins/code-plugins.js';
 import { pluginsDir } from './infrastructure/config-paths.js';
-import { FolderPluginSource } from './infrastructure/plugins/folder-plugin-source.js';
+import { choosePluginSource } from './infrastructure/plugins/choose-plugin-source.js';
 import { openTarget } from './infrastructure/actions/system-actions.js';
 import type { DeviceDirectory } from './application/device-directory.js';
 import type { SecretVault } from './application/ports/secret-vault.js';
@@ -219,6 +219,8 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
      * folder can never claim a built-in's id — the registry refuses the
      * second claimant, and the built-ins got there first.
      */
+    const pluginSource = await choosePluginSource();
+
     const code = await loadCodePlugins(pluginsDir(), actions, plugins);
     for (const problem of code.problems) {
       warnings.push(`plugin ${problem.id}: ${problem.problem}`);
@@ -231,13 +233,12 @@ export async function startDeck(options: StartDeckOptions = {}): Promise<DeckSer
 
     service = new DeckService({
       /*
-       * The store's shelf.
+       * The store's shelf: the published one, or a checkout being worked on.
        *
-       * A folder beside the checkout today; a GitHub release the day there is
-       * one. Constructed here because this is the composition root and the
-       * only place that gets to decide which source a build has.
+       * Chosen here because this is the composition root and the only place
+       * that gets to decide. See choose-plugin-source.ts for the rule.
        */
-      pluginSource: new FolderPluginSource(),
+      pluginSource,
       decks: registry,
       ...(options.devices ? { devices: options.devices } : {}),
       ...(options.applyNetwork ? { applyNetwork: options.applyNetwork } : {}),

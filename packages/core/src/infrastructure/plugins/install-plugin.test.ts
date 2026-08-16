@@ -8,7 +8,13 @@ import { after, describe, it } from 'node:test';
 import { PLUGIN_API_VERSION } from '@easydeck/engine';
 
 import { writeZip } from '../zip-writer.js';
-import { FolderPluginSource } from './folder-plugin-source.js';
+import { choosePluginSource } from './choose-plugin-source.js';
+import {
+  DEFAULT_PLUGIN_SOURCE,
+  FolderPluginSource,
+  pluginSourceCandidates,
+} from './folder-plugin-source.js';
+import { GitHubPluginSource } from './github-plugin-source.js';
 import { installPluginArchive, looksLikePlugin, uninstallPlugin } from './install-plugin.js';
 
 const roots: string[] = [];
@@ -225,5 +231,122 @@ describe('the plugins repository as a folder', () => {
     );
 
     assert.equal(await new FolderPluginSource(root).download('ed.evil'), undefined);
+  });
+});
+
+describe('which shelf a build reads from', () => {
+  /** A built plugins repository: an index where one is expected. */
+  async function repository(): Promise<string> {
+    const root = await scratch();
+    await mkdir(join(root, 'registry'), { recursive: true });
+    await writeFile(join(root, 'registry', 'index.json'), '{"plugins":[]}', 'utf8');
+    return root;
+  }
+
+  const named = process.env['EASYDECK_PLUGIN_SOURCE'];
+
+  after(() => {
+    if (named === undefined) delete process.env['EASYDECK_PLUGIN_SOURCE'];
+    else process.env['EASYDECK_PLUGIN_SOURCE'] = named;
+  });
+
+  it('finds a checkout however deep the program was started', async () => {
+    // Regression: the rule was "one level above the working directory", and
+    // the app starts itself from packages/app — so the store looked in
+    // packages/, found nothing, and said the shelf was empty.
+    const root = await repository();
+    const deep = join(root, '..', 'somewhere', 'deeper', 'still');
+
+    const candidates = pluginSourceCandidates(deep);
+    assert.ok(candidates.some((path) => path === join(root, '..', DEFAULT_PLUGIN_SOURCE)));
+  });
+
+  it('takes the named folder over anything it might find', async () => {
+    const root = await repository();
+    process.env['EASYDECK_PLUGIN_SOURCE'] = root;
+
+    assert.deepEqual(pluginSourceCandidates(), [root]);
+    assert.equal((await choosePluginSource()).name, 'local');
+  });
+
+  it('goes to GitHub when asked, and when there is no checkout to read', async () => {
+    process.env['EASYDECK_PLUGIN_SOURCE'] = 'github';
+    assert.equal((await choosePluginSource()).name, 'github');
+
+    // An unbuilt clone is not a source: it has the sources and no index, and
+    // reading from it would be an empty store with no explanation.
+    process.env['EASYDECK_PLUGIN_SOURCE'] = join(await scratch(), 'never-built');
+    assert.equal((await choosePluginSource()).name, 'local');
+  });
+});
+
+describe('the published store', () => {
+  /** Answers for what a release holds, and records what was asked for. */
+  function releaseWith(files: Record<string, Uint8Array>, asked: string[] = []) {
+    return {
+      asked,
+      fetcher: (async (input: string | URL | Request) => {
+        const url = String(input);
+        asked.push(url);
+        const name = decodeURIComponent(url.slice(url.lastIndexOf('/') + 1));
+        const bytes = files[name];
+
+        return bytes
+          ? new Response(Buffer.from(bytes), { status: 200 })
+          : new Response('Not Found', { status: 404 });
+      }) as typeof fetch,
+    };
+  }
+
+  it('reads the index and the archives from the latest release', async () => {
+    const archive = pluginArchive();
+    const { fetcher, asked } = releaseWith({
+      'index.json': Buffer.from(
+        JSON.stringify({
+          plugins: [
+            {
+              id: 'ed.demo',
+              author: 'ed',
+              version: '1.2.3',
+              apiVersion: PLUGIN_API_VERSION,
+              file: 'ed.demo.easydeck',
+              sha256: 'x',
+              bytes: archive.byteLength,
+              manifest: { name: { en: 'Demo' } },
+            },
+          ],
+        }),
+        'utf8',
+      ),
+      'ed.demo.easydeck': archive,
+    });
+
+    const source = new GitHubPluginSource({ owner: 'o', repo: 'r', fetcher });
+    const listings = await source.list();
+
+    assert.equal(listings[0]?.id, 'ed.demo');
+    assert.ok(await source.download('ed.demo'));
+    // "latest/download" is what makes publishing the whole of deployment:
+    // the address does not change when a release does.
+    assert.ok(asked[0]?.includes('/releases/latest/download/index.json'));
+  });
+
+  it('is an empty shelf before the first release, not an error', async () => {
+    const { fetcher } = releaseWith({});
+    const source = new GitHubPluginSource({ owner: 'o', repo: 'r', fetcher });
+
+    assert.deepEqual(await source.list(), []);
+    assert.equal(await source.download('ed.demo'), undefined);
+  });
+
+  it('refuses a file name that would address something else', async () => {
+    const asked: string[] = [];
+    const { fetcher } = releaseWith({}, asked);
+    const source = new GitHubPluginSource({ owner: 'o', repo: 'r', fetcher });
+
+    // The index is published by this same repository, but its names are still
+    // names from a file: one with a slash addresses another release entirely.
+    await source.image('../../../other', 'plugin:x/y.png');
+    assert.ok(!asked.some((url) => url.includes('..')));
   });
 });

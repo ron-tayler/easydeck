@@ -1,133 +1,47 @@
-import { readFile } from 'node:fs/promises';
-import { extname, isAbsolute, join, resolve, sep } from 'node:path';
+﻿import { readFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 
-import type { PluginManifest } from '@easydeck/engine';
-
-import type { PluginImage, PluginListing, PluginSource } from '../../application/ports/plugin-source.js';
-import { ZipArchive } from '../zip.js';
+import { ArchivePluginSource, INDEX_FILE } from './archive-plugin-source.js';
 
 /**
  * The plugins repository as a folder on this machine.
  *
- * A stand-in for the day the store fetches from GitHub, and deliberately the
- * same shape: it reads `registry/index.json`, hands over the archive the
- * index names, and answers for pictures. Replacing it means writing one more
- * `PluginSource` and choosing which to construct — nothing above this line
- * knows the difference.
- *
- * Pictures come out of the *archive* rather than from beside it. That is not
- * thrift: it is what makes the two sources interchangeable, since a remote
- * one will have a zip and a URL and nothing else, and a store that had learnt
- * to read loose files in a sibling folder would have to unlearn it.
+ * What a developer's store reads: `pnpm build` in the plugins repository
+ * leaves the archives in `build/` and the index in `registry/`, and this
+ * serves them without any of it having to be pushed, released or downloaded.
+ * The remote source is what a user gets; this is what somebody writing a
+ * plugin gets, and the two answer the same questions.
  */
 
 /** Where a checkout of the plugins repository is expected to sit. */
 export const DEFAULT_PLUGIN_SOURCE = 'easydeck-plugins';
 
-const TYPES: Readonly<Record<string, string>> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.svg': 'image/svg+xml',
-};
-
-/** `plugin:<id>/<path>`, the same reference form a preset's icon uses. */
-const REFERENCE = /^plugin:([A-Za-z0-9][A-Za-z0-9._-]*)\/(.+)$/;
-
-export class FolderPluginSource implements PluginSource {
+export class FolderPluginSource extends ArchivePluginSource {
   readonly name = 'local';
 
-  /**
-   * Archives already read, by id.
-   *
-   * A card asks for several pictures at once and each would otherwise reread
-   * and reparse the whole zip. Held by id rather than by path because the
-   * index is what says which file an id means, and that can change under us
-   * between one build and the next.
-   */
-  private readonly opened = new Map<string, ZipArchive>();
-
-  constructor(private readonly root: string = defaultSourceRoot()) {}
-
-  async list(): Promise<readonly PluginListing[]> {
-    const index = await this.readIndex();
-    if (!index) return [];
-
-    return index.plugins.filter(isListing);
-  }
-
-  async download(id: string): Promise<Uint8Array | undefined> {
-    const listing = (await this.readIndex())?.plugins.find((entry) => entry?.id === id);
-    if (!listing?.file) return undefined;
-
-    return this.readInside(listing.file);
-  }
-
-  async image(id: string, reference: string): Promise<PluginImage | undefined> {
-    const found = REFERENCE.exec(reference);
-    if (!found) return undefined;
-
-    const [, owner, path] = found as unknown as [string, string, string];
-    // A plugin may point at another's picture — the same latitude a preset's
-    // icon has — so the reference says whose archive to open, not the caller.
-    const archive = await this.open(owner === '' ? id : owner);
-    if (!archive) return undefined;
-
-    const type = TYPES[extname(path).toLowerCase()];
-    const bytes = archive.read(path);
-    if (!type || !bytes) return undefined;
-
-    return { bytes, type };
-  }
-
-  private async open(id: string): Promise<ZipArchive | undefined> {
-    const kept = this.opened.get(id);
-    if (kept) return kept;
-
-    const bytes = await this.download(id);
-    if (!bytes) return undefined;
-
-    const archive = new ZipArchive(Buffer.from(bytes));
-    this.opened.set(id, archive);
-    return archive;
-  }
-
-  /** Forgets what was read, for a store that has just been told to look again. */
-  refresh(): void {
-    this.opened.clear();
-  }
-
-  private async readIndex(): Promise<RawIndex | undefined> {
-    const bytes = await this.readInside(join('registry', 'index.json'));
-    if (!bytes) return undefined;
-
-    try {
-      const parsed = JSON.parse(Buffer.from(bytes).toString('utf8')) as RawIndex;
-      return Array.isArray(parsed?.plugins) ? parsed : undefined;
-    } catch {
-      // A half-written index during a rebuild is the ordinary way to see this,
-      // and an empty store beats a store that refuses to open.
-      return undefined;
-    }
+  constructor(private readonly root: string = defaultSourceRoot()) {
+    super();
   }
 
   /**
    * Reads a file the index named, and only from inside the source.
    *
-   * The index is a file on disk that a build wrote, but it is also the one
-   * place a name comes from — and a name is exactly the thing that should
-   * never be able to say `../../../.ssh/id_rsa`.
+   * Two places are tried because the build leaves things in two: the index
+   * under `registry/` and the archives under `build/`. Both are checked for
+   * being inside the source — a name is exactly the thing that should never
+   * be able to say `../../../.ssh/id_rsa`, even when it comes from a file
+   * this machine wrote.
    */
-  private async readInside(relative: string): Promise<Uint8Array | undefined> {
-    if (isAbsolute(relative)) return undefined;
+  protected async fetch(name: string): Promise<Uint8Array | undefined> {
+    if (isAbsolute(name)) return undefined;
 
     const inside = resolve(this.root) + sep;
-    const target = resolve(this.root, 'build', relative);
-    const registry = resolve(this.root, relative);
+    const places =
+      name === INDEX_FILE
+        ? [resolve(this.root, 'registry', INDEX_FILE)]
+        : [resolve(this.root, 'build', name)];
 
-    for (const path of [target, registry]) {
+    for (const path of places) {
       if (!path.startsWith(inside)) continue;
       try {
         return await readFile(path);
@@ -141,32 +55,39 @@ export class FolderPluginSource implements PluginSource {
 }
 
 /**
- * Where to look when nobody said.
+ * Where a checkout of the plugins repository might be, best guess first.
  *
- * `EASYDECK_PLUGIN_SOURCE` first, so this can be pointed anywhere; otherwise
- * a folder beside the working directory, which is where the plugins
- * repository sits while there is no GitHub to fetch from. Both are temporary
- * by design — the day a remote source exists, the default becomes it and this
- * stays for whoever is developing a plugin.
+ * Every folder from the working directory up to the root gets a candidate
+ * beside it, rather than just the one place — because "beside the checkout"
+ * depends on where the program was started from, and it is started from
+ * different places: `packages/app` in development, the install folder in
+ * production. The first version of this looked one level up from the working
+ * directory, which found `D:\dev\easydeck-plugins` when run from the repo
+ * root and `D:\dev\EasyDeck\packages\easydeck-plugins` — nothing — when the
+ * app started itself the way it actually does.
+ *
+ * `EASYDECK_PLUGIN_SOURCE` short-circuits all of it, and is the answer for
+ * anybody whose plugins repository is somewhere else entirely.
  */
-export function defaultSourceRoot(): string {
+export function pluginSourceCandidates(from: string = process.cwd()): string[] {
   const named = process.env['EASYDECK_PLUGIN_SOURCE'];
-  if (named && named.length > 0) return named;
+  if (named && named.length > 0) return [named];
 
-  return resolve(process.cwd(), '..', DEFAULT_PLUGIN_SOURCE);
+  const candidates: string[] = [];
+  let directory = resolve(from);
+
+  for (;;) {
+    candidates.push(join(directory, DEFAULT_PLUGIN_SOURCE));
+
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+
+  return candidates;
 }
 
-interface RawIndex {
-  readonly plugins: (Partial<PluginListing> & { file?: string })[];
-}
-
-/** An index entry with everything a store needs, and nothing assumed. */
-function isListing(entry: Partial<PluginListing> & { file?: string }): entry is PluginListing {
-  return (
-    typeof entry?.id === 'string' &&
-    typeof entry.version === 'string' &&
-    typeof entry.sha256 === 'string' &&
-    typeof entry.apiVersion === 'number' &&
-    typeof (entry.manifest as PluginManifest | undefined)?.name === 'object'
-  );
+/** The first candidate, for a caller that wants one path rather than a list. */
+export function defaultSourceRoot(): string {
+  return pluginSourceCandidates()[0] ?? DEFAULT_PLUGIN_SOURCE;
 }

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @easydeck/core — the composition root.
  *
  * The only place that knows about every other zone at once: it opens a
@@ -124,7 +124,11 @@ export {
   FolderPluginSource,
   DEFAULT_PLUGIN_SOURCE,
   defaultSourceRoot,
+  pluginSourceCandidates,
 } from './infrastructure/plugins/folder-plugin-source.js';
+export { GitHubPluginSource } from './infrastructure/plugins/github-plugin-source.js';
+export type { GitHubSourceOptions } from './infrastructure/plugins/github-plugin-source.js';
+export { choosePluginSource } from './infrastructure/plugins/choose-plugin-source.js';
 export {
   installPluginArchive,
   looksLikePlugin,

@@ -8,7 +8,6 @@ import type {
   LibraryImage,
   LocalizedText,
   ProfileDefinition,
-  StorePlugin,
   VariableDeclaration,
   VariableValue,
 } from '@easydeck/core';
@@ -28,7 +27,6 @@ import type { MenuItem } from './components/ContextMenu.vue';
 import DeckGrid from './components/DeckGrid.vue';
 import FolderTree from './components/FolderTree.vue';
 import PluginList from './components/PluginList.vue';
-import PluginStore from './components/PluginStore.vue';
 import PluginSettings from './components/PluginSettings.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
 import { useDeck } from './composables/useDeck.js';
@@ -764,86 +762,6 @@ function onImportProfile(): void {
   picker.click();
 }
 
-// --- the store ------------------------------------------------------------
-
-/**
- * The shelf, and what it is doing.
- *
- * Fetched when the window opens rather than kept in sync: a list of downloads
- * nobody is looking at only goes stale, and nothing else in the window needs
- * to know what is on offer.
- */
-const store = ref<
-  | {
-      plugins: readonly StorePlugin[];
-      loading: boolean;
-      note?: string;
-      /** The plugin an install or a removal is running for. */
-      busy?: string;
-    }
-  | undefined
->();
-
-function openStore(): void {
-  store.value = { plugins: [], loading: true };
-  void loadStore();
-}
-
-async function loadStore(refresh = false): Promise<void> {
-  if (!store.value) return;
-  store.value = { ...store.value, loading: true, note: undefined };
-
-  try {
-    const plugins = await deck.listStorePlugins(refresh);
-    if (store.value) store.value = { ...store.value, plugins, loading: false };
-  } catch (error) {
-    if (store.value) {
-      store.value = { ...store.value, loading: false, note: (error as Error).message };
-    }
-  }
-}
-
-async function onInstallPlugin(pluginId: string, replace: boolean): Promise<void> {
-  if (!store.value) return;
-  store.value = { ...store.value, busy: pluginId, note: undefined };
-
-  try {
-    await deck.installPlugin(pluginId, replace);
-    /*
-     * The list is read again rather than patched.
-     *
-     * What changed is which version is on disk, and that is the daemon's
-     * answer to give — a window that decided for itself would be right until
-     * the first install that half-succeeded.
-     */
-    await loadStore();
-    // Installed code only runs after a restart: an ES module cannot be
-    // unloaded, so saying so is more honest than pretending it is live.
-    if (store.value) store.value = { ...store.value, busy: undefined, note: t('store.restartNeeded') };
-  } catch (error) {
-    if (store.value) {
-      store.value = { ...store.value, busy: undefined, note: (error as Error).message };
-    }
-  }
-}
-
-async function onRemovePlugin(pluginId: string): Promise<void> {
-  if (!store.value) return;
-  if (!(await confirmAction('plugin-remove', t('store.remove'), t('store.removeWarning')))) return;
-
-  store.value = { ...store.value, busy: pluginId, note: undefined };
-
-  try {
-    await deck.removePlugin(pluginId);
-    await loadStore();
-    if (store.value) store.value = { ...store.value, busy: undefined, note: t('store.restartNeeded') };
-  } catch (error) {
-    if (store.value) {
-      store.value = { ...store.value, busy: undefined, note: (error as Error).message };
-    }
-  }
-}
-
 // --- plugin settings ------------------------------------------------------
 
 /**
@@ -1496,10 +1414,7 @@ onBeforeUnmount(() => {
       </main>
 
       <aside class="right">
-        <h2>
-          {{ t('plugins.title') }}
-          <button type="button" class="store-open" @click="openStore">{{ t('store.title') }}</button>
-        </h2>
+        <h2>{{ t('plugins.title') }}</h2>
         <PluginList
           :plugins="deck.plugins.value"
           presets
@@ -1569,19 +1484,6 @@ onBeforeUnmount(() => {
       @set="onSetVariable"
       @remove="onRemoveVariable"
       @close="variablesOpen = false"
-    />
-
-    <PluginStore
-      v-if="store"
-      :plugins="store.plugins"
-      :loading="store.loading"
-      :note="store.note"
-      :busy="store.busy"
-      :load-image="deck.storeImage"
-      @install="onInstallPlugin"
-      @remove="onRemovePlugin"
-      @refresh="loadStore(true)"
-      @close="store = undefined"
     />
 
     <PluginSettings
@@ -1829,22 +1731,7 @@ h2 {
   color: var(--text-muted);
 }
 
-.right h2 {
-  padding: 12px 12px 8px;
-  margin: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-/* A link rather than a button: opening the shelf is not the heading's job,
-   it just happens to be the one place the heading is about. */
-.store-open {
-  margin-left: auto;
-  font-size: 12px;
-  font-weight: 400;
-  padding: 2px 8px;
-}
+.right h2 { padding: 12px 12px 8px; margin: 0; }
 
 main {
   min-height: 0;

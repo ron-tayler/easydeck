@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type {
@@ -13,6 +13,7 @@ import { SUPPORTED_LOCALES, setLocale } from '../i18n/index.js';
 import type { Locale } from '../i18n/index.js';
 import { THEMES, useTheme } from '../composables/useTheme.js';
 import IconLibrary from './IconLibrary.vue';
+import PluginStore from './PluginStore.vue';
 import type { Theme } from '../composables/useTheme.js';
 
 const props = defineProps<{
@@ -71,6 +72,10 @@ ${message}` : name;
 }
 type Section = (typeof SECTIONS)[number];
 const section = ref<Section>('system');
+
+/** What is installed, and what could be. */
+const PLUGIN_TABS = ['installed', 'store'] as const;
+const pluginTab = ref<(typeof PLUGIN_TABS)[number]>('installed');
 
 const say = (text: LocalizedText | undefined): string =>
   text === undefined ? '' : (text[locale.value] ?? text.en);
@@ -372,6 +377,25 @@ const alsoWaiting = computed(() => Math.max(0, (props.pendingDevices?.length ?? 
 
         <section v-else-if="section === 'plugins'">
           <h2>{{ t('settings.plugins.title') }}</h2>
+
+          <!-- What is here, and what could be. Two ends of one question, so
+               they live behind two tabs rather than in two windows. -->
+          <div class="tabs">
+            <button
+              v-for="tab in PLUGIN_TABS"
+              :key="tab"
+              type="button"
+              class="tab"
+              :class="{ current: pluginTab === tab }"
+              @click="pluginTab = tab"
+            >
+              {{ t(`settings.plugins.tabs.${tab}`) }}
+            </button>
+          </div>
+
+          <PluginStore v-if="pluginTab === 'store'" />
+
+          <template v-else>
           <p class="muted">{{ t('settings.plugins.summary', { count: actionCount }) }}</p>
 
           <ul class="list">
@@ -439,6 +463,7 @@ const alsoWaiting = computed(() => Math.max(0, (props.pendingDevices?.length ?? 
           <button type="button" @click="emit('openFolder', 'plugins')">
             {{ t('settings.plugins.openFolder') }}
           </button>
+          </template>
         </section>
 
         <section v-else-if="section === 'icons'">
@@ -551,21 +576,29 @@ const alsoWaiting = computed(() => Math.max(0, (props.pendingDevices?.length ?? 
 .backdrop {
   position: fixed;
   inset: 0;
-  background: rgb(0 0 0 / 45%);
+  background: var(--surface-0);
   display: grid;
-  place-items: center;
+  place-items: stretch;
   z-index: 10;
 }
 
+/*
+ * The whole window, not a box in the middle of it.
+ *
+ * Settings grew from a few switches into the place plugins are browsed,
+ * installed and read about — a screenshot at a useful size does not fit in a
+ * 760-pixel dialog, and neither does a list of a plugin's actions beside it.
+ * Still a modal: it is a place you go and come back from, not a second window
+ * to keep track of.
+ */
 .dialog {
   display: grid;
-  grid-template-columns: 168px minmax(0, 1fr);
-  width: min(760px, 92vw);
-  height: min(520px, 88vh);
+  grid-template-columns: 200px minmax(0, 1fr);
+  width: 100vw;
+  height: 100vh;
   background: var(--surface-0);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 18px 48px var(--shadow);
+  border: 0;
+  border-radius: 0;
   overflow: hidden;
 }
 
@@ -576,6 +609,28 @@ nav {
   padding: 12px 8px;
   background: var(--surface-1);
   border-right: 1px solid var(--border);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 10px 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Along the top rather than down the side: the outer tabs are the window's
+   sections and these are two views of one of them, and a row that sits under
+   the heading says that without a word. */
+.tabs .tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 6px 12px;
+}
+
+.tabs .tab.current {
+  background: none;
+  border-bottom-color: var(--accent);
 }
 
 .tab {
