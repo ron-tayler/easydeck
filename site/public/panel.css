@@ -190,3 +190,199 @@
   color: var(--muted);
   text-align: center;
 }
+
+/* --- the drawings behind the cards ------------------------------------------
+ *
+ * Each card in "Что она умеет" carries a small picture of the thing it
+ * describes, in the corner and at an angle. The same visual language as the
+ * panel above — dark tiles, the same greens and reds — so the page reads as
+ * one deck rather than as a landing page with clip art on it.
+ *
+ * Decorative and marked as such: every one of these is `aria-hidden`, so a
+ * screen reader hears the card's own words and nothing about a rotated
+ * rectangle.
+ */
+
+.card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* The words sit above the drawing, without either needing a z-index war. */
+.card > h3,
+.card > p { position: relative; }
+
+.cardart {
+  position: absolute;
+  top: -10px;
+  right: -14px;
+  width: 168px;
+  height: 122px;
+  z-index: -1;
+  opacity: 0.5;
+  pointer-events: none;
+  user-select: none;
+  /* Faded towards the text rather than cut off: a hard edge across a drawing
+     reads as a mistake, and this way the words always win. */
+  mask-image: linear-gradient(215deg, #000 25%, #0009 55%, transparent 82%);
+  -webkit-mask-image: linear-gradient(215deg, #000 25%, #0009 55%, transparent 82%);
+}
+
+.cardart > * { position: absolute; }
+.cardart svg { width: 20px; height: 20px; }
+
+/* A key, the size a drawing wants rather than the size the panel wants. */
+.cardart .k {
+  width: 54px;
+  height: 54px;
+  border-radius: 12px;
+  border: 1px solid #262c36;
+  background: #12161d;
+  color: #cbd3e0;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  box-shadow: 0 8px 18px #00000059;
+}
+.cardart .k.good { background: linear-gradient(165deg, #2f6f4f, #1d4633); border-color: #37855f; color: #e9fff4; }
+.cardart .k.bad { background: linear-gradient(165deg, #6f3535, #481f1f); border-color: #8c4444; color: #ffeaea; }
+.cardart .k.cool { background: linear-gradient(165deg, #2b4a7a, #1a2b48); border-color: #35578c; color: #e9f1ff; }
+
+/* One key twice over, caught between its two appearances. */
+.cardart.states .k.bad { right: 62px; top: 34px; transform: rotate(-10deg); }
+.cardart.states .k.good { right: 22px; top: 16px; transform: rotate(8deg); }
+
+/* --- the folder tree -------------------------------------------------------- */
+
+.cardart.tree { font-size: 10px; color: #93a0b4; transform: rotate(-4deg); }
+.cardart.tree .row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  right: 14px;
+  white-space: nowrap;
+}
+.cardart.tree .row:nth-child(1) { top: 18px; }
+.cardart.tree .row:nth-child(2) { top: 40px; right: 14px; }
+.cardart.tree .row:nth-child(3) { top: 62px; right: 14px; }
+.cardart.tree .row:nth-child(4) { top: 84px; right: 14px; }
+.cardart.tree .in { padding-left: 16px; border-left: 1px solid #2b3341; }
+.cardart.tree .in.deep { padding-left: 30px; }
+
+.cardart.tree i {
+  width: 15px;
+  height: 12px;
+  border-radius: 3px;
+  background: #2b3746;
+  border: 1px solid #3a4657;
+}
+.cardart.tree i.f { border-top-left-radius: 1px; box-shadow: inset 0 3px 0 #3f4d61; }
+.cardart.tree i.p { background: #23303f; border-style: dashed; }
+
+/* --- a macro, as the editor stacks it --------------------------------------- */
+
+.cardart.script { transform: rotate(-3deg); font-size: 9.5px; }
+.cardart.script .step {
+  right: 12px;
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: #171c25;
+  border: 1px solid #2b3341;
+  color: #b7c2d2;
+  white-space: nowrap;
+}
+.cardart.script .step:nth-child(1) { top: 12px; }
+.cardart.script .step:nth-child(2) { top: 38px; }
+.cardart.script .step:nth-child(3) { top: 64px; }
+.cardart.script .step:nth-child(4) { top: 90px; right: 24px; }
+
+.cardart.script .wait { border-style: dashed; color: #8d99ab; }
+.cardart.script .cond { border-color: #3b4a66; color: #9fb4dd; background: #161d2b; }
+/* The branch, drawn as the indent the editor draws. */
+.cardart.script .in { border-left: 2px solid #3b4a66; }
+
+/* --- a template and the key it fills ---------------------------------------- */
+
+.cardart.vars { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; }
+.cardart.vars .chip {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #161d2b;
+  border: 1px solid #35406b;
+  color: #9fb4dd;
+  white-space: nowrap;
+}
+.cardart.vars .chip:nth-child(1) { top: 14px; right: 16px; transform: rotate(-5deg); }
+.cardart.vars .chip.alt { top: 44px; right: 46px; transform: rotate(3deg); }
+.cardart.vars .k { top: 62px; right: 18px; transform: rotate(7deg); font-family: inherit; }
+
+/* --- two live tiles ---------------------------------------------------------- */
+
+.cardart.tiles .tile {
+  width: 74px;
+  height: 54px;
+  border-radius: 10px;
+  border: 1px solid #262c36;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 8px 18px #00000059;
+}
+.cardart.tiles .scene {
+  right: 66px;
+  top: 40px;
+  transform: rotate(-9deg);
+  background: linear-gradient(150deg, #24405f, #12202f 60%, #1c3350);
+}
+.cardart.tiles .scene .play {
+  width: 0;
+  height: 0;
+  border: 8px solid transparent;
+  border-left: 13px solid #cfe0f5;
+  margin-left: 5px;
+}
+.cardart.tiles .music {
+  right: 14px;
+  top: 14px;
+  transform: rotate(6deg);
+  background: #0f1319;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  padding: 7px;
+}
+.cardart.tiles .music .disc {
+  position: absolute;
+  inset: 8px auto 8px 8px;
+  width: 34px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, #0f1319 14%, transparent 15%),
+    conic-gradient(from 0deg, #4f8cff, #b451ff, #ff5f8f, #ffb457, #4f8cff);
+}
+.cardart.tiles .music u { width: 5px; border-radius: 2px; background: linear-gradient(0deg, #3fb950, #d29922); margin-left: auto; }
+.cardart.tiles .music u:nth-of-type(1) { height: 40%; }
+.cardart.tiles .music u:nth-of-type(2) { height: 66%; margin-left: 0; }
+.cardart.tiles .music u:nth-of-type(3) { height: 28%; margin-left: 0; }
+.cardart.tiles .music u:nth-of-type(4) { height: 54%; margin-left: 0; }
+
+/* --- a small stack of plugins ------------------------------------------------ */
+
+.cardart.plugins .pl {
+  width: 62px;
+  height: 62px;
+  border-radius: 14px;
+  border: 1px solid #2b3341;
+  box-shadow: 0 10px 20px #00000066;
+}
+.cardart.plugins .a { right: 20px; top: 20px; transform: rotate(7deg); background: linear-gradient(160deg, #5865f2, #2f3893); }
+.cardart.plugins .b { right: 54px; top: 34px; transform: rotate(-6deg); background: linear-gradient(160deg, #3fb950, #1f6b30); }
+.cardart.plugins .c { right: 86px; top: 48px; transform: rotate(-16deg); background: linear-gradient(160deg, #d29922, #7c5a11); }
+
+/* On a narrow screen the card is nearly all text, and a drawing behind it is
+   in the way rather than in the corner. */
+@media (max-width: 560px) {
+  .cardart { opacity: 0.28; }
+}

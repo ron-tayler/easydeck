@@ -52,6 +52,10 @@
 
   <ul class="cards">
     <li class="card">
+      <div class="cardart states" aria-hidden="true">
+        <span class="k bad"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/><path d="M8.5 21h7"/><path d="M3.5 3.5l17 17"/></svg></span>
+        <span class="k good"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/><path d="M8.5 21h7"/></svg></span>
+      </div>
       <h3>Клавиши с состояниями</h3>
       <p>
         Одна клавиша — несколько внешних видов, привязанных к переменной.
@@ -59,6 +63,12 @@
       </p>
     </li>
     <li class="card">
+      <div class="cardart tree" aria-hidden="true">
+        <span class="row"><i class="f"></i>Стрим</span>
+        <span class="row in"><i class="f"></i>OBS</span>
+        <span class="row in"><i class="f"></i>Discord</span>
+        <span class="row in deep"><i class="p"></i>Страница 2</span>
+      </div>
       <h3>Профили, папки, страницы</h3>
       <p>
         Папки открываются как на телефоне, страницы листаются. Картинку можно
@@ -66,6 +76,12 @@
       </p>
     </li>
     <li class="card">
+      <div class="cardart script" aria-hidden="true">
+        <span class="step">Сцена «Игра»</span>
+        <span class="step wait">пауза 0,5 с</span>
+        <span class="step cond">если запись идёт</span>
+        <span class="step in">Сказать «Поехали»</span>
+      </div>
       <h3>Макросы, а не одна команда</h3>
       <p>
         Последовательность шагов с условиями, паузами и повторами. Отдельно
@@ -73,6 +89,11 @@
       </p>
     </li>
     <li class="card">
+      <div class="cardart vars" aria-hidden="true">
+        <span class="chip">{{obs.scene}}</span>
+        <span class="chip alt">{{hw.cpu}}%</span>
+        <span class="k cool">Игра</span>
+      </div>
       <h3>Переменные и подписи</h3>
       <p>
         <code>{{obs.scene}}</code> в подписи, привязка состояния к значению,
@@ -80,6 +101,10 @@
       </p>
     </li>
     <li class="card">
+      <div class="cardart tiles" aria-hidden="true">
+        <span class="tile scene"><i class="play"></i></span>
+        <span class="tile music"><i class="disc"></i><u></u><u></u><u></u><u></u></span>
+      </div>
       <h3>Живые виджеты</h3>
       <p>
         Обложка играющего трека, миниатюра сцены OBS, индикатор громкости,
@@ -87,6 +112,11 @@
       </p>
     </li>
     <li class="card">
+      <div class="cardart plugins" aria-hidden="true">
+        <span class="pl c"></span>
+        <span class="pl b"></span>
+        <span class="pl a"></span>
+      </div>
       <h3>Плагины извне</h3>
       <p>
         Магазин внутри программы и каталог на этом сайте. Плагин — это файл,

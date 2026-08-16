@@ -75,7 +75,12 @@ a:hover { text-decoration: underline; }
   z-index: 5;
   display: flex;
   align-items: center;
+  /* Wraps rather than overflows: at 375 the brand, the menu and the GitHub
+     button do not fit on one line, and an unwrapped bar pushed the whole page
+     sideways — every section then scrolled a few pixels off the screen. */
+  flex-wrap: wrap;
   gap: 22px;
+  row-gap: 10px;
   padding: 14px 24px;
   background: color-mix(in srgb, var(--bg) 86%, transparent);
   backdrop-filter: blur(10px);
@@ -223,34 +228,6 @@ main.wide { max-width: var(--width); }
 .button[aria-disabled='true'] { opacity: 0.55; pointer-events: none; }
 
 .note { font-size: 14px; color: var(--muted); margin: 12px 0 0; }
-
-/* The panel drawn on the landing: fifteen keys, as the device has. */
-.panel {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
-  padding: 16px;
-  border-radius: 18px;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
-}
-.panel .key {
-  aspect-ratio: 1;
-  border-radius: 10px;
-  background: #11151c;
-  border: 1px solid #222835;
-  display: grid;
-  place-items: center;
-  font-size: 11px;
-  color: #cbd3e0;
-  text-align: center;
-  padding: 4px;
-  overflow: hidden;
-}
-.panel .key.lit { background: linear-gradient(160deg, #2f6f4f, #1f4d38); border-color: #35855f; color: #eafff3; }
-.panel .key.hot { background: linear-gradient(160deg, #6f3535, #4d2020); border-color: #8a4141; color: #ffecec; }
-.panel .key.cool { background: linear-gradient(160deg, #2b4a7a, #1d3252); border-color: #35578c; color: #e8f0ff; }
 
 .cards {
   display: grid;
