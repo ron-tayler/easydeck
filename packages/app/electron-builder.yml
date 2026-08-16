@@ -70,6 +70,17 @@ mac:
 linux:
   icon: assets/icon-512.png
   category: Utility
+  # Linux is the one platform where this does not fall back to productName: it
+  # takes the *package* name, and ours is scoped — `@easydeck/app` became
+  # `@easydeckapp`, which the packager then refused because an `@` cannot go in
+  # a file path. Lower case because that is what a Linux executable looks like,
+  # and it also names the .desktop entry below.
+  executableName: easydeck
+  # The .desktop file is named after `desktopName` in package.json rather than
+  # after the product, so that it matches the id Electron gives its windows.
+  # Without the two agreeing, a running window is not linked to its launcher —
+  # no icon in the dock, a second entry in the task list. Default in v27.
+  syncDesktopName: true
   maintainer: Ron Tayler <max.urs@yandex.ru>
   description: Control software for the FIFINE AmpliGame D6 and other Stream Dock devices
   target:

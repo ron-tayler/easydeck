@@ -11,6 +11,7 @@
     "url": "git+https://github.com/ron-tayler/easydeck.git"
   },
   "main": "./dist/main.js",
+  "desktopName": "easydeck.desktop",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "icons": "node scripts/make-icons.mjs",
