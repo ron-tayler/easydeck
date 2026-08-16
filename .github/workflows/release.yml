@@ -191,8 +191,8 @@ jobs:
           #
           # Empty everywhere else on purpose: Windows reads `CSC_LINK` too when
           # `WIN_CSC_LINK` is absent, and an Apple certificate is not one
-          # signtool can use. The packager treats an empty string as "no
-          # certificate" — deliberately, per the comment in its own source.
+          # signtool can use. Empty is turned into absent by the script below —
+          # see the note there, which is what an empty one cost us.
           CSC_LINK: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_P12 || '' }}
           CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
           # With no certificate there is nothing to discover, and saying so
@@ -206,9 +206,28 @@ jobs:
           APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
-        run: >
-          pnpm --filter @easydeck/app exec electron-builder
-          --config.extraMetadata.version=${{ needs.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Empty is not the same as absent to this packager, and the two
+          # platforms disagree about it. Windows checks for the empty string
+          # and takes it as "no certificate"; macOS checks only for null, so an
+          # empty `CSC_LINK` is read as a *path*, resolved against the project
+          # directory, and the build dies on "packages/app not a file" — which
+          # is exactly how the first Mac release failed. Anything still empty
+          # is therefore removed rather than passed on.
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!name:-}" ] || unset "$name"
+          done
+
+          # Said out loud, because the packager publishes by itself when it
+          # smells CI and warns that it will stop doing so in version 27. What
+          # gets published here is decided by the job below, from artifacts
+          # every platform contributed to — never by one runner with a quarter
+          # of the installers.
+          pnpm --filter @easydeck/app exec electron-builder \
+            --publish never \
+            --config.extraMetadata.version=${{ needs.plan.outputs.version }}
 
       # Patterns that match nothing on a given platform are fine; a job where
       # none of them matched is not, and that is what the error setting catches.
