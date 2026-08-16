@@ -231,6 +231,16 @@ jobs:
 
       # Patterns that match nothing on a given platform are fine; a job where
       # none of them matched is not, and that is what the error setting catches.
+      #
+      # The `.yml` files are the update manifests the packager wrote next to the
+      # installers. They are what an installed copy reads to learn a newer one
+      # exists, so they travel with the files they describe — all but
+      # `builder-debug.yml`, which is a log of how the build went and has no
+      # business in a release.
+      #
+      # A `.blockmap` is how an update becomes a download of the changed parts
+      # rather than the whole installer again. Without it everything still
+      # works, only slower.
       - name: Keep the installers
         uses: actions/upload-artifact@v4
         with:
@@ -242,6 +252,9 @@ jobs:
             packages/app/release/*.zip
             packages/app/release/*.AppImage
             packages/app/release/*.deb
+            packages/app/release/*.blockmap
+            packages/app/release/*.yml
+            !packages/app/release/builder-debug.yml
 
   publish:
     name: Publish
@@ -254,11 +267,89 @@ jobs:
       contents: write
 
     steps:
+      # Kept apart, one folder per runner. Merged on arrival they would collide:
+      # the two Macs write a manifest under the same name, and whichever landed
+      # second would be the only one left. The step below puts them together
+      # deliberately.
       - name: Collect every platform's installers
         uses: actions/download-artifact@v4
         with:
-          path: installers
-          merge-multiple: true
+          path: artifacts
+
+      # An installed copy finds out about a new one by reading a manifest named
+      # after its channel. There are two channels — stable and pre-release — and
+      # this is where the files every runner wrote are turned into that pair.
+      - name: One manifest per channel
+        shell: bash
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # The packager names a manifest after the version's prerelease
+          # identifier: 0.3.0-rc.1 writes rc.yml, 0.3.0 writes latest.yml.
+          channel=latest
+          case "$VERSION" in
+            *-*) rest="${VERSION#*-}"; channel="${rest%%.*}" ;;
+          esac
+          echo "Packaged as the '$channel' channel"
+
+          mkdir -p installers
+
+          # The installers need no thought: no two runners produced the same
+          # file, because every artifact name carries its platform and arch.
+          find artifacts -type f ! -name '*.yml' -exec mv -t installers/ {} +
+
+          # macOS is the one platform packaged twice, and each runner describes
+          # only the architecture it built. Merged rather than picked, or half
+          # the Macs are offered a build that will not run on them.
+          #
+          # Intel goes first. The updater walks `files` in order and takes the
+          # first zip it can use, looking for an architecture in the name only
+          # when it is running on Apple silicon — so whatever is first is what
+          # an Intel Mac ends up with.
+          intel="artifacts/installers-macos-15-intel/$channel-mac.yml"
+          arm="artifacts/installers-macos-latest/$channel-mac.yml"
+          if [ -f "$intel" ] && [ -f "$arm" ]; then
+            yq eval-all '. as $m ireduce ({}; . *+ $m)' "$intel" "$arm" \
+              > "installers/$channel-mac.yml"
+            rm "$intel" "$arm"
+            echo "Merged both Macs into $channel-mac.yml"
+          fi
+
+          # Windows and Linux wrote one each, and the Macs are already dealt
+          # with, so nothing left can clash.
+          find artifacts -type f -name '*.yml' -exec mv -t installers/ {} +
+
+          cd installers
+
+          # A release with no manifest installs fine and never updates, which is
+          # the kind of thing noticed months later. Said now instead.
+          if ! ls ./*.yml >/dev/null 2>&1; then
+            echo "::error::No update manifests were packaged. The publish provider in electron-builder.yml is what makes them; check it is still there."
+            exit 1
+          fi
+
+          for platform in '' '-mac' '-linux'; do
+            source="$channel$platform.yml"
+            [ -f "$source" ] || continue
+
+            if [ "$channel" = latest ]; then
+              # The newest stable build is also the newest thing anyone on the
+              # pre-release channel should be offered, so it goes into the
+              # release under both names. Without this, a pre-release
+              # subscriber sits on an old beta while stable moves past them.
+              cp -- "$source" "beta$platform.yml"
+            elif [ "$channel" != beta ]; then
+              # rc, dev, alpha: the suffix says how ripe a build is, not who
+              # gets it. There is one pre-release channel and it is called
+              # beta, so the manifest is renamed to match.
+              mv -- "$source" "beta$platform.yml"
+            fi
+          done
+
+          echo "Publishing:"
+          ls -1
 
       - name: Checksums
         run: |

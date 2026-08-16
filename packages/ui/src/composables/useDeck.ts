@@ -30,6 +30,21 @@ const client: DeckClient = createClient();
 
 const connected = ref(false);
 const state = shallowRef<DeckState | undefined>();
+/**
+ * What every variable holds, kept apart from the rest of the state.
+ *
+ * Because this is the one part of the snapshot that moves on its own: the
+ * hardware plugin publishes the processor, the memory and every adapter's
+ * traffic a couple of times a second whether or not anything is showing them.
+ * While these lived inside the state object, each of those ticks replaced the
+ * whole snapshot — and with it the deck, the folder path and the page list —
+ * so the header, the tree and all fifteen keys re-rendered, every key
+ * re-measuring its label against the window. That is a hundred milliseconds of
+ * nothing, once a second, for as long as the window is open.
+ *
+ * Here they are their own value, and a tick redraws what actually reads them.
+ */
+const variables = shallowRef<Readonly<Record<string, string | number | boolean>>>({});
 const keys = shallowRef<readonly KeyView[]>([]);
 const profiles = shallowRef<readonly ProfileSummary[]>([]);
 /** The active profile in full — the left panel needs its whole folder tree. */
@@ -79,6 +94,7 @@ let started = false;
 async function refreshState(): Promise<void> {
   try {
     state.value = await client.call<DeckState>('getState');
+    variables.value = state.value.variables ?? {};
     lastError.value = undefined;
 
     // A deck that is no longer there stops being the one being shown: the
@@ -288,8 +304,29 @@ function start(): void {
    * A variable that changes something on screen makes the deck repaint, and
    * that arrives above with the keys in it. This one is for what reads the
    * values directly — the variables window, and the state banner.
+   *
+   * Taken from the event rather than fetched. The snapshot is already in it,
+   * so asking cost a round trip to be told what had just been said — and the
+   * answer replaced the entire state, which re-rendered the whole window a
+   * couple of times a second because a processor gauge moved by one percent.
    */
-  client.on('variablesChanged', () => void refreshState());
+  client.on('variablesChanged', (payload) => {
+    const values = payload as Record<string, string | number | boolean>;
+    if (!values || typeof values !== 'object') return;
+
+    /*
+     * A name nobody has seen before is worth one snapshot: its declaration —
+     * what type it is, which plugin owns it — travels with the state and not
+     * with the values, and a picker that does not know about it cannot offer
+     * it. Names appear when a plugin starts or a profile is loaded, so this is
+     * rare; the values themselves move constantly and cost nothing here.
+     */
+    const known = variables.value;
+    const isNew = Object.keys(values).some((name) => !(name in known));
+
+    variables.value = values;
+    if (isNew) void refreshState();
+  });
   client.on('profilesChanged', () => void Promise.all([refreshProfiles(), refreshProfile()]));
   /*
    * A signal, not a payload. It used to carry the lists, and when it stopped
@@ -333,6 +370,8 @@ export function useDeck() {
   return {
     connected: readonly(connected),
     state,
+    /** Read this rather than `state.variables`; see the note where it is declared. */
+    variables,
     keys,
     profiles,
     profile,

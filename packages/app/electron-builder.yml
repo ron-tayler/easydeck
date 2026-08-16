@@ -100,6 +100,15 @@ deb:
     - libatspi2.0-0
     - libsecret-1-0
 
-# Releases are published by the workflow, from the artifacts every platform
-# uploaded, so the packager itself never talks to GitHub.
-publish: null
+# Releases are still published by the workflow, from the artifacts every
+# platform uploaded — the packager is run with `--publish never` and never
+# talks to GitHub itself.
+#
+# This is declared all the same, because it is what makes the packager write
+# the update manifests (`latest.yml` and friends) beside the installers. With
+# no provider there is nothing for an updater to read, and the whole channel
+# arrangement has no ground to stand on.
+publish:
+  provider: github
+  owner: ron-tayler
+  repo: easydeck

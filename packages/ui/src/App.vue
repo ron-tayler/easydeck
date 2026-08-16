@@ -1439,7 +1439,7 @@ onBeforeUnmount(() => {
         <PluginList
           :plugins="deck.plugins.value"
           presets
-          :variables="deck.state.value?.variables ?? {}"
+          :variables="deck.variables.value"
           :statuses="deck.pluginStatuses.value"
         />
       </aside>
@@ -1476,7 +1476,7 @@ onBeforeUnmount(() => {
       v-if="editing"
       :button="editing"
       :plugins="deck.plugins.value"
-      :variables="deck.state.value?.variables ?? {}"
+      :variables="deck.variables.value"
       :folders="allFolders"
       :pages="allPages"
       :buttons="pageButtons"
@@ -1499,7 +1499,7 @@ onBeforeUnmount(() => {
 
     <VariablesDialog
       v-if="variablesOpen"
-      :variables="deck.state.value?.variables ?? {}"
+      :variables="deck.variables.value"
       :declarations="deck.state.value?.variableDeclarations ?? []"
       @declare="onDeclareVariable"
       @set="onSetVariable"

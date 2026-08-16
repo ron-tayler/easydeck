@@ -326,9 +326,14 @@ onMounted(() => {
    * The scene arrives as a signal rather than as something to draw directly:
    * the keys are then fetched already resolved, with the same shape the
    * configurator renders, so there is one drawing path instead of two.
+   *
+   * And it is the only signal worth fetching on. A variable moving used to
+   * fetch as well, which meant a page over Wi-Fi asked for all fifteen keys a
+   * couple of times a second because a processor gauge had ticked — for keys
+   * that had not changed, since a variable that changes the picture makes the
+   * deck repaint, and a repaint is a scene.
    */
   client.on('scene', () => void refresh());
-  client.on('variablesChanged', () => void refresh());
 });
 
 onBeforeUnmount(() => {
