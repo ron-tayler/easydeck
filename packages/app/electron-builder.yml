@@ -31,6 +31,14 @@ files:
 # path, and a path inside an asar archive is not one the OS can dlopen.
 asarUnpack:
   - '**/*.node'
+  # The three fonts the rasteriser draws labels with, for the same reason one
+  # step removed: Skia opens them by path itself, so a path into the archive
+  # gets it nowhere and every label on the panel comes out blank. Three named
+  # files rather than the folder — the package carries two dozen faces and the
+  # renderer asks for these.
+  - '**/node_modules/dejavu-fonts-ttf/ttf/DejaVuSans.ttf'
+  - '**/node_modules/dejavu-fonts-ttf/ttf/DejaVuSerif.ttf'
+  - '**/node_modules/dejavu-fonts-ttf/ttf/DejaVuSansMono.ttf'
   - '**/node_modules/sharp/**'
   - '**/node_modules/@img/**'
   - '**/node_modules/node-hid/**'

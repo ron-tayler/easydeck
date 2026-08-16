@@ -1,4 +1,5 @@
 import { GlobalFonts } from '@napi-rs/canvas';
+import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 /**
@@ -29,6 +30,26 @@ export const DEFAULT_FONT_FAMILY: GenericFamily = 'sans-serif';
 
 let registered = false;
 
+/**
+ * Where a font file really is, for something that opens it itself.
+ *
+ * In a packaged Electron app the zones live inside `app.asar`, and everything
+ * that goes through Node reads out of it as if it were a folder. Skia does
+ * not: it takes the path down to the operating system, which knows of no such
+ * folder — so the font silently fails to register, `resolveFontFamily` hands
+ * back a family nobody has, and the panel draws every label as nothing at all.
+ *
+ * The packager is told to leave these three files on disk beside the archive,
+ * and this is the half that points at them. Exported for the test, and taking
+ * its own existence check so that the test needs no archive to run.
+ */
+export function fontPathOnDisk(path: string, exists: (candidate: string) => boolean = existsSync): string {
+  if (!path.includes('app.asar')) return path;
+
+  const unpacked = path.replace('app.asar', 'app.asar.unpacked');
+  return exists(unpacked) ? unpacked : path;
+}
+
 /** Registers the bundled fonts with Skia. Idempotent and safe to call often. */
 export function ensureFontsRegistered(): void {
   if (registered) return;
@@ -39,15 +60,28 @@ export function ensureFontsRegistered(): void {
   try {
     fontDir = require.resolve('dejavu-fonts-ttf/package.json').replace(/package\.json$/, 'ttf/');
   } catch {
+    console.error('EasyDeck: шрифты DejaVu не найдены; подписи на панели будут рисоваться системным шрифтом или не рисоваться вовсе');
     return; // fall back to system fonts only
   }
 
+  let landed = 0;
   for (const { alias, file } of Object.values(BUNDLED)) {
     try {
-      GlobalFonts.registerFromPath(fontDir + file, alias);
+      // The call answers with a font key, or with null when Skia would not
+      // take the file — it does not throw. That is how this went unnoticed for
+      // a whole release: a `catch` sees nothing wrong with a font that never
+      // registered, and the failure had no other voice.
+      if (GlobalFonts.registerFromPath(fontPathOnDisk(fontDir + file), alias)) landed += 1;
     } catch {
-      // A missing bundled font is not fatal; system fonts may still cover it.
+      // A single missing bundled font is not fatal; the others may cover it.
     }
+  }
+
+  // Said out loud, because the symptom is labels going blank on a device
+  // nobody can attach a debugger to, while the same text renders perfectly in
+  // the window a foot away.
+  if (landed === 0) {
+    console.error(`EasyDeck: ни один шрифт не зарегистрирован из ${fontDir}; подписи на панели останутся пустыми`);
   }
 }
 
