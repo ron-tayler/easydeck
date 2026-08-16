@@ -19,16 +19,29 @@ describe('openCommand', () => {
     });
 
     /*
-     * Regression, and measured rather than feared: handed to `cmd /c start`,
-     * this link arrives as `…?action=launch` and `silent=true` is run as a
-     * separate command. No shell, no splitting.
+     * Two regressions, one test.
+     *
+     * Handed to `cmd /c start`, this link arrives as `…?action=launch` and
+     * `silent=true` is run as a separate command — measured, not feared. And
+     * handed to `explorer.exe`, which was the fix for that, a link opens
+     * nothing at all: explorer is for files and folders, and a plugin's
+     * sign-in stopped reaching a browser because of it.
      */
-    it('never lets a shell see a link, so an ampersand survives', () => {
+    it('opens a link with the handler for links, ampersand and all', () => {
       const [command, args] = openCommand(EPIC, true);
 
-      assert.equal(command, 'explorer.exe');
-      assert.deepEqual(args, [EPIC]);
-      assert.ok(args[0]!.includes('&silent=true'));
+      assert.equal(command, 'rundll32.exe');
+      assert.deepEqual(args, ['url.dll,FileProtocolHandler', EPIC]);
+      assert.ok(args[1]!.includes('&silent=true'));
+    });
+
+    it('opens an ordinary web address the same way', () => {
+      // Which is what `openExternal` is: a plugin sending somebody to a page
+      // to sign in.
+      const [command, args] = openCommand('https://passport.yandex.ru/am/push/qrsecure?track_id=1&magic=2', true);
+
+      assert.equal(command, 'rundll32.exe');
+      assert.match(args[1]!, /&magic=2$/);
     });
 
     it('passes a shortcut its arguments', () => {

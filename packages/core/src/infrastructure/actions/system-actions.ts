@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+﻿import { spawn } from 'node:child_process';
 import { extname } from 'node:path';
 
 import { PLUGIN_API_VERSION, numberParam, stringParam } from '@easydeck/engine';
@@ -307,10 +307,9 @@ export function parseScheme(value: string): string | undefined {
 /**
  * The platform's "open this with whatever handles it" incantation.
  *
- * On Windows everything goes to `explorer.exe`, files, folders and links
- * alike — and the reason is an ampersand.
+ * Windows needs two of them, and which two has been wrong twice.
  *
- * URLs used to go through `cmd /c start`, and cmd parses what it is handed
+ * URLs went through `cmd /c start` first, and cmd parses what it is handed
  * however it was quoted. A launcher deep link is full of the characters cmd
  * reserves, and `&` is the one that matters:
  *
@@ -319,10 +318,16 @@ export function parseScheme(value: string): string | undefined {
  * ```
  *
  * reaches `start` as `…?action=launch`, and `silent=true` is run as a second
- * command — measured, not feared. Every escape for this is a rule about
- * quoting inside a shell that has several, so the fix is to have no shell:
- * `explorer.exe` hands its argument to the same handler `start` would, and
- * nothing reinterprets it on the way.
+ * command — measured, not feared.
+ *
+ * Everything then went to `explorer.exe`, which was right for the ampersand
+ * and wrong for links: it opens files and folders reliably and quietly
+ * declines URLs, which is how a plugin's sign-in stopped opening a browser.
+ *
+ * So: `rundll32 url.dll,FileProtocolHandler` for links, which is the
+ * documented way to hand a URL to whatever handles it, and `explorer.exe`
+ * for paths, which is what it is good at. Neither involves a shell, so
+ * nothing reinterprets an argument on the way.
  *
  * Arguments are only for a shortcut being launched as a program; a link has
  * its own inside it.
@@ -332,7 +337,11 @@ export function openCommand(
   isUrl: boolean,
   args: readonly string[] = [],
 ): [string, string[]] {
-  if (process.platform === 'win32') return ['explorer.exe', [target, ...args]];
+  if (process.platform === 'win32') {
+    return isUrl
+      ? ['rundll32.exe', ['url.dll,FileProtocolHandler', target]]
+      : ['explorer.exe', [target, ...args]];
+  }
 
   if (process.platform === 'darwin') {
     return args.length > 0 ? ['open', [target, '--args', ...args]] : ['open', [target]];
