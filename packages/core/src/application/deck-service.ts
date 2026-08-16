@@ -219,9 +219,7 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
       this.emit('actionError', error.message);
     });
     options.devices?.on('changed', () => this.emit('devicesChanged'));
-    options.decks.variables.onChange(() =>
-      this.emit('variablesChanged', options.decks.variables.snapshot()),
-    );
+    options.decks.variables.onChange(() => this.tellVariables());
 
 
     if (options.watchDirectory) this.startWatching(options.watchDirectory);
@@ -234,7 +232,9 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
     deck.controller.on('locationChanged', (location) =>
       this.emit('locationChanged', { deckId, location }),
     );
-    deck.controller.on('painted', (keys) => this.emit('viewChanged', { deckId, keys }));
+    deck.controller.on('painted', (keys, views) => {
+      this.emit('viewChanged', { deckId, keys, views });
+    });
     // Gathered across every deck rather than passed straight through: a plugin
     // hears one list of what is on screen, not one per panel.
     deck.controller.on('widgets', () => this.publishWidgets());
@@ -499,6 +499,32 @@ export class DeckService extends EventEmitter<DeckServiceEvents> implements Deck
   }
 
   /** Tells the plugins which of their variables anything is reading. */
+  /**
+   * Says the variables changed, once for however many just did.
+   *
+   * A macro that sets three of them, or a plugin publishing a track's title,
+   * artist and position together, used to send three announcements — and every
+   * listener answered each one in full. The panel already worked this way:
+   * `requestPaint` has always folded a burst into a single pass. This is the
+   * same bargain for everybody listening over a socket.
+   *
+   * A microtask rather than a timer, so the whole of one turn is folded and
+   * nothing is left waiting for a clock. What arrives is a snapshot taken when
+   * it is sent, which is the truth at that moment rather than a replay of how
+   * it got there — and that is all a listener has ever used it for.
+   */
+  private tellVariables(): void {
+    if (this.tellingVariables) return;
+    this.tellingVariables = true;
+
+    void Promise.resolve().then(() => {
+      this.tellingVariables = false;
+      this.emit('variablesChanged', this.options.decks.variables.snapshot());
+    });
+  }
+
+  private tellingVariables = false;
+
   private publishWatched(): void {
     this.options.plugins?.setWatched(this.options.decks.variablesRead());
     this.publishWidgets();

@@ -1,4 +1,10 @@
-import type { DeckLocation, LocalizedText, PluginStatus, VariableValue } from '@easydeck/engine';
+import type {
+  DeckLocation,
+  KeyView,
+  LocalizedText,
+  PluginStatus,
+  VariableValue,
+} from '@easydeck/engine';
 
 import type { DeckState } from '../../domain/api-messages.js';
 
@@ -28,7 +34,7 @@ export interface DeckEvents {
    * set-button-state, which touches no variable at all. Reporting the repaint
    * itself means the window cannot drift from the device.
    */
-  viewChanged: [event: { deckId: string; keys: readonly number[] }];
+  viewChanged: [event: { deckId: string; keys: readonly number[]; views: readonly KeyView[] }];
   /** Variables belong to the machine, so this one names no deck. */
   variablesChanged: [variables: Record<string, VariableValue>];
   keyDown: [event: { deckId: string; key: number }];

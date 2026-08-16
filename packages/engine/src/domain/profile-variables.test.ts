@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { CORE_ON } from './action.js';
-import { variablesReadBy } from './profile-variables.js';
+import { variablesPaintedBy, variablesReadBy } from './profile-variables.js';
+import { variableKey } from './variables.js';
 import type { ProfileDefinition } from './profile.js';
 
 const profile = (buttons: unknown[]): ProfileDefinition =>
@@ -190,5 +191,80 @@ describe('what a profile reads', () => {
     );
 
     assert.deepEqual(read, ['clock.countdown-left']);
+  });
+});
+
+describe('what changes how a page looks', () => {
+  const pageOf = (buttons: unknown[]) =>
+    ({ id: 'page', buttons }) as unknown as Parameters<typeof variablesPaintedBy>[0];
+
+  it('takes the three things that can change a picture', () => {
+    const painted = variablesPaintedBy(
+      pageOf([
+        {
+          id: 'b',
+          key: 0,
+          stateFrom: 'obs.recording',
+          states: [
+            { id: 'off', visual: { label: { text: 'Запись {{hw.cpu}}%' } } },
+            {
+              id: 'on',
+              visual: { icon: { source: 'g.svg', params: { angle: { variable: 'obs.volume' } } } },
+            },
+          ],
+        },
+      ]),
+    );
+
+    // Every state, not the one showing: which state is showing is itself
+    // decided by a variable, so choosing what to watch from it is circular.
+    assert.deepEqual([...painted].sort(), ['hw.cpu', 'obs.recording', 'obs.volume']);
+  });
+
+  it('leaves out what cannot change a picture on its own', () => {
+    const painted = variablesPaintedBy(
+      pageOf([
+        {
+          id: 'b',
+          key: 0,
+          states: [
+            {
+              id: 'default',
+              visual: { surface: { type: 'ed.obs.meter', params: { inputs: 'Mic' } } },
+              actions: {
+                event: [{ type: CORE_ON, params: { when: { source: 'variable', name: 'obs.live' } } }],
+                press: [{ type: 'core.set', params: { name: 'x', value: '{{hw.cpu}}' } }],
+              },
+            },
+          ],
+        },
+      ]),
+    );
+
+    /*
+     * A handler that fires *writes* something, and the write arrives as a
+     * change of its own; an action's parameters are read at press time; a
+     * widget's frames arrive by `redraw` and its parameters are values rather
+     * than templates. None of the three can repaint a key by itself, and
+     * watching them would put every page back to repainting on everything.
+     */
+    assert.deepEqual([...painted], []);
+  });
+
+  it('names a family member exactly as the store does', () => {
+    // The one place this could go quietly wrong: a set built from `{{a(b)}}`
+    // and a store that announces `a(b)` have to agree character for character,
+    // or the key never hears about its own variable again.
+    const painted = variablesPaintedBy(
+      pageOf([
+        {
+          id: 'b',
+          key: 0,
+          states: [{ id: 'default', visual: { label: { text: '{{ed.discord.members(c-1)}}' } } }],
+        },
+      ]),
+    );
+
+    assert.deepEqual([...painted], [variableKey('ed.discord.members', 'c-1')]);
   });
 });

@@ -230,12 +230,30 @@ function start(): void {
     void refreshState();
     if (concernsShownDeck(payload)) void refreshView();
   });
-  // Follows the repaint itself rather than guessing from what might have
-  // caused it: a button state can change with no variable involved at all.
+  /*
+   * Follows the repaint itself rather than guessing from what might have
+   * caused it: a button state can change with no variable involved at all.
+   *
+   * And takes the keys from the event instead of asking for them. Asking cost
+   * a round trip and a rebuild of the whole page for every variable that
+   * moved, to be told that one label had gained a digit — while the daemon had
+   * just built exactly this and thrown it away.
+   */
   client.on('viewChanged', (payload) => {
-    if (concernsShownDeck(payload)) void refreshView();
+    if (!concernsShownDeck(payload)) return;
+
+    const views = (payload as { views?: KeyView[] }).views;
+    if (views) keys.value = views;
+    else void refreshView();
   });
-  client.on('variablesChanged', () => void Promise.all([refreshState(), refreshView()]));
+  /*
+   * The variables themselves, and nothing about the picture.
+   *
+   * A variable that changes something on screen makes the deck repaint, and
+   * that arrives above with the keys in it. This one is for what reads the
+   * values directly — the variables window, and the state banner.
+   */
+  client.on('variablesChanged', () => void refreshState());
   client.on('profilesChanged', () => void Promise.all([refreshProfiles(), refreshProfile()]));
   /*
    * A signal, not a payload. It used to carry the lists, and when it stopped

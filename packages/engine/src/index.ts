@@ -57,7 +57,7 @@ export {
   readIconLayers,
   readLayerSource,
 } from './domain/icon-layout.js';
-export { variablesReadBy } from './domain/profile-variables.js';
+export { variablesPaintedBy, variablesReadBy } from './domain/profile-variables.js';
 export type { Condition, ConditionOperator, ConditionSource } from './domain/condition.js';
 export { evaluateCondition } from './domain/condition.js';
 export { CORE_DELAY, CORE_FOR, CORE_IF, CORE_STEPS, isCoreStep } from './domain/action.js';

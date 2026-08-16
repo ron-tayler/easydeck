@@ -1,6 +1,11 @@
 import { CORE_ON } from './action.js';
 import type { Condition } from './condition.js';
-import type { ButtonDefinition, FolderDefinition, ProfileDefinition } from './profile.js';
+import type {
+  ButtonDefinition,
+  FolderDefinition,
+  PageDefinition,
+  ProfileDefinition,
+} from './profile.js';
 import { referencedVariables } from './template.js';
 
 /**
@@ -49,6 +54,55 @@ export function variablesReadBy(profile: ProfileDefinition): string[] {
 
   walk(profile.root);
   return [...names];
+}
+
+/**
+ * Every variable that can change how one page *looks*.
+ *
+ * The same question as `variablesReadBy`, asked of one page and for a
+ * different purpose: that one decides what a plugin is worth publishing, and
+ * this one decides whether a change is worth repainting for. A deck that
+ * rebuilt its scene because Discord's microphone moved, while the page on
+ * screen is a soundboard, was doing the whole walk to discover that nothing
+ * had changed.
+ *
+ * Three sources, and the list is exhaustive on purpose — **anything missing
+ * here is a key that silently stops updating**, which is a far worse fault
+ * than a slow one. So:
+ *
+ * - `stateFrom`, which decides *which* appearance is shown;
+ * - the label of every state, whose text is a template;
+ * - the bound parameters of every state's picture, which move its needle.
+ *
+ * And three things deliberately left out, each because it cannot change a
+ * picture on its own:
+ *
+ * - handler conditions — a handler that fires *writes* something, and that
+ *   write arrives here as a change of its own;
+ * - a widget's parameters, which are values and overrides rather than
+ *   templates, and whose frames arrive by `redraw` instead;
+ * - action parameters, which are read at press time and not before.
+ *
+ * Every state is looked at rather than the one showing, for the reason
+ * `handlerConditions` gives: which state is showing depends on the variables.
+ */
+export function variablesPaintedBy(page: PageDefinition): Set<string> {
+  const names = new Set<string>();
+
+  for (const button of page.buttons) {
+    if (button.stateFrom) names.add(button.stateFrom);
+
+    for (const state of button.states) {
+      const text = state.visual.label?.text;
+      if (text) for (const name of referencedVariables(text)) names.add(name);
+
+      for (const binding of Object.values(state.visual.icon?.params ?? {})) {
+        if (typeof binding === 'object' && binding.variable) names.add(binding.variable);
+      }
+    }
+  }
+
+  return names;
 }
 
 /**

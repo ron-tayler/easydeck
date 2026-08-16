@@ -6,6 +6,7 @@ import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
 
 import { ApiHandler } from '../../application/api-handler.js';
+import { linkViews } from '../../application/link-views.js';
 import { AssetStore } from './asset-store.js';
 import type { ApiSource } from '../../application/ports/deck-facade.js';
 import type { EventMessage, ServerMessage } from '../../domain/api-messages.js';
@@ -499,7 +500,19 @@ export async function startApiServer(options: ApiServerOptions): Promise<Running
     broadcast({ type: 'event', event: 'locationChanged', payload: event }),
   );
   service.onDeckEvent('viewChanged', (event) =>
-    broadcast({ type: 'event', event: 'viewChanged', payload: event }),
+    /*
+     * The keys as they now look, pictures turned into links on the way past.
+     *
+     * Through the same linker the answer to `getPageView` goes through, and
+     * that is the point: a client applies this on top of that answer, so an
+     * icon whose address differed between the two would be refetched on every
+     * repaint of a key that had not changed.
+     */
+    broadcast({
+      type: 'event',
+      event: 'viewChanged',
+      payload: { ...event, views: linkViews(event.views, assets) },
+    }),
   );
   service.onDeckEvent('variablesChanged', (variables) =>
     broadcast({ type: 'event', event: 'variablesChanged', payload: { variables } }),

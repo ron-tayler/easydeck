@@ -1,8 +1,10 @@
-﻿import { drawableIcon, validateProfile } from '@easydeck/engine';
-import type { KeyView, ProfileDefinition, VariableValue } from '@easydeck/engine';
+﻿import { validateProfile } from '@easydeck/engine';
+import type { ProfileDefinition, VariableValue } from '@easydeck/engine';
 
 import type { RequestMessage, ResponseMessage } from '../domain/api-messages.js';
 import { isRequestMessage } from '../domain/api-messages.js';
+import { linkViews } from './link-views.js';
+import type { AssetLinker } from './link-views.js';
 import type { AppFolder, DeckFacade } from './ports/deck-facade.js';
 
 /**
@@ -12,10 +14,7 @@ import type { AppFolder, DeckFacade } from './ports/deck-facade.js';
  * Transport-agnostic on purpose: it never sees a socket, so the entire API
  * surface is testable by passing objects in and reading objects out.
  */
-/** Somewhere to leave a picture, in exchange for a link to it. */
-export interface AssetLinker {
-  link(source: string): string;
-}
+export type { AssetLinker } from './link-views.js';
 
 export interface ApiHandlerOptions {
   /**
@@ -55,36 +54,6 @@ export class ApiHandler {
     }
   }
 
-  /** Swaps every picture in a page for a link, when there is somewhere to put it. */
-  private withLinks(keys: readonly KeyView[]): readonly KeyView[] {
-    const assets = this.assets;
-    if (!assets) return keys;
-
-    return keys.map((view) => {
-      const { backdrop, icon } = view.visual;
-      if (!backdrop && !icon) return view;
-
-      return {
-        ...view,
-        visual: {
-          ...view.visual,
-          ...(backdrop ? { backdrop: { ...backdrop, source: assets.link(backdrop.source) } } : {}),
-          /*
-           * A parametric icon is substituted into before it is filed.
-           *
-           * What travels to a client is a link, and there is nothing to
-           * substitute into a link — so the values have to be in the picture
-           * by the time it becomes one. Each value is then its own asset with
-           * its own address, which is exactly what the immutable cache wants:
-           * a needle at 38% is a different picture from the same needle at
-           * 39%, and a needle that returns to 38% is fetched from the cache.
-           */
-          ...(icon ? { icon: { ...icon, source: assets.link(drawableIcon(icon)) } } : {}),
-        },
-      };
-    });
-  }
-
   private async dispatch(request: RequestMessage): Promise<unknown> {
     const params = request.params ?? {};
 
@@ -100,7 +69,7 @@ export class ApiHandler {
         return this.deck.state();
 
       case 'getPageView':
-        return { keys: this.withLinks(await this.deck.pageView(deckId)) };
+        return { keys: linkViews(await this.deck.pageView(deckId), this.assets) };
 
       case 'getPlugins':
         /*

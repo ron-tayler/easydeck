@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+﻿import { EventEmitter } from 'node:events';
 
 import type { ActionContext, ActionDescriptor, ButtonEvent } from '../domain/action.js';
 import { CORE_ON, THIS_BUTTON } from '../domain/action.js';
@@ -15,6 +15,7 @@ import type {
 } from '../domain/profile.js';
 import { isStateRange, withinRange } from '../domain/profile.js';
 import { ProfileTree } from '../domain/profile-tree.js';
+import { variablesPaintedBy } from '../domain/profile-variables.js';
 import { sceneKeys, sceneSignature } from '../domain/scene.js';
 import type { Scene, SceneImage, SceneLabel, SceneRegion } from '../domain/scene.js';
 import { surfaceKey } from '../domain/surface-spec.js';
@@ -58,7 +59,7 @@ export interface DeckControllerOptions {
   /**
    * Identifies which deck this is, for actions that care.
    *
-   * Several decks run at once — two panels, or a panel and a tablet — and an
+   * Several decks run at once вЂ” two panels, or a panel and a tablet вЂ” and an
    * action needs to know which one its press came from, if only so that
    * navigation moves the deck the user actually touched.
    */
@@ -69,8 +70,8 @@ export interface DeckControllerOptions {
    * Passing one shared store is what makes several decks a single machine
    * rather than several: mute the mic on the tablet and the button on the
    * panel goes red, because there is one truth about the mic and both decks
-   * are reading it. Only *where the deck is* — its profile, its page, its
-   * history — is private to it.
+   * are reading it. Only *where the deck is* вЂ” its profile, its page, its
+   * history вЂ” is private to it.
    */
   readonly variables?: VariableStore;
   /** How many locations `goBack` can retrace. */
@@ -78,7 +79,7 @@ export interface DeckControllerOptions {
   /**
    * Draws the pictures plugins own, when a key asks for one.
    *
-   * Absent in a deck with no plugins behind it — a test, an example — and then
+   * Absent in a deck with no plugins behind it вЂ” a test, an example вЂ” and then
    * a key wanting a live picture simply shows its background and label.
    */
   readonly surfaces?: SurfaceProvider;
@@ -88,8 +89,15 @@ export interface DeckControllerEvents {
   /** Something failed in a way that should not stop the deck. */
   error: [error: Error];
   locationChanged: [location: DeckLocation];
-  /** Emitted after every repaint pass, with the keys actually written. */
-  painted: [keys: number[]];
+  /**
+   * Emitted after every repaint pass, with the keys written and how they look.
+   *
+   * The views ride along rather than being fetched afterwards. A window that
+   * heard "something changed" and asked what could only ask about the whole
+   * page, so every variable that moved cost a round trip and a rebuild of
+   * fifteen keys to learn that one label had gained a digit.
+   */
+  painted: [keys: number[], views: KeyView[]];
   /**
    * The widgets on screen changed, and the plugins should hear about it.
    *
@@ -106,7 +114,7 @@ const ALERT_MS = 3000;
  * How many times handlers may set each other off before the chain is cut.
  *
  * A handler that writes a variable brings the engine straight back to the
- * handlers, which is useful — one arming another — and is also how a profile
+ * handlers, which is useful вЂ” one arming another вЂ” and is also how a profile
  * stops the deck answering. Four is past anything deliberate.
  */
 const MAX_CASCADE = 4;
@@ -119,7 +127,7 @@ const DEFAULT_HISTORY_LIMIT = 32;
  * Repainting works by re-resolving every button on the current page and
  * describing the result as a scene. That is cheaper than it sounds for fifteen
  * keys, and it removes a whole class of bugs that a variable-to-button
- * dependency map invites — a key can never be left showing a stale value
+ * dependency map invites вЂ” a key can never be left showing a stale value
  * because some dependency was not recorded.
  *
  * What the controller deliberately does not do is decide what reaches the
@@ -149,7 +157,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    * last pressed.
    *
    * The author of each change is kept beside it. Several things may write
-   * here — a macro, this plugin, another plugin — and "why is my graph showing
+   * here вЂ” a macro, this plugin, another plugin вЂ” and "why is my graph showing
    * memory" needs an answer better than a shrug.
    */
   private readonly widgetOverrides = new Map<string, Map<string, WidgetOverride>>();
@@ -183,7 +191,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    * A press that throws used to leave no trace anywhere the user was looking:
    * the daemon logged it, the deck carried on, and the person pressing the key
    * had no way to tell a broken macro from one that does its work quietly. The
-   * key says so itself now, for a few seconds — the only screen a physical
+   * key says so itself now, for a few seconds вЂ” the only screen a physical
    * panel has is its own keys.
    */
   private readonly failing = new Map<number, TimerHandle>();
@@ -227,7 +235,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     return this.profile?.id;
   }
 
-  /** Root first, current folder last — the breadcrumb a UI shows. */
+  /** Root first, current folder last вЂ” the breadcrumb a UI shows. */
   get folderPath(): FolderDefinition[] {
     if (!this.tree || !this.location) return [];
     return this.tree.pathTo(this.location.folderId);
@@ -275,7 +283,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   /**
    * The widgets on the page this deck is showing, settings and all.
    *
-   * The same question `tellWidgets` answers by event, asked directly — for
+   * The same question `tellWidgets` answers by event, asked directly вЂ” for
    * whoever joins after the last repaint and would otherwise wait for the next
    * one to find out what is there.
    */
@@ -302,7 +310,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    *
    * The same rule as the forced states next door, and the same reason for
    * leaving the decision to the caller: only it knows the profile is the same
-   * one. What is dropped is what no longer exists — a key whose widget was
+   * one. What is dropped is what no longer exists вЂ” a key whose widget was
    * removed, or a setting that widget no longer declares.
    */
   restoreWidgetSettings(settings: ReadonlyMap<string, ReadonlyMap<string, WidgetOverride>>): void {
@@ -334,14 +342,14 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    * Puts back the forced states an edit should not have disturbed.
    *
    * A button whose state was set by an action rather than bound to a variable
-   * keeps that state in memory and nowhere else — the profile has no field for
+   * keeps that state in memory and nowhere else вЂ” the profile has no field for
    * "which state it happens to be showing", and should not: it is a fact about
    * this moment, not about the document. So a reload forgets it, and editing
    * one key on a page reset every other key on that page to its first state.
    *
    * Restored rather than never cleared, because whether the states still mean
    * anything depends on what was loaded. Only the caller knows the profile is
-   * the same one — button ids are handed out per profile and `button-1` exists
+   * the same one вЂ” button ids are handed out per profile and `button-1` exists
    * in most of them, so keeping them across a genuine switch would put a key
    * into a state that belongs to somebody else's profile.
    *
@@ -384,7 +392,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
 
     /*
      * Plugin declarations first, then the profile's, so a profile can restate
-     * a plugin variable — to give it a starting value — without being able to
+     * a plugin variable вЂ” to give it a starting value вЂ” without being able to
      * take it over: the name still belongs to the plugin, and so does the type
      * that everything else reasons about.
      */
@@ -419,7 +427,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
      * readings taken before that belong to handlers that may no longer exist:
      * they are keyed by button and position, so an edited condition inherits
      * the old one's answer. That shows up as a handler that does not fire the
-     * first time it should — the worst kind of bug to be handed, since the fix
+     * first time it should вЂ” the worst kind of bug to be handed, since the fix
      * is to press the key and it works.
      *
      * Taking a fresh reading also means a condition that is already true after
@@ -445,9 +453,16 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
 
     this.unsubscribe.push(
       this.surface.onGesture((key, gesture) => this.handleGesture(key, gesture)),
-      // Any variable change may alter a label or a bound state.
-      this.variables.onChange(() => {
-        this.requestPaint();
+      this.variables.onChange((change) => {
+        /*
+         * Only what this page reads, and only for the painting.
+         *
+         * Handlers are profile-wide вЂ” a key on another page may be waiting for
+         * exactly this вЂ” so they are run whatever changed. The picture is not:
+         * a page that mentions nothing of the sort cannot look different, and
+         * rebuilding its scene to find that out was the whole cost.
+         */
+        if (this.paintsOn(change.name)) this.requestPaint();
         void this.runHandlers();
       }),
     );
@@ -478,7 +493,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     this.moveTo({ folderId, pageId: page.id });
   }
 
-  /** Any page is reachable, not only a sibling — the folder follows the page. */
+  /** Any page is reachable, not only a sibling вЂ” the folder follows the page. */
   goToPage(pageId: string): void {
     const tree = this.requireTree();
     const owner = tree.ownerOf(pageId);
@@ -520,7 +535,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     }
 
     // A bound button takes its state from the variable, so write that instead
-    // — otherwise the override and the variable would disagree.
+    // вЂ” otherwise the override and the variable would disagree.
     if (button.stateFrom) {
       const state = button.states.find((candidate) => candidate.id === stateId)!;
       this.variables.set(button.stateFrom, this.valueSelecting(button, state, button.stateFrom));
@@ -536,7 +551,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    * visual after variable substitution.
    *
    * Exposed so a configurator can mirror the panel without reimplementing
-   * state binding and templating — the two things most likely to drift
+   * state binding and templating вЂ” the two things most likely to drift
    * between an engine and a UI that each resolve them separately.
    */
   view(): KeyView[] {
@@ -546,7 +561,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     /*
      * Walks keys rather than buttons, because a merged picture reaches keys
      * that hold no button of their own. Those are reported under the merged
-     * button's identity — it is the one that put something there.
+     * button's identity вЂ” it is the one that put something there.
      */
     const { rows, cols } = this.surface.layout;
     const views: KeyView[] = [];
@@ -587,12 +602,35 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    *
    * Only the engine's own memory of what it last said is dropped. What is
    * physically on the panel is the presenter's business, and it compares
-   * against the real thing — so a key that lost its picture is repainted even
+   * against the real thing вЂ” so a key that lost its picture is repainted even
    * when the scene describing it never changed.
    */
   private markAllDirty(): void {
     this.lastScene = undefined;
   }
+
+  /**
+   * Whether a change to this variable could alter what is on screen.
+   *
+   * Worked out from the page and kept against the page *object*, so a profile
+   * that has been reloaded вЂ” a new object every time вЂ” is never answered from
+   * the old one's set. That is the only staleness this could suffer, and
+   * identity closes it without anybody having to remember to invalidate.
+   */
+  private paintsOn(name: string): boolean {
+    const page = this.currentPage;
+    if (!page) return false;
+
+    if (this.paintedByPage !== page) {
+      this.paintedBy = variablesPaintedBy(page);
+      this.paintedByPage = page;
+    }
+
+    return this.paintedBy.has(name);
+  }
+
+  private paintedBy = new Set<string>();
+  private paintedByPage?: PageDefinition;
 
   /**
    * Runs a gesture's bindings without anyone touching the deck.
@@ -679,7 +717,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   }
 
   /**
-   * The value that would select this state — the inverse of `boundState`.
+   * The value that would select this state вЂ” the inverse of `boundState`.
    *
    * Needed because forcing the state of a bound button means writing its
    * variable, and writing the state's id would be wrong for exactly the types
@@ -770,13 +808,13 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    * which is what the immutable cache downstream wants.
    *
    * A picture that had something substituted into it is named by *what decided
-   * it* — the artwork it came from, and the values written into it — rather
+   * it* вЂ” the artwork it came from, and the values written into it вЂ” rather
    * than by hashing what it came to. The name still changes with every value,
    * and has to: a needle at 38% is a different picture from the same needle at
    * 39%, and the tile cache is keyed on this. What changes is the price of
    * saying so. Hashing the result meant a full pass over the whole picture on
    * every tick of every variable, and a map holding a copy of the picture for
-   * each value it had ever taken — affordable while a parametric icon was a few
+   * each value it had ever taken вЂ” affordable while a parametric icon was a few
    * hundred bytes of markup, and not once one can carry a photograph inside it.
    */
   private assetFor(icon: IconSpec): { id: string; source: string } {
@@ -826,7 +864,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
      * than written into it.
      *
      * Substituting them now would produce a different picture on every
-     * repaint, and pictures are addressed and cached by their contents — a
+     * repaint, and pictures are addressed and cached by their contents вЂ” a
      * needle that moved would defeat the cache it depends on. Whoever draws
      * the key does the substituting, on a copy.
      */
@@ -841,8 +879,8 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     /*
      * A widget's frame becomes the picture, here and not further down.
      *
-     * Everything that asks what a key looks like — the scene the panel is
-     * built from, and the views a window and a tablet draw — goes through this
+     * Everything that asks what a key looks like вЂ” the scene the panel is
+     * built from, and the views a window and a tablet draw вЂ” goes through this
      * one method. Substituting at the end means all three see a picture and
      * none of them needs to know that a plugin drew it, which is the whole
      * reason a widget can sit in the same slot as a still.
@@ -897,7 +935,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    *
    * The merged button supplies the picture and the background for its whole
    * region; each covered key keeps its own label on top. A covered key with no
-   * button of its own still shows its slice — otherwise a picture spread over
+   * button of its own still shows its slice вЂ” otherwise a picture spread over
    * six keys would only appear where someone happened to put buttons, which is
    * precisely the arrangement you get when you want one big picture and one
    * action.
@@ -956,7 +994,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    *
    * Told to the surface for the same reason the double-press keys are: the
    * shrink-while-held is an acknowledgement, and once a hold has fired there
-   * is nothing left to acknowledge — the key can come back up while the
+   * is nothing left to acknowledge вЂ” the key can come back up while the
    * finger is still down. On a key with nothing bound to holding, it stays
    * down, because there the shrink is all the feedback there is.
    */
@@ -975,7 +1013,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    * The script a button runs for a gesture, which is usually not its state's.
    *
    * A button has one script, held by its first state, and every other state
-   * follows it — a key that looks different when the mic is muted still does
+   * follows it вЂ” a key that looks different when the mic is muted still does
    * the same thing when pressed. A state that genuinely acts differently says
    * so with `ownActions`, and then its own is used.
    */
@@ -999,7 +1037,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
         values: () => this.variables.snapshot(),
         onError: (error) => {
           // One bad step must not take the deck down with it, and the key says
-          // so — which is the same behaviour a flat list of actions had.
+          // so вЂ” which is the same behaviour a flat list of actions had.
           this.markFailed(button.key);
           this.emit('error', error);
         },
@@ -1066,7 +1104,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    * The key a condition is asking about, with `this_btn` resolved.
    *
    * An empty name still means the key running the script, but a form cannot
-   * offer that as a choice — a blank select reads as "nobody has answered
+   * offer that as a choice вЂ” a blank select reads as "nobody has answered
    * yet". So the lists say "this button" out loud and store `this_btn`, and it
    * has to mean the same thing here as it does in an action, or an `if` about
    * one's own widget quietly asks about a button that does not exist and every
@@ -1117,7 +1155,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    * is busy.
    *
    * A handler may change a variable, which brings us straight back here. That
-   * is useful — one handler arming another — and it is also how a profile
+   * is useful вЂ” one handler arming another вЂ” and it is also how a profile
    * locks the deck up, so the chain is counted and cut.
    */
   private async runHandlers(): Promise<void> {
@@ -1140,7 +1178,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
         if (!this.changedWhileHandling) break;
 
         /*
-         * Another round, because a handler changed something — one arming
+         * Another round, because a handler changed something вЂ” one arming
          * another is the point of having several. Bounded, because two
          * handlers undoing each other is the same thing seen from the other
          * side, and that one never stops.
@@ -1201,7 +1239,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    * A button anywhere in the loaded profile, by id.
    *
    * Exposed because a configurator asking "what widget is on that key" is
-   * asking about the document rather than about the page on screen — the key
+   * asking about the document rather than about the page on screen вЂ” the key
    * being pointed at may well be on another page.
    */
   buttonInProfile(buttonId: string): ButtonDefinition | undefined {
@@ -1263,7 +1301,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
       // and that is the useful answer to "who changed this".
       setWidgetParam: (buttonId, name, value) =>
         this.setWidgetParam(buttonId, name, value, 'vars.set-widget-param'),
-      // Without an id — or with `this_btn` — the button running the script,
+      // Without an id вЂ” or with `this_btn` вЂ” the button running the script,
       // which is what a condition about "this key" means.
       buttonState: (buttonId) => {
         const target = this.buttonAsked(buttonId, button);
@@ -1302,7 +1340,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    *
    * The comparison that decides whether anything changed is made on the
    * scene's signature, which names pictures rather than carrying them. The old
-   * pass serialized every visual in full, data URLs included — 31ms of blocked
+   * pass serialized every visual in full, data URLs included вЂ” 31ms of blocked
    * event loop on a panel-wide GIF, paid on every variable change, warm cache
    * or not.
    */
@@ -1310,7 +1348,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     // Asked for before the scene is built, and all at once.
     //
     // Drawing is the plugin's work and therefore asynchronous, while building
-    // a scene is a synchronous walk of the page — so the pictures are gathered
+    // a scene is a synchronous walk of the page вЂ” so the pictures are gathered
     // first and the walk reads what came back. It also means a page with four
     // live keys asks four plugins in parallel rather than one after another.
     await this.gatherSurfaces();
@@ -1318,14 +1356,25 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     const scene = this.buildScene();
     if (!scene) return;
 
-    const signature = sceneSignature(scene);
+    /*
+     * Two things decide whether this pass is worth anything: the picture, and
+     * which state each key is in.
+     *
+     * The scene's signature covers the first. It cannot cover the second вЂ” two
+     * states may look identical and differ only in what they do вЂ” and a window
+     * showing which state a key is in would have gone on showing the old one.
+     * The ids are a dozen short strings, so they are compared rather than the
+     * views they came from.
+     */
+    const views = this.view();
+    const signature = `${sceneSignature(scene)}|${views.map((view) => `${view.key}:${view.stateId}`).join(',')}`;
     if (signature === this.lastScene) return;
     this.lastScene = signature;
 
     this.surface.setDoublePressKeys?.(this.doublePressKeys());
     this.surface.setLongPressKeys?.(this.longPressKeys());
     await this.surface.present(scene);
-    this.emit('painted', sceneKeys(scene, this.surface.layout.cols));
+    this.emit('painted', sceneKeys(scene, this.surface.layout.cols), views);
   }
 
   /**
@@ -1336,7 +1385,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    * running off the edge: `validateProfile` refuses both, so a profile that
    * reached this point cannot describe either.
    *
-   * A covered key keeps its own label and contributes it to the region — that
+   * A covered key keeps its own label and contributes it to the region вЂ” that
    * is what lets one picture span six keys while each of them still says what
    * it does.
    */
@@ -1398,14 +1447,14 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
   /**
    * The picture a region shows: the plugin's if it answered, otherwise its own.
    *
-   * A live source that produced nothing is not a failure — the player is
-   * paused, OBS is closed — so the key falls back to whatever still it was
+   * A live source that produced nothing is not a failure вЂ” the player is
+   * paused, OBS is closed вЂ” so the key falls back to whatever still it was
    * given, and to nothing if it was given none. That is the whole rule between
    * the two, and it is what lets a key carry something to show meanwhile.
    *
    * A parametric icon is substituted into *here*, not further down. Everything
    * after this point identifies a picture by its id, and the id is what the
-   * tile cache compares — so an icon whose needle moved but whose id did not
+   * tile cache compares вЂ” so an icon whose needle moved but whose id did not
    * would be recognised as already drawn and never repainted.
    */
   private pictureOf(visual: ButtonVisual): { image?: SceneImage } {
@@ -1432,7 +1481,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
    *
    * Only the current page, and only this deck's: a plugin drawing a graph for
    * a folder nobody has open is the waste `onWatched` exists to prevent, in
-   * the one form where the answer falls out for free — nothing off screen is
+   * the one form where the answer falls out for free вЂ” nothing off screen is
    * ever asked for.
    *
    * A plugin that throws is a plugin whose key shows no picture, not a deck
@@ -1459,7 +1508,7 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
 
       /*
        * Keyed on the *resolved* settings, so two keys showing the same graph
-       * ask for it once — and two keys a macro has pointed at different
+       * ask for it once вЂ” and two keys a macro has pointed at different
        * readings no longer count as the same, which they would if this read
        * the profile alone.
        */
@@ -1480,8 +1529,8 @@ export class DeckController extends EventEmitter<DeckControllerEvents> {
     /*
      * Filled aside and swapped in at the end, rather than cleared first.
      *
-     * `keys` reads these too — a window and a tablet are asking what the deck
-     * looks like, at any moment and not only after a paint — and a map emptied
+     * `keys` reads these too вЂ” a window and a tablet are asking what the deck
+     * looks like, at any moment and not only after a paint вЂ” and a map emptied
      * for the duration of the drawing is a window that catches the keys blank
      * every couple of seconds.
      */
