@@ -61,12 +61,44 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # Said out loud so a half-finished setup is visible here rather than
+      # discovered by whoever downloads the result. Booleans only: what is in
+      # the secrets never reaches the log.
+      - name: What this build can sign with
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          certificate=${{ secrets.APPLE_CERTIFICATE_P12 != '' }}
+          notarisation=${{ secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
+          echo "Developer ID certificate: $certificate"
+          echo "Notarisation credentials: $notarisation"
+
+          if [ "$certificate" = false ] || [ "$notarisation" = false ]; then
+            echo "::warning::macOS will refuse this build on first run: Gatekeeper wants both a Developer ID signature and Apple's notarisation, and this build has $([ "$certificate" = true ] && echo 'only the first' || echo 'neither')."
+          fi
+
       - name: Package
         shell: bash
         env:
-          # There is no Developer ID in this repository. Saying so outright
-          # beats letting the packager hunt the keychain and fail late.
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # The Developer ID, on the Macs and nowhere else.
+          #
+          # Empty everywhere else on purpose: Windows reads `CSC_LINK` too when
+          # `WIN_CSC_LINK` is absent, and an Apple certificate is not one
+          # signtool can use. The packager treats an empty string as "no
+          # certificate" — deliberately, per the comment in its own source.
+          CSC_LINK: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_P12 || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          # With no certificate there is nothing to discover, and saying so
+          # outright beats letting the packager hunt the keychain and fail late.
+          # With one, the link above is explicit and discovery costs nothing.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.APPLE_CERTIFICATE_P12 != '' }}
+          # Notarisation. The packager asks Apple only when all three are here
+          # and skips with a warning when they are not, so this file needs no
+          # branch for "before the certificate existed" — adding the secrets is
+          # the whole of turning it on.
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
         run: >
           pnpm --filter @easydeck/app exec electron-builder
           --config.extraMetadata.version=${{ steps.version.outputs.version }}
